@@ -21,7 +21,7 @@ function toQueryString(searchParams: SearchParams) {
 export default async function IspSwRosterRedirectPage({
   searchParams,
 }: {
-  searchParams: Promise<SearchParams> | SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
   const resolved = await searchParams;
   redirect(`/admin/tools/isp-assignment${toQueryString(resolved || {})}`);

@@ -157,7 +157,6 @@ import {
   canonicalInactiveCalaimStatus,
 } from '@/lib/inactive-calaim-status';
 import { collectPrimaryContactCcEmails } from '@/lib/portal-access';
-import dynamic from 'next/dynamic';
 import {
   DEFAULT_SOCIAL_WORKER_HOLD_VALUE,
   normalizeStatusToken,
@@ -190,19 +189,30 @@ import {
 import { StatusIndicator, quickStatusItems } from './components/StaffApplicationTracker';
 import { IntroductoryEmailDialog } from './components/IntroductoryEmailDialog';
 import { getReminderMissingItems, AdminActions } from './components/AdminActions';
-
-const PushToCaspioDialog = dynamic(
-  () => import('./components/PushToCaspioDialog').then((m) => m.PushToCaspioDialog),
-  { ssr: false }
-);
-const IlsServiceStartedEmailDialog = dynamic(
-  () => import('./components/IlsEmailDialogs').then((m) => m.IlsServiceStartedEmailDialog),
-  { ssr: false }
-);
-const ClaimsDepartmentEmailDialog = dynamic(
-  () => import('./components/IlsEmailDialogs').then((m) => m.ClaimsDepartmentEmailDialog),
-  { ssr: false }
-);
+import {
+  PushToCaspioDialog,
+  IlsServiceStartedEmailDialog,
+  ClaimsDepartmentEmailDialog,
+} from './components/dynamic-dialogs';
+import type { StandaloneUploadRow, PortalActivityItem, FormStatusUpdate, EligibilityScreenshotUpload, CommunicationNoteLogEntry } from './components/application-detail-types';
+import { IntakeUploadPickerDialog } from './components/IntakeUploadPickerDialog';
+import { RoomBoardWorkspaceDialog } from './components/RoomBoardWorkspaceDialog';
+import { ApplicationProgressSummaryCard } from './components/ApplicationProgressSummaryCard';
+import { DocumentPreviewDialog } from './components/DocumentPreviewDialog';
+import { PathwayRequirementsGrid } from './components/PathwayRequirementsGrid';
+import { MemberPortalLoginLog } from './components/MemberPortalLoginLog';
+import { MemberDocumentsQuickActions } from './components/MemberDocumentsQuickActions';
+import { KaiserReferralQuickAction } from './components/KaiserReferralQuickAction';
+import { EligibilityCheckQuickAction } from './components/EligibilityCheckQuickAction';
+import { AssignedStaffQuickAction } from './components/AssignedStaffQuickAction';
+import { KaiserStatusQuickAction } from './components/KaiserStatusQuickAction';
+import { CaspioReversePullQuickAction } from './components/CaspioReversePullQuickAction';
+import { PrePushNotesQuickAction } from './components/PrePushNotesQuickAction';
+import { EmailRemindersQuickAction } from './components/EmailRemindersQuickAction';
+import { ApplicationProgressionDialog } from './components/ApplicationProgressionDialog';
+import { ReminderSettingsDialog } from './components/ReminderSettingsDialog';
+import { AuthorizationUploadsDialog } from './components/AuthorizationUploadsDialog';
+import { IndividualServicePlansDialog } from './components/IndividualServicePlansDialog';
 
 function ApplicationDetailPageContent() {
   const router = useRouter();
@@ -227,16 +237,6 @@ function ApplicationDetailPageContent() {
   const reminderTabTarget = String(searchParams.get('reminderTab') || '').trim().toLowerCase();
   const focusRequirementTarget = String(searchParams.get('focusRequirement') || '').trim().toLowerCase();
 
-  type StandaloneUploadRow = {
-    id: string;
-    status: string;
-    documentType?: string;
-    memberName?: string;
-    healthPlan?: string;
-    medicalRecordNumber?: string;
-    createdAtMs: number;
-    files: Array<{ fileName: string; downloadURL: string; storagePath?: string }>;
-  };
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
@@ -1486,13 +1486,6 @@ function ApplicationDetailPageContent() {
       formCompletionMs
     );
 
-    type PortalActivityItem = {
-      id: string;
-      kind: 'first_login' | 'submitted' | 'login' | 'login_failed' | 'upload' | 'form';
-      label: string;
-      atMs: number;
-      detail?: string;
-    };
     const activityItems: PortalActivityItem[] = [];
 
     if (firstLoginMs > 0) {
@@ -3661,12 +3654,6 @@ function ApplicationDetailPageContent() {
     }
   }, [application?.id, application?.forms]);
   
-    type FormStatusUpdate = Omit<Partial<FormStatusType>, 'dateCompleted'> & {
-      dateCompleted?: FormStatusType['dateCompleted'] | null;
-      completedBy?: string;
-      completedWithoutUpload?: boolean;
-      receivedByEmail?: boolean;
-    };
 
     /** Admin + family copies must stay in sync or merge re-adds deleted uploadedFiles. */
     const getLinkedApplicationDocRefs = () => {
@@ -4368,37 +4355,7 @@ function ApplicationDetailPageContent() {
     }
   };
 
-  type EligibilityScreenshotUpload = {
-    id: string;
-    fileName: string;
-    filePath: string | null;
-    downloadURL: string | null;
-    assetType?: 'screenshot' | 'pdf_packet';
-    uploadedAtIso: string;
-    uploadedByUid: string | null;
-    uploadedByName: string | null;
-  };
 
-  type CommunicationNoteLogEntry = {
-    id: string;
-    category: 'user_staff' | 'interoffice';
-    channel: 'eligibility_note' | 'portal_note' | 'interoffice_note' | string;
-    direction: 'staff_to_user' | 'user_to_staff' | 'staff_to_staff';
-    healthPlanTag: 'H' | 'K' | '';
-    status: 'success' | 'failed' | 'blocked_duplicate';
-    subject: string;
-    messagePreview: string;
-    fullMessage?: string;
-    recipientName?: string;
-    recipientEmail?: string;
-    authorUid?: string | null;
-    authorName?: string;
-    requiresResponse?: boolean;
-    respondedAtIso?: string | null;
-    metadata?: Record<string, unknown>;
-    createdAtIso: string;
-    timestampMs: number;
-  };
 
   const stripUndefinedDeep = (value: unknown): unknown => {
     if (Array.isArray(value)) {
@@ -10967,270 +10924,44 @@ function ApplicationDetailPageContent() {
           </div>
         )}
       </div>
-      <Dialog
-        open={intakeImportOpen}
-        onOpenChange={(open) => {
-          setIntakeImportOpen(open);
-          if (!open) {
-            setIntakeSelectedFileKey('');
-            setIntakeSearch('');
-            setIntakeError('');
-          }
-        }}
-      >
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
-          <DialogHeader>
-            <DialogTitle className="min-w-0">
-              Import from Standalone Uploads
-            </DialogTitle>
-            <DialogDescription className="min-w-0">
-              Attach a pending standalone intake upload into this slot: <span className="font-medium">{intakeRequirementTitle || '—'}</span>
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-              <div className="flex-1 min-w-0">
-                <Label htmlFor="intake-search" className="sr-only">Search</Label>
-                <Input
-                  id="intake-search"
-                  value={intakeSearch}
-                  onChange={(e) => setIntakeSearch(e.target.value)}
-                  placeholder="Search document type / filename…"
-                />
-              </div>
-              <Button type="button" variant="secondary" onClick={() => void loadMemberStandaloneIntakes()} disabled={intakeLoading || !firestore}>
-                {intakeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
-                Refresh
-              </Button>
-            </div>
-
-            {intakeError && (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Unable to load standalone uploads</AlertTitle>
-                <AlertDescription className="break-words">{intakeError}</AlertDescription>
-              </Alert>
-            )}
-
-            {!intakeError && !intakeLoading && intakeUploads.length === 0 && (
-              <div className="text-sm text-muted-foreground">
-                No pending standalone uploads found for this member.
-              </div>
-            )}
-
-            <RadioGroup value={intakeSelectedFileKey} onValueChange={setIntakeSelectedFileKey} className="space-y-3">
-              {(intakeUploads || [])
-                .filter((u) => {
-                  const q = String(intakeSearch || '').trim().toLowerCase();
-                  if (!q) return true;
-                  const hay = `${u.documentType || ''} ${u.memberName || ''} ${u.medicalRecordNumber || ''} ${u.files.map(f => f.fileName).join(' ')}`.toLowerCase();
-                  return hay.includes(q);
-                })
-                .slice(0, 50)
-                .map((u) => (
-                  <Card key={u.id} className="shadow-sm">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base flex items-start justify-between gap-2 min-w-0">
-                        <span className="truncate">{u.documentType || 'Standalone upload'}</span>
-                        <Badge variant="outline" className="shrink-0">
-                          {u.createdAtMs ? new Date(u.createdAtMs).toLocaleDateString() : '—'}
-                        </Badge>
-                      </CardTitle>
-                      <CardDescription className="min-w-0">
-                        <span className="truncate block">{u.memberName || '—'}</span>
-                        <span className="truncate block">
-                          {u.healthPlan ? `${u.healthPlan} • ` : ''}{u.medicalRecordNumber ? `MRN ${u.medicalRecordNumber}` : 'MRN —'}
-                        </span>
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="space-y-2">
-                        {u.files.map((f, idx) => {
-                          const key = `${u.id}:${idx}`;
-                          return (
-                            <div key={key} className="flex items-start gap-2">
-                              <RadioGroupItem value={key} id={`intake-file-${key}`} />
-                              <label htmlFor={`intake-file-${key}`} className="min-w-0 text-sm leading-snug cursor-pointer">
-                                <span className="block truncate font-medium">{f.fileName}</span>
-                                <span className="block text-xs text-muted-foreground truncate">{u.id}</span>
-                              </label>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-            </RadioGroup>
-
-            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => setIntakeImportOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void importStandaloneIntoSlot({ fileKey: intakeSelectedFileKey, requirementTitle: intakeRequirementTitle })}
-                disabled={!intakeSelectedFileKey || !intakeRequirementTitle}
-              >
-                Attach to slot
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={roomBoardWorkspaceOpen} onOpenChange={setRoomBoardWorkspaceOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
-          <DialogHeader>
-            <DialogTitle>Room and Board/Tier Level Agreement</DialogTitle>
-            <DialogDescription>
-              Enter required fields, generate preview, and send invites from one workspace.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            <div className="rounded-md border bg-muted/20 p-3 space-y-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Badge variant="outline" className="text-[10px] font-normal">
-                  Status: {String(roomBoardAgreementMeta?.status || 'invited')}
-                </Badge>
-                <Badge variant="outline" className="text-[10px] font-normal">
-                  ILS: {roomBoardAgreementMeta?.ilsDispatch?.sentAt ? 'Sent' : 'Pending'}
-                </Badge>
-                {roomBoardAgreementMeta?.requestId ? (
-                  <Badge variant="outline" className="text-[10px] font-normal">
-                    Request {String(roomBoardAgreementMeta.requestId)}
-                  </Badge>
-                ) : null}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Authorized rep email (auto): {authorizedRepInviteEmail || 'Not found'}
-              </div>
-            </div>
-
-            {isKaiserPlan ? (
-              <div className="space-y-2 rounded-md border p-3 bg-muted/20">
-                <div className="flex items-center justify-between gap-2">
-                  <Label className="text-xs font-medium">Kaiser Tier Level</Label>
-                  {isUpdatingKaiserTierLevel ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
-                </div>
-                <Select
-                  value={workspaceKaiserTierLevelValue || 'none'}
-                  onValueChange={(value) => void updateKaiserTierLevel(value === 'none' ? '' : value)}
-                  disabled={isUpdatingKaiserTierLevel}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select tier level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Not set</SelectItem>
-                    <SelectItem value="1">1</SelectItem>
-                    <SelectItem value="2">2</SelectItem>
-                    <SelectItem value="3">3</SelectItem>
-                    <SelectItem value="4">4</SelectItem>
-                    <SelectItem value="5">5</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="text-[11px] text-muted-foreground">
-                  Use this once Kaiser determines the member tier level.
-                </div>
-              </div>
-            ) : null}
-
-            <div className="space-y-1">
-              <Label htmlFor="room-board-rcfe-email-dialog" className="text-xs">RCFE signer email</Label>
-              <Input
-                id="room-board-rcfe-email-dialog"
-                value={rcfeSignerEmailInput}
-                onChange={(e) => setRcfeSignerEmailInput(e.target.value)}
-                placeholder="rcfe-signer@example.com"
-                disabled={isSendingRoomBoardInvites}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="room-board-agreed-amount-dialog" className="text-xs">Agreed room and board amount (manual)</Label>
-              <Input
-                id="room-board-agreed-amount-dialog"
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="0.01"
-                value={agreedRoomBoardAmountInput}
-                onChange={(e) => setAgreedRoomBoardAmountInput(e.target.value)}
-                placeholder="Enter amount manually"
-                disabled={isSendingRoomBoardInvites}
-              />
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full"
-                onClick={() => void generateRoomBoardAgreementPreview()}
-                disabled={isGeneratingRoomBoardPreview || isSendingRoomBoardInvites}
-              >
-                {isGeneratingRoomBoardPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                Generate Preview
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => void sendRoomBoardAgreementInvites()}
-                disabled={isSendingRoomBoardInvites || !roomBoardPreview}
-              >
-                {isSendingRoomBoardInvites ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-                Generate + Send Invites
-              </Button>
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              Generate preview first, then send invites.
-            </div>
-
-            {roomBoardPreview ? (
-              <div className="rounded-md border bg-background p-3 text-xs space-y-1">
-                <div><span className="font-medium">Member:</span> {String(roomBoardPreview.memberName || '—')}</div>
-                <div><span className="font-medium">MRN:</span> {String(roomBoardPreview.mrn || '—')}</div>
-                <div><span className="font-medium">RCFE Name:</span> {String(roomBoardPreview.rcfeName || '—')}</div>
-                <div><span className="font-medium">MCO/Tier:</span> {String(roomBoardPreview.mcoAndTier || '—')}</div>
-                <div><span className="font-medium">Assisted living:</span> {roomBoardPreview.assistedLivingMonthlyRate ? `$${roomBoardPreview.assistedLivingMonthlyRate} monthly` : '—'}{roomBoardPreview.assistedLivingDailyRate ? ` / $${roomBoardPreview.assistedLivingDailyRate} daily` : ''}</div>
-              </div>
-            ) : null}
-
-            {roomBoardPreviewWarnings.length > 0 ? (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
-                {roomBoardPreviewWarnings.map((warning, idx) => (
-                  <div key={`rb-preview-warn-dialog-${idx}`}>- {warning}</div>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full"
-                onClick={() => void sendRoomBoardAgreementToIls()}
-                disabled={isSendingRoomBoardIls}
-              >
-                {isSendingRoomBoardIls ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                Send Signed Docs to ILS
-              </Button>
-            </div>
-
-            {roomBoardAgreementMeta?.requestId ? (
-              <div className="rounded-md border p-3 text-xs text-muted-foreground space-y-1">
-                <div>Latest request: {String(roomBoardAgreementMeta.requestId)} ({String(roomBoardAgreementMeta.status || 'invited')})</div>
-                <div>MCO/Tier: {String(roomBoardAgreementMeta.mcoAndTier || '—')}</div>
-                <div>Assisted living: {roomBoardAgreementMeta.assistedLivingMonthlyRate ? `$${roomBoardAgreementMeta.assistedLivingMonthlyRate} monthly` : '—'}{roomBoardAgreementMeta.assistedLivingDailyRate ? ` / $${roomBoardAgreementMeta.assistedLivingDailyRate} daily` : ''}</div>
-                <div>ILS sent: {roomBoardAgreementMeta?.ilsDispatch?.sentAt ? 'Yes' : 'No'}</div>
-              </div>
-            ) : null}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <IntakeUploadPickerDialog
+        intakeImportOpen={intakeImportOpen}
+        setIntakeImportOpen={setIntakeImportOpen}
+        setIntakeSelectedFileKey={setIntakeSelectedFileKey}
+        setIntakeSearch={setIntakeSearch}
+        setIntakeError={setIntakeError}
+        intakeRequirementTitle={intakeRequirementTitle}
+        intakeSearch={intakeSearch}
+        loadMemberStandaloneIntakes={loadMemberStandaloneIntakes}
+        intakeLoading={intakeLoading}
+        firestore={firestore}
+        intakeError={intakeError}
+        intakeUploads={intakeUploads}
+        intakeSelectedFileKey={intakeSelectedFileKey}
+        importStandaloneIntoSlot={importStandaloneIntoSlot}
+      />
+      <RoomBoardWorkspaceDialog
+        roomBoardWorkspaceOpen={roomBoardWorkspaceOpen}
+        setRoomBoardWorkspaceOpen={setRoomBoardWorkspaceOpen}
+        roomBoardAgreementMeta={roomBoardAgreementMeta}
+        authorizedRepInviteEmail={authorizedRepInviteEmail}
+        isKaiserPlan={isKaiserPlan}
+        isUpdatingKaiserTierLevel={isUpdatingKaiserTierLevel}
+        workspaceKaiserTierLevelValue={workspaceKaiserTierLevelValue}
+        updateKaiserTierLevel={updateKaiserTierLevel}
+        rcfeSignerEmailInput={rcfeSignerEmailInput}
+        setRcfeSignerEmailInput={setRcfeSignerEmailInput}
+        isSendingRoomBoardInvites={isSendingRoomBoardInvites}
+        agreedRoomBoardAmountInput={agreedRoomBoardAmountInput}
+        setAgreedRoomBoardAmountInput={setAgreedRoomBoardAmountInput}
+        generateRoomBoardAgreementPreview={generateRoomBoardAgreementPreview}
+        isGeneratingRoomBoardPreview={isGeneratingRoomBoardPreview}
+        sendRoomBoardAgreementInvites={sendRoomBoardAgreementInvites}
+        roomBoardPreview={roomBoardPreview}
+        roomBoardPreviewWarnings={roomBoardPreviewWarnings}
+        sendRoomBoardAgreementToIls={sendRoomBoardAgreementToIls}
+        isSendingRoomBoardIls={isSendingRoomBoardIls}
+      />
       <div className="lg:col-span-2 min-w-0 space-y-8">
          {servicesDeclined && (
             <Alert variant="destructive">
@@ -11492,462 +11223,61 @@ function ApplicationDetailPageContent() {
             </div>
 
             {/* Staff assignment moved to Quick actions */}
-            <Card className="border-dashed">
-            <CardContent className="space-y-4 pt-4">
-                <div className="space-y-1 border-b pb-3">
-                  <div className={cn('flex items-center gap-2 text-base font-semibold', eligibilityCompleted ? 'text-green-700' : 'text-amber-700')}>
-                    {eligibilityCompleted ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      <XCircle className="h-5 w-5" />
-                    )}
-                    <span>{eligibilityCompleted ? 'Eligibility Check: Complete' : 'Eligibility Check: Pending'}</span>
-                  </div>
-                  <div className={cn('flex items-center gap-2 text-base font-semibold', caspioPushed ? 'text-green-700' : 'text-amber-700')}>
-                    {caspioPushed ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      <XCircle className="h-5 w-5" />
-                    )}
-                    <span>{caspioPushed ? 'Caspio: Pushed' : 'Caspio: Pending'}</span>
-                  </div>
-                  <div
-                    className={cn(
-                      'flex items-center gap-2 text-base font-semibold',
-                      effectiveCaspioCalAIMStatus ? 'text-green-700' : 'text-amber-700'
-                    )}
-                  >
-                    {effectiveCaspioCalAIMStatus ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      <XCircle className="h-5 w-5" />
-                    )}
-                    <span>
-                      {effectiveCaspioCalAIMStatus
-                        ? `CalAIM Status (Caspio sync): ${effectiveCaspioCalAIMStatus}`
-                        : 'CalAIM Status (Caspio sync): Waiting for Caspio update'}
-                    </span>
-                  </div>
-                  <div
-                    className={cn(
-                      'flex items-center gap-2 text-base font-semibold',
-                      csSummaryCaspioSyncLabel ? 'text-green-700' : 'text-amber-700'
-                    )}
-                  >
-                    {csSummaryCaspioSyncLabel ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      <XCircle className="h-5 w-5" />
-                    )}
-                    <span>
-                      {csSummaryCaspioSyncLabel
-                        ? `CS Summary Caspio sync: ${csSummaryCaspioSyncLabel}`
-                        : 'CS Summary Caspio sync: Not run yet'}
-                    </span>
-                    {csSummaryCaspioSyncLabel && csSummaryCaspioSyncMode ? (
-                      <Badge
-                        variant="outline"
-                        className={
-                          csSummaryCaspioSyncMode === 'overwrite_enabled'
-                            ? 'border-amber-300 bg-amber-50 text-amber-800'
-                            : 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                        }
-                      >
-                        {csSummaryCaspioSyncMode === 'overwrite_enabled' ? 'Overwrite mode' : 'Fill-empty mode'}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  {isKaiserPlan ? (
-                    <div
-                      className={cn(
-                        'flex items-center gap-2 text-base font-semibold',
-                        isKaiserNotInterested
-                          ? 'text-rose-700'
-                          : currentKaiserStatus
-                            ? 'text-green-700'
-                            : 'text-amber-700'
-                      )}
-                    >
-                      {currentKaiserStatus ? (
-                        isKaiserNotInterested ? (
-                          <XCircle className="h-5 w-5" />
-                        ) : (
-                          <CheckCircle2 className="h-5 w-5" />
-                        )
-                      ) : (
-                        <XCircle className="h-5 w-5" />
-                      )}
-                      <span>
-                        {currentKaiserStatus
-                          ? `Kaiser Status: ${currentKaiserStatus}`
-                          : 'Kaiser Status: Pending selection'}
-                      </span>
-                      {isKaiserNotInterested ? (
-                        <Link href="/admin/kaiser-not-interested-log">
-                          <Badge variant="outline" className="border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100">
-                            Not interested log
-                          </Badge>
-                        </Link>
-                      ) : null}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="ml-2 h-7 px-2 text-xs"
-                        onClick={() => void handleUpdateKaiserStatusFromCaspio()}
-                        disabled={isConfirmingCaspioPush}
-                      >
-                        {isConfirmingCaspioPush ? (
-                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                        ) : (
-                          <RefreshCw className="mr-1 h-3 w-3" />
-                        )}
-                        Update status
-                      </Button>
-                    </div>
-                  ) : null}
-                  {kaiserManagerActionRequired ? (
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2 text-base font-semibold text-red-700">
-                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-600" />
-                        <span>Kaiser manager action required</span>
-                      </div>
-                      <div className="ml-4 text-xs font-normal text-red-700/90">
-                        Acknowledge pending documents and/or complete the Kaiser referral form send.
-                      </div>
-                    </div>
-                  ) : null}
-                  {isKaiserPlan ? (
-                    <div
-                      className={cn(
-                        'flex items-center gap-2 text-base font-semibold',
-                        isKaiserAuthReceivedIntake || kaiserReferralSubmitted ? 'text-green-700' : 'text-amber-700'
-                      )}
-                    >
-                      {isKaiserAuthReceivedIntake || kaiserReferralSubmitted ? (
-                        <CheckCircle2 className="h-5 w-5" />
-                      ) : (
-                        <XCircle className="h-5 w-5" />
-                      )}
-                      <span>
-                        {isKaiserAuthReceivedIntake
-                          ? 'Kaiser Referral Form: Not required (authorization already received)'
-                          : kaiserReferralSubmitted
-                            ? `Kaiser Referral Form: Sent${kaiserReferralSubmittedAtLabel ? ` (${kaiserReferralSubmittedAtLabel})` : ''}`
-                            : 'Kaiser Referral Form: Pending send'}
-                      </span>
-                    </div>
-                  ) : null}
-                  <div
-                    className={cn(
-                      'flex items-center gap-2 text-base font-semibold',
-                      currentSocialWorkerHold ? 'text-green-700' : 'text-amber-700'
-                    )}
-                  >
-                    {currentSocialWorkerHold ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      <XCircle className="h-5 w-5" />
-                    )}
-                    <span>
-                      {currentSocialWorkerHold
-                        ? `SW Hold for Caspio: ${currentSocialWorkerHold}`
-                        : 'SW Hold for Caspio: Pending selection'}
-                    </span>
-                  </div>
-                  {isKaiserPlan ? (
-                    <div
-                      className={cn(
-                        'flex items-center gap-2 text-base font-semibold',
-                        hasAlftAssignmentStatus ? 'text-green-700' : 'text-amber-700'
-                      )}
-                    >
-                      {hasAlftAssignmentStatus ? (
-                        <CheckCircle2 className="h-5 w-5" />
-                      ) : (
-                        <XCircle className="h-5 w-5" />
-                      )}
-                      <span>{`ALFT Status: ${alftAssignmentStatusLabel}`}</span>
-                    </div>
-                  ) : null}
-                  <div className={cn('flex items-center gap-2 text-base font-semibold', staffAssigned ? 'text-green-700' : 'text-amber-700')}>
-                    {staffAssigned ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      <XCircle className="h-5 w-5" />
-                    )}
-                    <span>{staffAssigned ? `Staff Assigned: ${assignedStaffName || 'Assigned'}` : 'Staff Assigned: Pending assignment'}</span>
-                  </div>
-                  {caspioPushed ? (
-                    <div className="text-xs text-muted-foreground pl-7">
-                      {caspioSentByName && caspioSentDateLabel
-                        ? `${caspioSentByName} • ${caspioSentDateLabel}`
-                        : caspioSentByName
-                          ? caspioSentByName
-                          : caspioSentDateLabel || 'Date unavailable'}
-                    </div>
-                  ) : null}
-                  <div
-                    className={cn(
-                      'flex items-center gap-2 text-base font-semibold',
-                      (application as any)?.emailRemindersEnabled === true ? 'text-green-700' : 'text-amber-700'
-                    )}
-                  >
-                    {(application as any)?.emailRemindersEnabled === true ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      <XCircle className="h-5 w-5" />
-                    )}
-                    <span>
-                      Email reminders: {(application as any)?.emailRemindersEnabled === true
-                        ? `On (${getFrequencyLabel(documentReminderFrequencyDays)}) • Next: ${getNextReminderLabel(documentReminderNextAtMs)}`
-                        : 'Off'}
-                    </span>
-                  </div>
-                  <div
-                    className={cn(
-                      'flex items-center gap-2 text-base font-semibold',
-                      (application as any)?.statusRemindersEnabled === true ? 'text-green-700' : 'text-amber-700'
-                    )}
-                  >
-                    {(application as any)?.statusRemindersEnabled === true ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      <XCircle className="h-5 w-5" />
-                    )}
-                    <span>
-                      Status updates: {(application as any)?.statusRemindersEnabled === true
-                        ? `On (${getFrequencyLabel(statusReminderFrequencyDays)}) • Next: ${getNextReminderLabel(statusReminderNextAtMs)}`
-                        : 'Off'}
-                    </span>
-                  </div>
-                  <div className="pl-7">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full sm:w-auto"
-                      onClick={() => setIsReminderDialogOpen(true)}
-                    >
-                      Open reminder preview tools
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pl-7 rounded-lg border bg-muted/10 p-3">
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-muted-foreground">Status updates frequency</Label>
-                      <Select
-                        value={Boolean((application as any)?.statusRemindersEnabled) ? String(statusReminderFrequencyDays) : 'none'}
-                        onValueChange={(v) => {
-                          if (v === 'none') {
-                            updateReminderSettings({ statusRemindersEnabled: false });
-                            return;
-                          }
-                          const nextAtMs = statusReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
-                          updateReminderSettings({
-                            statusRemindersEnabled: true,
-                            statusReminderFrequencyDays: Number(v),
-                            statusReminderNextAtMs: nextAtMs,
-                          });
-                        }}
-                        disabled={isUpdatingReminderControls}
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Frequency" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {reminderFrequencyOptions.map((d) => (
-                            <SelectItem key={`pathway-status-freq-${d}`} value={String(d)}>
-                              Once a week
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-3 md:col-span-2">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="space-y-2 rounded-md border bg-background p-3">
-                          <Label className="text-xs font-medium text-muted-foreground">CalAIM Status for Caspio</Label>
-                          <Select
-                            value={
-                              applicationInactiveCalaimStatus(application as any) ||
-                              (effectiveCaspioCalAIMStatus === 'Authorized' ||
-                              effectiveCaspioCalAIMStatus === 'Pending'
-                                ? effectiveCaspioCalAIMStatus
-                                : '__none__')
-                            }
-                            onValueChange={(value) => {
-                              if (value === '__none__') {
-                                void updateCaspioCalAIMStatus('');
-                                return;
-                              }
-                              void updateCaspioCalAIMStatus(value);
-                            }}
-                            disabled={isUpdatingCaspioStatus}
-                          >
-                            <SelectTrigger className="h-9">
-                              <SelectValue placeholder="Select CalAIM status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">Not selected</SelectItem>
-                              <SelectItem value="Authorized">Authorized</SelectItem>
-                              <SelectItem value="Pending">Pending</SelectItem>
-                              {INACTIVE_CALAIM_STATUSES.map((status) => (
-                                <SelectItem key={`caspio-${status}`} value={status}>
-                                  {status}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-muted-foreground">
-                            Authorized or Pending is required before Caspio push. Closed, Denied, Member Died, Non-Active, and Not Interested move the application to Inactive.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-muted-foreground">SW Hold for Caspio</Label>
-                      <Select
-                        value={currentSocialWorkerHold}
-                        onValueChange={(value) => {
-                          if (value) {
-                            void updateSocialWorkerHoldStatus(value);
-                          }
-                        }}
-                        disabled={isUpdatingSocialWorkerHold}
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Select hold status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="🔴 Hold">🔴 Hold</SelectItem>
-                          <SelectItem value="Hold">Hold</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        Defaults to Hold; this can later be changed from Social Worker assignment workflow.
-                      </p>
-                    </div>
-                    {isKaiserPlan ? (
-                      <div className="space-y-2 md:col-span-2 rounded-md border bg-background p-3">
-                        <Label className="text-xs font-medium text-muted-foreground">Social Worker Assignment</Label>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <Label className="text-xs font-medium text-muted-foreground">Social Worker Assigned</Label>
-                            <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                              {isLoadingSwPortalAssignment
-                                ? 'Loading social worker assignment...'
-                                : swPortalAssignment?.assignedSwName || 'Not assigned'}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs font-medium text-muted-foreground">Social Worker Email</Label>
-                            <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                              {isLoadingSwPortalAssignment
-                                ? 'Loading email...'
-                                : swPortalAssignment?.assignedSwEmail || 'Not available'}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                          ALFT Status: {isLoadingSwPortalAssignment ? 'Loading...' : swPortalAssignment?.assignmentStatus || 'Not assigned'}
-                        </div>
-                        {swPortalAssignmentError ? (
-                          <p className="text-xs text-amber-700">{swPortalAssignmentError}</p>
-                        ) : null}
-                        <div className="flex items-start gap-2 rounded-md border p-2">
-                          <Checkbox
-                            id="sw-portal-invite-admin"
-                            checked={swPortalInviteEnabled}
-                            onCheckedChange={(checked) => setSwPortalInviteEnabled(Boolean(checked))}
-                            disabled={!swPortalAssignment?.eligible || !swPortalAssignment?.assignedSwEmail || isSavingSwPortalInvite}
-                          />
-                          <div className="space-y-1">
-                            <Label htmlFor="sw-portal-invite-admin" className="text-xs font-medium text-muted-foreground">
-                              Invite to SW Portal ALFT workflow
-                            </Label>
-                            <p className="text-xs text-muted-foreground">
-                              Sends an invite when Kaiser status is RN Visit Needed.
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => void handleSaveSwPortalInvite()}
-                            disabled={!swPortalAssignment?.eligible || !swPortalAssignment?.assignedSwEmail || isSavingSwPortalInvite}
-                          >
-                            {isSavingSwPortalInvite ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Saving...
-                              </>
-                            ) : (
-                              'Save Invite'
-                            )}
-                          </Button>
-                          {swPortalInviteSentAtLabel ? (
-                            <span className="text-xs text-muted-foreground">
-                              Sent: {swPortalInviteSentAtLabel}
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                  {familyStatusLastSentLabel ? (
-                    <div className="text-xs text-muted-foreground pl-7">
-                      Last family status email: {familyStatusLastSentLabel}
-                      {String(familyStatusLastEmail?.to || '').trim() ? ` to ${String(familyStatusLastEmail?.to || '').trim()}` : ''}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="flex items-center justify-end gap-3">
-                  <div className="text-right">
-                    <div className="text-xs text-muted-foreground">
-                      {application.healthPlan?.toLowerCase().includes('kaiser')
-                        ? `Progression: ${currentKaiserStatus || 'Not set'}`
-                        : application.healthPlan?.toLowerCase().includes('health net')
-                          ? `Progression: ${healthNetCurrentStatus || 'Not set'}`
-                          : null}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                    <div className="flex justify-between text-sm text-muted-foreground">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">Process Tracker</span>
-                          {isNewCsSummary && (
-                            <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200">
-                              New CS
-                            </Badge>
-                          )}
-                        </div>
-                        <span>{processTrackerCompletedCount} of {processTrackerTotalCount} required items completed</span>
-                    </div>
-                    <Progress value={processTrackerProgress} className="h-2" />
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  {processTrackerStatuses.map(({ item, status }) => {
-                    if (status === 'Not Applicable') return null;
-                    return (
-                      <span key={item.key} className="flex items-center gap-1" title={`${item.key}: ${status}`}>
-                        {status === 'Completed' ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-orange-500" />
-                        )}
-                        <span>{item.label}</span>
-                      </span>
-                    );
-                  })}
-                </div>
-            </CardContent>
-            </Card>
+            <ApplicationProgressSummaryCard
+              eligibilityCompleted={eligibilityCompleted}
+              caspioPushed={caspioPushed}
+              effectiveCaspioCalAIMStatus={effectiveCaspioCalAIMStatus}
+              csSummaryCaspioSyncLabel={csSummaryCaspioSyncLabel}
+              csSummaryCaspioSyncMode={csSummaryCaspioSyncMode}
+              isKaiserPlan={isKaiserPlan}
+              isKaiserNotInterested={isKaiserNotInterested}
+              currentKaiserStatus={currentKaiserStatus}
+              handleUpdateKaiserStatusFromCaspio={handleUpdateKaiserStatusFromCaspio}
+              isConfirmingCaspioPush={isConfirmingCaspioPush}
+              kaiserManagerActionRequired={kaiserManagerActionRequired}
+              isKaiserAuthReceivedIntake={isKaiserAuthReceivedIntake}
+              kaiserReferralSubmitted={kaiserReferralSubmitted}
+              kaiserReferralSubmittedAtLabel={kaiserReferralSubmittedAtLabel}
+              currentSocialWorkerHold={currentSocialWorkerHold}
+              hasAlftAssignmentStatus={hasAlftAssignmentStatus}
+              alftAssignmentStatusLabel={alftAssignmentStatusLabel}
+              staffAssigned={staffAssigned}
+              assignedStaffName={assignedStaffName}
+              caspioSentByName={caspioSentByName}
+              caspioSentDateLabel={caspioSentDateLabel}
+              application={application}
+              getFrequencyLabel={getFrequencyLabel}
+              documentReminderFrequencyDays={documentReminderFrequencyDays}
+              getNextReminderLabel={getNextReminderLabel}
+              documentReminderNextAtMs={documentReminderNextAtMs}
+              statusReminderFrequencyDays={statusReminderFrequencyDays}
+              statusReminderNextAtMs={statusReminderNextAtMs}
+              setIsReminderDialogOpen={setIsReminderDialogOpen}
+              updateReminderSettings={updateReminderSettings}
+              DAY_MS={DAY_MS}
+              isUpdatingReminderControls={isUpdatingReminderControls}
+              reminderFrequencyOptions={reminderFrequencyOptions}
+              updateCaspioCalAIMStatus={updateCaspioCalAIMStatus}
+              isUpdatingCaspioStatus={isUpdatingCaspioStatus}
+              updateSocialWorkerHoldStatus={updateSocialWorkerHoldStatus}
+              isUpdatingSocialWorkerHold={isUpdatingSocialWorkerHold}
+              isLoadingSwPortalAssignment={isLoadingSwPortalAssignment}
+              swPortalAssignment={swPortalAssignment}
+              swPortalAssignmentError={swPortalAssignmentError}
+              swPortalInviteEnabled={swPortalInviteEnabled}
+              setSwPortalInviteEnabled={setSwPortalInviteEnabled}
+              isSavingSwPortalInvite={isSavingSwPortalInvite}
+              handleSaveSwPortalInvite={handleSaveSwPortalInvite}
+              swPortalInviteSentAtLabel={swPortalInviteSentAtLabel}
+              familyStatusLastSentLabel={familyStatusLastSentLabel}
+              familyStatusLastEmail={familyStatusLastEmail}
+              healthNetCurrentStatus={healthNetCurrentStatus}
+              isNewCsSummary={isNewCsSummary}
+              processTrackerCompletedCount={processTrackerCompletedCount}
+              processTrackerTotalCount={processTrackerTotalCount}
+              processTrackerProgress={processTrackerProgress}
+              processTrackerStatuses={processTrackerStatuses}
+            />
             </CardContent>
         </Card>
 
@@ -11957,861 +11287,60 @@ function ApplicationDetailPageContent() {
             triggerClassName="justify-start gap-2"
           />
         </div>
-        <Dialog open={Boolean(documentPreview)} onOpenChange={(open) => !open && setDocumentPreview(null)}>
-          <DialogContent className="h-[92vh] w-[96vw] max-w-6xl p-0">
-            <DialogHeader className="px-4 pt-4">
-              <DialogTitle className="truncate pr-8">{documentPreview?.title || 'Document preview'}</DialogTitle>
-              <DialogDescription>
-                Review the uploaded document here, then close this window to return to the application.
-              </DialogDescription>
-            </DialogHeader>
-            {documentPreview?.url ? (
-              <div className="h-[calc(92vh-96px)] border-t">
-                <iframe
-                  src={documentPreview.url}
-                  title={documentPreview.title || 'Document preview'}
-                  className="h-full w-full"
-                />
-              </div>
-            ) : null}
-          </DialogContent>
-        </Dialog>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {application?.pathway === 'SNF Diversion' && !showSnfFacesheet ? (
-              <Alert className="md:col-span-2 border-blue-200 bg-blue-50 text-blue-900">
-                <Info className="h-4 w-4" />
-                <AlertTitle>SNF Facesheet note</AlertTitle>
-                <AlertDescription>
-                  SNF Facesheet is only required for SNF Transition. It is not required for this application.
-                </AlertDescription>
-              </Alert>
-            ) : null}
-            {displayedPathwayRequirements.map((req) => {
-                const formInfo = formStatusMap.get(req.title);
-                const status = getComponentStatus(req.title);
-                const isSummary = req.title === 'CS Member Summary' || req.title === 'CS Summary';
-                const isWaiversCard = req.title === 'Waivers & Authorizations';
-                const isProcessTrackerReviewTarget = PROCESS_TRACKER_REVIEW_TARGETS.has(req.title);
-                const isReviewed = isSummary
-                  ? Boolean((application as any)?.applicationChecked)
-                  : Boolean(formInfo?.acknowledged);
-                const cardHasUploadedFiles =
-                  req.type === 'Upload' &&
-                  (Boolean(String((formInfo as any)?.filePath || '').trim()) ||
-                    Boolean(String((formInfo as any)?.downloadURL || '').trim()) ||
-                    (Array.isArray((formInfo as any)?.uploadedFiles) &&
-                      (formInfo as any).uploadedFiles.length > 0));
-                const canReviewCard = status === 'Completed' || cardHasUploadedFiles;
-                const needsReview = canReviewCard && !isReviewed;
-                const roomBoardAck =
-                  req.title === 'Room and Board/Tier Level Agreement'
-                    ? (formInfo as any)?.ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard
-                    : null;
-                const revisionRequestedReason = String((formInfo as any)?.revisionRequestedReason || '').trim();
-                const revisionRequestedAt = String((formInfo as any)?.revisionRequestedAt || '').trim();
-                const hasRevisionRequested = Boolean(revisionRequestedAt || revisionRequestedReason);
-                
-                return (
-                    <Card
-                      id={`requirement-card-${String(req.id || '').trim().toLowerCase()}`}
-                      key={req.id}
-                      className={cn(
-                        'flex flex-col shadow-sm hover:shadow-md transition-shadow',
-                        hasRevisionRequested && 'border-amber-300',
-                        focusRequirementTarget === String(req.id || '').trim().toLowerCase() &&
-                          'ring-2 ring-blue-300 ring-offset-2'
-                      )}
-                    >
-                        <CardHeader className="pb-4">
-                            <div className="flex flex-col gap-3 min-w-0">
-                                <CardTitle className="text-lg break-words">{req.title}</CardTitle>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {hasRevisionRequested ? (
-                                    <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
-                                      Revision requested
-                                    </Badge>
-                                  ) : null}
-                                  {isSummary && isNewCsSummary && (
-                                    <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200 text-xs">
-                                      New
-                                    </Badge>
-                                  )}
-                                  {req.title === 'Room and Board/Tier Level Agreement' && status === 'Completed' && roomBoardAck === false ? (
-                                    <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200 text-xs">
-                                      Does not agree
-                                    </Badge>
-                                  ) : null}
-                                </div>
-                                {(canReviewCard || isWaiversCard || isSummary) && (
-                                  <div className="flex flex-col items-start gap-1">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      {isReviewed ? (
-                                        <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200 text-xs">
-                                          Reviewed
-                                        </Badge>
-                                      ) : needsReview || isSummary ? (
-                                        <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
-                                          {hasRevisionRequested && cardHasUploadedFiles
-                                            ? 'Needs review (revision open)'
-                                            : canReviewCard
-                                              ? 'Needs review'
-                                              : 'Ready to mark reviewed'}
-                                        </Badge>
-                                      ) : null}
-                                      <div className="flex items-center gap-2">
-                                        <Checkbox
-                                          id={`reviewed-${req.id}`}
-                                          checked={isReviewed}
-                                          onCheckedChange={(checked) => {
-                                            if (isSummary) {
-                                              if (checked) {
-                                                void handleCsSummaryMarkReviewed();
-                                              } else {
-                                                void handleApplicationReviewed(false);
-                                              }
-                                            } else {
-                                              handleFormReviewed(req.title, Boolean(checked));
-                                            }
-                                          }}
-                                        />
-                                        <Label
-                                          htmlFor={`reviewed-${req.id}`}
-                                          className="text-xs text-muted-foreground cursor-pointer select-none"
-                                        >
-                                          {isReviewed ? 'Reviewed' : 'Mark reviewed'}
-                                        </Label>
-                                      </div>
-                                    </div>
-                                    {isReviewed && (() => {
-                                      const meta = getReviewerMeta(req.title, formInfo);
-                                      if (!meta.name && !meta.dateLabel) return null;
-                                      const parts = [meta.dateLabel, meta.name].filter(Boolean);
-                                      return (
-                                        <div className="text-[11px] text-muted-foreground leading-tight whitespace-normal break-words">
-                                          {parts.join(' · ')}
-                                        </div>
-                                      );
-                                    })()}
-                                  </div>
-                                )}
-                            </div>
-                            <CardDescription>{req.description}</CardDescription>
-                            {req.id === 'snf-facesheet' && showSnfFacesheet ? (
-                              <div className="mt-3 space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
-                                {(formInfo as any)?.snfResidencyNeedsStaffReview ||
-                                ((formInfo as any)?.snfResidencyDaysTotal != null &&
-                                  Number((formInfo as any).snfResidencyDaysTotal) < SNF_RESIDENCY_REQUIRED_DAYS) ? (
-                                  <Alert variant="warning">
-                                    <AlertTriangle className="h-4 w-4" />
-                                    <AlertTitle>Staff flag: under 60-day SNF residency</AlertTitle>
-                                    <AlertDescription className="text-sm">
-                                      Submitter reported{' '}
-                                      <strong>
-                                        {String((formInfo as any)?.snfResidencyDaysTotal ?? (snfResidencyDaysInput || '?'))} days
-                                      </strong>{' '}
-                                      at SNF (below the {SNF_RESIDENCY_REQUIRED_DAYS}-day requirement). Hospital–SNF Medicare and
-                                      Medi-Cal days may be combined — verify before proceeding.
-                                    </AlertDescription>
-                                  </Alert>
-                                ) : (
-                                  <Alert className="border-blue-200 bg-blue-50 text-blue-950">
-                                    <Info className="h-4 w-4" />
-                                    <AlertTitle>60-day SNF residency</AlertTitle>
-                                    <AlertDescription className="text-sm">{SNF_RESIDENCY_NOTE}</AlertDescription>
-                                  </Alert>
-                                )}
-                                <div className="space-y-1.5">
-                                  <Label htmlFor={`snf-residency-days-admin-${req.id}`} className="text-sm font-medium">
-                                    Number of combined continuous Medicare and Medi-Cal days
-                                  </Label>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Input
-                                      id={`snf-residency-days-admin-${req.id}`}
-                                      type="number"
-                                      min={0}
-                                      inputMode="numeric"
-                                      placeholder="e.g. 75"
-                                      className="max-w-[140px] bg-white"
-                                      value={snfResidencyDaysInput}
-                                      onChange={(e) => setSnfResidencyDaysInput(e.target.value)}
-                                    />
-                                    <span className="text-sm text-muted-foreground">days</span>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={isSavingSnfResidency}
-                                      onClick={() => {
-                                        const days = parseSnfResidencyDays(snfResidencyDaysInput);
-                                        if (days == null) {
-                                          toast({
-                                            variant: 'destructive',
-                                            title: 'Enter days at SNF',
-                                            description: 'Enter a whole number of days.',
-                                          });
-                                          return;
-                                        }
-                                        setIsSavingSnfResidency(true);
-                                        const fields = buildSnfResidencyFormFields(days);
-                                        void handleFormStatusUpdate([{ name: 'SNF Facesheet', ...fields }])
-                                          .then(() => {
-                                            toast({
-                                              title: fields.snfResidencyNeedsStaffReview
-                                                ? 'Saved — under 60 days (flagged)'
-                                                : 'SNF residency days saved',
-                                              description: `Recorded ${days} days.`,
-                                              variant: fields.snfResidencyNeedsStaffReview ? 'destructive' : 'default',
-                                            });
-                                          })
-                                          .finally(() => setIsSavingSnfResidency(false));
-                                      }}
-                                    >
-                                      {isSavingSnfResidency ? (
-                                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                                      ) : null}
-                                      Save days
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : null}
-                        </CardHeader>
-                        <CardContent className="flex flex-col flex-grow justify-end gap-4">
-                            <StatusIndicator status={status} />
-                            {getFormAction(req)}
-                            {isSummary && !isReviewed ? (
-                                <Button
-                                  variant="default"
-                                  size="sm"
-                                  className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
-                                  onClick={() => void handleCsSummaryMarkReviewed()}
-                                >
-                                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                                  {status === 'Completed'
-                                    ? 'Mark as Reviewed'
-                                    : 'Mark Completed & Reviewed (filled with family)'}
-                                </Button>
-                            ) : null}
-                            {!isSummary && canReviewCard && isProcessTrackerReviewTarget && !isReviewed ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="w-full border-blue-200 text-blue-700 hover:bg-blue-50"
-                                  onClick={() => {
-                                    void handleFormReviewed(req.title, true);
-                                  }}
-                                >
-                                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                                  Mark as Reviewed
-                                </Button>
-                            ) : null}
-                            {(
-                                <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/40 p-3">
-                                    {(() => {
-                                      const selectedScope = rejectScopeByForm[req.title] || 'info';
-                                      return (
-                                        <div className="space-y-2 rounded-md border bg-muted/30 p-3">
-                                          <div className="text-xs font-medium">Revision action (on pathway)</div>
-                                          <div className="flex flex-wrap gap-2">
-                                            <Button
-                                              type="button"
-                                              size="sm"
-                                              variant={selectedScope === 'info' ? 'default' : 'outline'}
-                                              onClick={() => openRevisionRequestDialog(req.title, 'info')}
-                                            >
-                                              Request additional info
-                                            </Button>
-                                            <Button
-                                              type="button"
-                                              size="sm"
-                                              variant={selectedScope === 'form' ? 'default' : 'outline'}
-                                              onClick={() =>
-                                                setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'form' }))
-                                              }
-                                            >
-                                              Reset whole set/card
-                                            </Button>
-                                          </div>
-                                          <p className="text-[11px] text-muted-foreground">
-                                            {selectedScope === 'info'
-                                              ? 'Keeps existing uploads and asks the family for more information or another document.'
-                                              : 'Deletes all uploads on this card and resets it to Pending.'}
-                                          </p>
-                                        </div>
-                                      );
-                                    })()}
-                                      <Dialog
-                                      open={rejectDialogForm === req.title}
-                                      onOpenChange={(open) => {
-                                        if (open) {
-                                          openRevisionRequestDialog(
-                                            req.title,
-                                            rejectScopeByForm[req.title] || 'info'
-                                          );
-                                          return;
-                                        }
-                                        setRejectDialogForm(null);
-                                      }}
-                                    >
-                                      <DialogTrigger asChild>
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="w-full border-amber-300 text-amber-800 hover:bg-amber-100"
-                                        >
-                                          {isReviewed ? 'Unlock card / requires revision' : 'Requires Revision'}
-                                        </Button>
-                                      </DialogTrigger>
-                                      <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
-                                        <DialogHeader>
-                                          <DialogTitle>
-                                            {(rejectScopeByForm[req.title] || 'info') === 'info'
-                                              ? `Request additional info: ${req.title}`
-                                              : `Requires Revision: ${req.title}`}
-                                          </DialogTitle>
-                                          <DialogDescription>
-                                            Write what you are requesting. The primary contact name is prefilled in the
-                                            note. Login instructions are always included below your message.
-                                          </DialogDescription>
-                                        </DialogHeader>
-                                        <div className="space-y-3">
-                                          {(() => {
-                                            const selectedScope = rejectScopeByForm[req.title] || 'info';
-                                            const scopeLabel =
-                                              selectedScope === 'info'
-                                                  ? 'Request more info only (keeps existing uploads)'
-                                                  : 'Reset whole set/card (deletes uploads)';
-                                            return (
-                                              <div className="rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
-                                                Selected pathway action: <span className="font-medium text-foreground">{scopeLabel}</span>
-                                              </div>
-                                            );
-                                          })()}
-                                          {(() => {
-                                            const looksLikeEmail = (value: unknown) => {
-                                              const email = String(value || '').trim().toLowerCase();
-                                              if (!email || email === 'n/a' || email === 'na' || email === 'none' || email === 'null') {
-                                                return false;
-                                              }
-                                              return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-                                            };
-                                            const primaryEmailCandidates = [
-                                              (application as any)?.bestContactEmail,
-                                              (application as any)?.primaryContactEmail,
-                                              (application as any)?.contactEmail,
-                                              (application as any)?.linkedToFamilyEmail,
-                                            ];
-                                            const creatorEmailCandidates = [
-                                              (application as any)?.referrerEmail,
-                                              (application as any)?.submittedByEmail,
-                                              (application as any)?.createdByEmail,
-                                              (application as any)?.submitterEmail,
-                                            ];
-                                            const primaryEmail =
-                                              primaryEmailCandidates
-                                                .map((v) => String(v || '').trim())
-                                                .find((v) => looksLikeEmail(v)) || '';
-                                            const creatorEmail =
-                                              creatorEmailCandidates
-                                                .map((v) => String(v || '').trim())
-                                                .find((v) => looksLikeEmail(v)) || '';
-                                            const primaryContactName =
-                                              [
-                                                String((application as any)?.bestContactFirstName || '').trim(),
-                                                String((application as any)?.bestContactLastName || '').trim(),
-                                              ]
-                                                .filter(Boolean)
-                                                .join(' ')
-                                                .trim() ||
-                                              String((application as any)?.bestContactName || '').trim() ||
-                                              String((application as any)?.contactFirstName || '').trim() ||
-                                              'Primary contact';
-                                            const selectedRecipient =
-                                              rejectEmailRecipientByForm[req.title] ||
-                                              (primaryEmail ? 'primary' : creatorEmail ? 'creator' : 'primary');
-                                            const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
-                                            const previewSubject = `Action needed: Please redo ${req.title}`;
-                                            const descriptionValue = String(rejectEmailBodyByForm[req.title] || '');
-                                            const latestHistoryEntry = Array.isArray((formInfo as any)?.revisionHistory)
-                                              ? (formInfo as any).revisionHistory[0]
-                                              : null;
-                                            const previousReason = String(latestHistoryEntry?.reason || '').trim();
-                                            const parseLinkFromReason = (reason: string, marker: string) => {
-                                              const line = reason
-                                                .split('\n')
-                                                .map((value) => value.trim())
-                                                .find((value) => value.toLowerCase().startsWith(marker.toLowerCase()));
-                                              if (!line) return '';
-                                              return String(line.slice(marker.length).trim()).replace(/[)>.,;]+$/g, '');
-                                            };
-                                            const previousLoginUrl =
-                                              String(latestHistoryEntry?.portalLoginUrl || '').trim() ||
-                                              parseLinkFromReason(previousReason, 'Login:');
-                                            const previousPathUrl =
-                                              String(latestHistoryEntry?.portalPathUrl || '').trim() ||
-                                              parseLinkFromReason(previousReason, 'Go directly to your application:');
-                                            const useSameLink = rejectUseSameLinkByForm[req.title] ?? true;
-                                            const loginInstructionsPreview =
-                                              'Log in to the application portal and update this form so we can continue processing.\n\n' +
-                                              `${useSameLink && previousPathUrl ? `Go directly to your application: ${previousPathUrl}\n` : ''}` +
-                                              `Login: ${useSameLink && previousLoginUrl ? previousLoginUrl : applicantPortalLoginUrl}`;
-                                            const activeEmail =
-                                              selectedRecipient === 'creator' ? creatorEmail : primaryEmail;
-                                            const activeLabel =
-                                              selectedRecipient === 'creator'
-                                                ? 'Application creator / submitter'
-                                                : 'Primary contact';
-                                            return (
-                                              <div className="rounded-md border bg-white p-3 text-xs space-y-2">
-                                                <div className="font-medium text-foreground">Email preview</div>
-                                                <div className="rounded-md border bg-slate-50 p-2 space-y-2">
-                                                  <div className="font-medium text-foreground">Send email to</div>
-                                                  <label className="flex items-start gap-2">
-                                                    <input
-                                                      type="radio"
-                                                      name={`reject-recipient-${req.id}`}
-                                                      className="mt-0.5"
-                                                      checked={selectedRecipient === 'primary'}
-                                                      disabled={!primaryEmail}
-                                                      onChange={() =>
-                                                        setRejectEmailRecipientByForm((prev) => ({
-                                                          ...prev,
-                                                          [req.title]: 'primary',
-                                                        }))
-                                                      }
-                                                    />
-                                                    <span>
-                                                      <span className="font-medium">Primary contact — {primaryContactName}</span>
-                                                      <span className="block text-muted-foreground">
-                                                        {primaryEmail || 'No valid primary contact email on file'}
-                                                      </span>
-                                                    </span>
-                                                  </label>
-                                                  <label className="flex items-start gap-2">
-                                                    <input
-                                                      type="radio"
-                                                      name={`reject-recipient-${req.id}`}
-                                                      className="mt-0.5"
-                                                      checked={selectedRecipient === 'creator'}
-                                                      disabled={!creatorEmail}
-                                                      onChange={() =>
-                                                        setRejectEmailRecipientByForm((prev) => ({
-                                                          ...prev,
-                                                          [req.title]: 'creator',
-                                                        }))
-                                                      }
-                                                    />
-                                                    <span>
-                                                      <span className="font-medium">Application creator / submitter</span>
-                                                      <span className="block text-muted-foreground">
-                                                        {creatorEmail || 'No valid creator/submitter email on file'}
-                                                        {!primaryEmail && creatorEmail
-                                                          ? ' · Suggested because primary contact has no email'
-                                                          : ''}
-                                                      </span>
-                                                    </span>
-                                                  </label>
-                                                </div>
-                                                <div>
-                                                  <span className="font-medium">Subject:</span> {previewSubject}
-                                                </div>
-                                                <div className="space-y-1">
-                                                  <Label htmlFor={`reject-email-body-${req.id}`} className="text-xs font-medium">
-                                                    What we are requesting (required)
-                                                  </Label>
-                                                  <Textarea
-                                                    id={`reject-email-body-${req.id}`}
-                                                    value={descriptionValue}
-                                                    onChange={(e) =>
-                                                      setRejectEmailBodyByForm((prev) => ({ ...prev, [req.title]: e.target.value }))
-                                                    }
-                                                    placeholder={`Hi ${primaryContactName},\n\nWrite what additional information you need...`}
-                                                    className="min-h-[120px] text-[11px] leading-relaxed"
-                                                  />
-                                                  <p className="text-[11px] text-muted-foreground">
-                                                    Prefills with the primary contact name. This note appears above the login instructions
-                                                    and in the email as &quot;Dear {primaryContactName}&quot;.
-                                                  </p>
-                                                </div>
-                                                {previousLoginUrl ? (
-                                                  <div className="rounded-md border border-amber-200 bg-amber-50/60 p-2">
-                                                    <div className="flex items-center gap-2">
-                                                      <Checkbox
-                                                        id={`reuse-revision-link-${req.id}`}
-                                                        checked={useSameLink}
-                                                        onCheckedChange={(checked) =>
-                                                          setRejectUseSameLinkByForm((prev) => ({
-                                                            ...prev,
-                                                            [req.title]: checked !== false,
-                                                          }))
-                                                        }
-                                                      />
-                                                      <Label htmlFor={`reuse-revision-link-${req.id}`} className="text-[11px] font-medium">
-                                                        Send same link as last revision email
-                                                      </Label>
-                                                    </div>
-                                                    <div className="mt-1 text-[11px] text-muted-foreground break-all">
-                                                      {previousLoginUrl}
-                                                    </div>
-                                                  </div>
-                                                ) : null}
-                                                <div className="space-y-1">
-                                                  <span className="font-medium">Login instructions (always included)</span>
-                                                  <pre className="whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-relaxed">
-{loginInstructionsPreview}
-                                                  </pre>
-                                                </div>
-                                                <div className="pt-1">
-                                                  <Button asChild size="sm" variant="outline">
-                                                    <a href={applicantPortalLoginUrl} target="_blank" rel="noreferrer">
-                                                      ConnectCalAIM Login
-                                                    </a>
-                                                  </Button>
-                                                </div>
-                                                <div className="rounded-md border bg-muted/40 p-2">
-                                                  <span className="font-medium">Sending to:</span>{' '}
-                                                  {activeEmail
-                                                    ? `${activeEmail} (${activeLabel})`
-                                                    : 'No valid recipient email selected'}{' '}
-                                                  <span className="text-muted-foreground">(BCC disabled)</span>
-                                                </div>
-                                              </div>
-                                            );
-                                          })()}
-                                          <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1">
-                                            {formInfo && (
-                                              <>
-                                                {String((formInfo as any)?.revisionEmailSentAt || '').trim() ? (
-                                                  <div>
-                                                    <span className="font-medium">Last revision email sent:</span>{' '}
-                                                    {format(new Date(String((formInfo as any).revisionEmailSentAt)), 'MMM d, yyyy h:mm a')}
-                                                    {String((formInfo as any)?.revisionEmailTo || '').trim()
-                                                      ? ` to ${String((formInfo as any).revisionEmailTo).trim()}`
-                                                      : ''}
-                                                    {String((formInfo as any)?.revisionEmailRecipientType || '').trim()
-                                                      ? ` (${String((formInfo as any).revisionEmailRecipientType).trim() === 'creator' ? 'Application creator' : 'Primary contact'})`
-                                                      : ''}
-                                                  </div>
-                                                ) : (
-                                                  <div>
-                                                    <span className="font-medium">Last revision email sent:</span> Not sent yet
-                                                  </div>
-                                                )}
-                                              </>
-                                            )}
-                                          </div>
-                                          <div className="flex flex-wrap justify-end gap-2 pt-2">
-                                            <Button
-                                              variant="ghost"
-                                              onClick={() => setRejectDialogForm(null)}
-                                              disabled={Boolean(rejectingByForm[req.title])}
-                                            >
-                                              Cancel
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              disabled={
-                                                Boolean(rejectingByForm[req.title]) ||
-                                                !String(rejectEmailBodyByForm[req.title] || '').trim()
-                                              }
-                                              onClick={() => {
-                                                const selectedScope = rejectScopeByForm[req.title] || 'info';
-                                                const isInfoOnly = selectedScope === 'info';
-                                                void handleRejectFormRedo(req.title, false, {
-                                                  scope: selectedScope,
-                                                  resetCard: !isInfoOnly,
-                                                });
-                                              }}
-                                            >
-                                              {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                                              {(rejectScopeByForm[req.title] || 'info') === 'info' ? 'Save Request (No Reset)' : 'Apply Reset Action'}
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              className="bg-amber-600 text-white hover:bg-amber-700"
-                                              disabled={
-                                                Boolean(rejectingByForm[req.title]) ||
-                                                !String(rejectEmailBodyByForm[req.title] || '').trim()
-                                              }
-                                              onClick={() => {
-                                                const selectedScope = rejectScopeByForm[req.title] || 'info';
-                                                const isInfoOnly = selectedScope === 'info';
-                                                void handleRejectFormRedo(req.title, true, {
-                                                  scope: selectedScope,
-                                                  resetCard: !isInfoOnly,
-                                                  useSameLink: rejectUseSameLinkByForm[req.title] ?? true,
-                                                  emailRecipient: rejectEmailRecipientByForm[req.title],
-                                                });
-                                              }}
-                                            >
-                                              {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                                              {(rejectEmailRecipientByForm[req.title] || 'primary') === 'creator'
-                                                ? 'Email Application Creator'
-                                                : 'Email Primary Contact'}
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      </DialogContent>
-                                    </Dialog>
-                                    {(() => {
-                                      const latest = Array.isArray((formInfo as any)?.revisionHistory)
-                                        ? (formInfo as any).revisionHistory[0]
-                                        : null;
-                                      if (!latest || !latest?.emailed) return null;
-                                      const sentLabel = formatDateTimeValue(latest?.emailSentAt);
-                                      return (
-                                        <div className="text-xs text-green-700">
-                                          Email sent successfully{sentLabel ? ` at ${sentLabel}` : ''}.
-                                        </div>
-                                      );
-                                    })()}
-                                    {Array.isArray((formInfo as any)?.revisionHistory) && (formInfo as any).revisionHistory.length > 0 && (
-                                      <Dialog>
-                                        <DialogTrigger asChild>
-                                          <button
-                                            type="button"
-                                            className="text-xs text-amber-800 underline underline-offset-2 hover:text-amber-900 w-fit"
-                                          >
-                                            View revision history ({(formInfo as any).revisionHistory.length})
-                                          </button>
-                                        </DialogTrigger>
-                                        <DialogContent className="sm:max-w-2xl">
-                                          <DialogHeader>
-                                            <DialogTitle>Revision history: {req.title}</DialogTitle>
-                                            <DialogDescription>
-                                              Recent revision requests and email delivery details for this card.
-                                            </DialogDescription>
-                                          </DialogHeader>
-                                          <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
-                                            {(formInfo as any).revisionHistory.map((entry: any, idx: number) => {
-                                              const when = String(entry?.rejectedAt || '').trim();
-                                              const dateLabel = when && !Number.isNaN(new Date(when).getTime())
-                                                ? format(new Date(when), 'MMM d, yyyy h:mm a')
-                                                : 'Unknown date';
-                                              const who = String(entry?.rejectedBy || '').trim() || 'Unknown sender';
-                                              const why = String(entry?.reason || '').trim() || 'No reason';
-                                              const scope = String(entry?.scope || '').trim().toLowerCase() === 'file' ? 'Specific file' : 'Whole card';
-                                              const targetFileLabel = String(entry?.targetFileLabel || '').trim();
-                                              const emailed = Boolean(entry?.emailed);
-                                              const to = String(entry?.emailTo || '').trim();
-                                              const sentAt = String(entry?.emailSentAt || '').trim();
-                                              const sentLabel = sentAt && !Number.isNaN(new Date(sentAt).getTime())
-                                                ? format(new Date(sentAt), 'MMM d, yyyy h:mm a')
-                                                : '';
-                                              return (
-                                                <div
-                                                  key={`reject-history-dialog-${req.id}-${idx}`}
-                                                  className="rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground leading-snug"
-                                                >
-                                                  <div>
-                                                    <span className="font-medium text-foreground">{dateLabel}</span> - {who}
-                                                  </div>
-                                                  <div>
-                                                    Scope: <span className="font-medium text-foreground">{scope}</span>
-                                                    {targetFileLabel ? ` - ${targetFileLabel}` : ''}
-                                                  </div>
-                                                  <div>{why}</div>
-                                                  <div className={emailed ? 'text-red-700' : ''}>
-                                                    {emailed
-                                                      ? `Emailed ${to || 'applicant'}${sentLabel ? ` at ${sentLabel}` : ''}`
-                                                      : 'Email not sent'}
-                                                  </div>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        </DialogContent>
-                                      </Dialog>
-                                    )}
-                                </div>
-                            )}
-                            {status === 'Pending' && (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full border-green-200 text-green-700 hover:bg-green-50"
-                                    onClick={() => markFormAsComplete(req.title)}
-                                >
-                                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                                    {ALLOW_COMPLETE_WITHOUT_UPLOAD.has(req.title)
-                                      ? 'Mark Complete (received by email)'
-                                      : 'Mark as Complete'}
-                                </Button>
-                            )}
-                            {status === 'Pending' && ALLOW_COMPLETE_WITHOUT_UPLOAD.has(req.title) ? (
-                              <p className="text-[11px] text-muted-foreground leading-snug">
-                                Use when the family sent the signed 602 by email (or another channel). You can still
-                                upload/import the file later if needed.
-                              </p>
-                            ) : null}
-                        </CardContent>
-                    </Card>
-                )
-            })}
-            {showCustomerFeedbackCard && (
-              <Card
-                id="requirement-card-customer-feedback-survey"
-                key="customer-feedback-survey"
-                className={cn(
-                  'flex flex-col shadow-sm hover:shadow-md transition-shadow',
-                  focusRequirementTarget === 'customer-feedback-survey' && 'ring-2 ring-blue-300 ring-offset-2'
-                )}
-              >
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <MessageSquareHeart className="h-5 w-5 text-muted-foreground" />
-                    Customer Feedback Survey (Optional)
-                  </CardTitle>
-                  <CardDescription>
-                    Member feedback captured from the user portal.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                    <div>
-                      <span className="font-medium">Rating:</span>{' '}
-                      {customerFeedbackRating > 0 ? `${customerFeedbackRating}/5` : 'Not submitted'}
-                    </div>
-                    <div className="mt-1">
-                      <span className="font-medium">Submitted:</span> {customerFeedbackSubmittedAtLabel || 'Not submitted'}
-                    </div>
-                  </div>
-                  <div className="rounded-md border p-3 text-sm">
-                    <div className="font-medium mb-1">Comments</div>
-                    <div className="whitespace-pre-wrap break-words text-muted-foreground">
-                      {customerFeedbackComments || 'No comments submitted.'}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-             {consolidatedMedicalDocuments.length > 0 && (
-              <Card key="consolidated-medical" className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-4">
-                      <div className="flex justify-between items-start gap-4">
-                          <CardTitle className="text-lg flex items-center gap-2"><Package className="h-5 w-5 text-muted-foreground"/>Consolidated Medical Documents (Optional)</CardTitle>
-                          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1">
-                            <Label htmlFor="consolidated-medical-reviewed" className="text-xs font-medium">
-                              Mark reviewed
-                            </Label>
-                            <Checkbox
-                              id="consolidated-medical-reviewed"
-                              checked={isConsolidatedUploadReviewed}
-                              onCheckedChange={(checked) => {
-                                void handleFormReviewed('Consolidated Medical Documents', Boolean(checked));
-                              }}
-                              disabled={!canReviewConsolidatedUpload}
-                            />
-                          </div>
-                      </div>
-                      <CardDescription>For convenience, you can upload multiple medical forms at once. Select the documents you are uploading below.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col flex-grow justify-end gap-4">
-                       {isConsolidatedUploading && (
-                        <Progress value={consolidatedProgress} className="h-1 w-full" />
-                      )}
-                      <div className="space-y-2 rounded-md border p-3">
-                          {consolidatedMedicalDocuments.map(doc => (
-                               <div key={doc.id} className="flex items-center space-x-2">
-                                  <Checkbox
-                                      id={doc.id}
-                                      checked={consolidatedUploadChecks[doc.name as keyof typeof consolidatedUploadChecks]}
-                                      onCheckedChange={(checked) => {
-                                          setConsolidatedUploadChecks(prev => ({ ...prev, [doc.name]: !!checked }))
-                                      }}
-                                      disabled={formStatusMap.get(doc.name)?.status === 'Completed'}
-                                  />
-                                  <label htmlFor={doc.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                      {doc.name}
-                                  </label>
-                              </div>
-                          ))}
-                      </div>
-                      <div className="space-y-2 rounded-md border border-blue-200 bg-blue-50/40 p-3">
-                        <div className="text-xs font-medium text-blue-900">Review checklist (individual documents)</div>
-                        {consolidatedMedicalDocuments.map((doc) => {
-                          const formInfo = formStatusMap.get(doc.name);
-                          const isCompleted = String(formInfo?.status || '').trim() === 'Completed';
-                          const isReviewed = Boolean(formInfo?.acknowledged);
-                          return (
-                            <div key={`${doc.id}-review`} className="flex items-center justify-between gap-2">
-                              <Label htmlFor={`${doc.id}-review`} className="text-xs">
-                                {doc.name}
-                              </Label>
-                              <div className="flex items-center gap-2">
-                                {!isCompleted ? (
-                                  <span className="text-[11px] text-muted-foreground">Upload first</span>
-                                ) : isReviewed ? (
-                                  <span className="text-[11px] text-green-700">Reviewed</span>
-                                ) : (
-                                  <span className="text-[11px] text-amber-700">Needs review</span>
-                                )}
-                                <Checkbox
-                                  id={`${doc.id}-review`}
-                                  checked={isReviewed}
-                                  onCheckedChange={(checked) => {
-                                    void handleFormReviewed(doc.name, Boolean(checked));
-                                  }}
-                                  disabled={!isCompleted}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || !isAnyConsolidatedChecked) && "opacity-50 pointer-events-none")}>
-                          {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                          <span>{isConsolidatedUploading ? `Uploading... ${consolidatedProgress?.toFixed(0)}%` : 'Upload Consolidated Documents'}</span>
-                      </Label>
-                      <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || !isAnyConsolidatedChecked} multiple />
-                  </CardContent>
-              </Card>
-            )}
-            {showAdminPlaceholderCard && (
-              <Card
-                aria-hidden="true"
-                className="hidden md:flex border-dashed border-muted-foreground/20 bg-transparent shadow-none pointer-events-none"
-              >
-                <CardContent className="h-full min-h-[120px]" />
-              </Card>
-            )}
-
-            {/* Multi Upload Card */}
-            <MultiUploadCard
-                applicationComponents={pathwayRequirements
-                    .filter(req => req.type === 'Upload')
-                    .map(req => ({
-                        id: req.id,
-                        title: req.title,
-                        description: req.description,
-                        required: true
-                    }))
-                }
-                onUploadComplete={(files) => {
-                    // Handle the uploaded files
-                    console.log('Uploaded files:', files);
-                    // TODO: Update form status for each component
-                    files.forEach(({ components, url }) => {
-                        const updates = components.map(componentId => {
-                            const requirement = pathwayRequirements.find(req => req.id === componentId);
-                            return {
-                                name: requirement?.title,
-                                status: 'Completed' as const,
-                                uploadUrl: url
-                            };
-                        });
-                        handleFormStatusUpdate(updates);
-                    });
-                    
-                    toast({
-                        title: "Documents Uploaded",
-                        description: "Your documents have been successfully uploaded and assigned to the application components.",
-                    });
-                }}
-                className="md:col-span-2"
-            />
-        </div>
+        <DocumentPreviewDialog
+          documentPreview={documentPreview}
+          setDocumentPreview={setDocumentPreview}
+        />
+        <PathwayRequirementsGrid
+          application={application}
+          showSnfFacesheet={showSnfFacesheet}
+          displayedPathwayRequirements={displayedPathwayRequirements}
+          formStatusMap={formStatusMap}
+          getComponentStatus={getComponentStatus}
+          focusRequirementTarget={focusRequirementTarget}
+          isNewCsSummary={isNewCsSummary}
+          handleCsSummaryMarkReviewed={handleCsSummaryMarkReviewed}
+          handleApplicationReviewed={handleApplicationReviewed}
+          handleFormReviewed={handleFormReviewed}
+          getReviewerMeta={getReviewerMeta}
+          snfResidencyDaysInput={snfResidencyDaysInput}
+          setSnfResidencyDaysInput={setSnfResidencyDaysInput}
+          isSavingSnfResidency={isSavingSnfResidency}
+          toast={toast}
+          setIsSavingSnfResidency={setIsSavingSnfResidency}
+          handleFormStatusUpdate={handleFormStatusUpdate}
+          getFormAction={getFormAction}
+          rejectScopeByForm={rejectScopeByForm}
+          openRevisionRequestDialog={openRevisionRequestDialog}
+          setRejectScopeByForm={setRejectScopeByForm}
+          rejectDialogForm={rejectDialogForm}
+          setRejectDialogForm={setRejectDialogForm}
+          rejectEmailRecipientByForm={rejectEmailRecipientByForm}
+          rejectEmailBodyByForm={rejectEmailBodyByForm}
+          rejectUseSameLinkByForm={rejectUseSameLinkByForm}
+          setRejectEmailRecipientByForm={setRejectEmailRecipientByForm}
+          setRejectEmailBodyByForm={setRejectEmailBodyByForm}
+          setRejectUseSameLinkByForm={setRejectUseSameLinkByForm}
+          rejectingByForm={rejectingByForm}
+          handleRejectFormRedo={handleRejectFormRedo}
+          formatDateTimeValue={formatDateTimeValue}
+          markFormAsComplete={markFormAsComplete}
+          showCustomerFeedbackCard={showCustomerFeedbackCard}
+          customerFeedbackRating={customerFeedbackRating}
+          customerFeedbackSubmittedAtLabel={customerFeedbackSubmittedAtLabel}
+          customerFeedbackComments={customerFeedbackComments}
+          consolidatedMedicalDocuments={consolidatedMedicalDocuments}
+          isConsolidatedUploadReviewed={isConsolidatedUploadReviewed}
+          canReviewConsolidatedUpload={canReviewConsolidatedUpload}
+          isConsolidatedUploading={isConsolidatedUploading}
+          consolidatedProgress={consolidatedProgress}
+          consolidatedUploadChecks={consolidatedUploadChecks}
+          setConsolidatedUploadChecks={setConsolidatedUploadChecks}
+          isAnyConsolidatedChecked={isAnyConsolidatedChecked}
+          handleConsolidatedUpload={handleConsolidatedUpload}
+          showAdminPlaceholderCard={showAdminPlaceholderCard}
+          pathwayRequirements={pathwayRequirements}
+        />
       </div>
 
       <aside className="lg:col-span-1 min-w-0 space-y-6">
@@ -12842,1306 +11371,114 @@ function ApplicationDetailPageContent() {
               </DialogContent>
             </Dialog>
             </div>
-            <div className="order-[91]">
-              {familyPortalAccessSummary.accessed || familyPortalAccessSummary.totalAttempts > 0 ? (
-                <Collapsible
-                  open={familyPortalLoginExpanded}
-                  onOpenChange={(open) => {
-                    setFamilyPortalLoginExpanded(open);
-                    if (open) setMemberPortalLoginRefreshKey((key) => key + 1);
-                  }}
-                  className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-sm text-sky-950"
-                >
-                  <div className="flex items-start gap-2 font-medium leading-snug">
-                    <Eye className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-                    <div className="min-w-0">
-                      <div>Member portal login log</div>
-                      {familyPortalAccessSummary.contactLabel ? (
-                        <div className="mt-0.5 break-all text-xs font-normal text-sky-800/90">
-                          {familyPortalAccessSummary.contactLabel}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="mt-1.5 space-y-0.5 text-xs text-sky-800/90">
-                    {familyPortalAccessSummary.isLoadingLog ? (
-                      <div>Checking login history…</div>
-                    ) : (
-                      <>
-                        {familyPortalAccessSummary.firstLoginLabel ? (
-                          <div>
-                            First login:{' '}
-                            <span className="font-medium">{familyPortalAccessSummary.firstLoginLabel}</span>
-                          </div>
-                        ) : familyPortalAccessSummary.linkedAtLabel ? (
-                          <div>Linked: {familyPortalAccessSummary.linkedAtLabel} (no login yet)</div>
-                        ) : (
-                          <div>No portal login logged yet</div>
-                        )}
-                        {familyPortalAccessSummary.submittedLabel ? (
-                          <div>
-                            Application submitted:{' '}
-                            <span className="font-medium">{familyPortalAccessSummary.submittedLabel}</span>
-                          </div>
-                        ) : null}
-                        {familyPortalAccessSummary.lastActivityLabel ? (
-                          <div>
-                            Last activity:{' '}
-                            <span className="font-medium">{familyPortalAccessSummary.lastActivityLabel}</span>
-                            {familyPortalAccessSummary.lastLoginLabel &&
-                            familyPortalAccessSummary.lastLoginLabel !==
-                              familyPortalAccessSummary.firstLoginLabel
-                              ? ` · last login ${familyPortalAccessSummary.lastLoginLabel}`
-                              : ''}
-                          </div>
-                        ) : familyPortalAccessSummary.lastAttemptLabel &&
-                          !familyPortalAccessSummary.firstLoginLabel ? (
-                          <div>
-                            Last attempt:{' '}
-                            <span className="font-medium">{familyPortalAccessSummary.lastAttemptLabel}</span>
-                            {familyPortalAccessSummary.lastAttemptSuccess === false ? ' (failed)' : ''}
-                          </div>
-                        ) : null}
-                        {familyPortalAccessSummary.totalAttempts > 0 ? (
-                          <div>
-                            {familyPortalAccessSummary.successCount} successful ·{' '}
-                            {familyPortalAccessSummary.failedCount} failed
-                            {familyPortalAccessSummary.subsequentLoginCount > 0
-                              ? ` · ${familyPortalAccessSummary.subsequentLoginCount} later login${
-                                  familyPortalAccessSummary.subsequentLoginCount === 1 ? '' : 's'
-                                }`
-                              : ''}
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                  <CollapsibleTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="mt-1 h-7 w-full justify-start px-1.5 text-xs text-sky-950 hover:bg-sky-100"
-                    >
-                      <ChevronDown
-                        className={cn(
-                          'mr-1 h-3.5 w-3.5 shrink-0 transition-transform',
-                          familyPortalLoginExpanded && 'rotate-180'
-                        )}
-                      />
-                      {familyPortalLoginExpanded
-                        ? 'Hide portal activity'
-                        : `Show portal activity${
-                            familyPortalAccessSummary.activityItems.length
-                              ? ` (${familyPortalAccessSummary.activityItems.length})`
-                              : familyPortalAccessSummary.totalAttempts
-                                ? ` (${familyPortalAccessSummary.totalAttempts})`
-                                : ''
-                          }`}
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="mt-1.5 space-y-2">
-                    {isLoadingMemberPortalLoginLog ? (
-                      <div className="flex items-center gap-2 rounded-md border border-sky-200 bg-white/70 p-2 text-xs text-sky-950">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Loading…
-                      </div>
-                    ) : familyPortalAccessSummary.activityItems.length === 0 ? (
-                      <div className="rounded-md border border-sky-200 bg-white/70 p-2 text-xs text-sky-950">
-                        No portal login or submission activity logged yet.
-                      </div>
-                    ) : (
-                      <div className="max-h-72 space-y-1.5 overflow-y-auto pr-0.5">
-                        {familyPortalAccessSummary.activityItems.map((item) => {
-                          const timestampLabel = item.atMs
-                            ? format(new Date(item.atMs), 'MMM d, yyyy h:mm a')
-                            : 'Time unavailable';
-                          const badgeClass =
-                            item.kind === 'first_login'
-                              ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
-                              : item.kind === 'submitted'
-                                ? 'border-violet-300 bg-violet-50 text-violet-900'
-                                : item.kind === 'login_failed'
-                                  ? 'border-red-300 bg-red-50 text-red-800'
-                                  : item.kind === 'upload' || item.kind === 'form'
-                                    ? 'border-amber-300 bg-amber-50 text-amber-900'
-                                    : 'border-sky-300 bg-sky-50 text-sky-800';
-                          const badgeLabel =
-                            item.kind === 'first_login'
-                              ? 'First login'
-                              : item.kind === 'submitted'
-                                ? 'Submitted'
-                                : item.kind === 'login'
-                                  ? 'Login'
-                                  : item.kind === 'login_failed'
-                                    ? 'Failed'
-                                    : item.kind === 'upload'
-                                      ? 'Upload'
-                                      : 'Form';
-                          return (
-                            <div
-                              key={item.id}
-                              className={cn(
-                                'rounded-md border bg-white/80 px-2 py-1.5 text-xs',
-                                item.kind === 'login_failed' ? 'border-red-200' : 'border-sky-200'
-                              )}
-                            >
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <Badge variant="outline" className={cn('text-[10px]', badgeClass)}>
-                                  {badgeLabel}
-                                </Badge>
-                                <span className="font-medium text-slate-800">{timestampLabel}</span>
-                              </div>
-                              <div className="mt-1 text-slate-700">{item.label}</div>
-                              {item.detail ? (
-                                <div className="mt-0.5 break-all text-[11px] text-slate-600">{item.detail}</div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </CollapsibleContent>
-                </Collapsible>
-              ) : (
-                <div className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-900">
-                  Family has not accessed the portal for this application yet.
-                </div>
-              )}
-            </div>
-            <div className="order-[12] space-y-2">
-              <MemberFilesDialog triggerLabel="See Files" triggerClassName="qa-trigger" />
-              {(() => {
-                const isAuthorizedMember =
-                  isKaiserAuthReceivedIntake ||
-                  /^authorized$/i.test(String((application as any)?.caspioCalAIMStatus || '').trim()) ||
-                  /^authorized$/i.test(String(effectiveCaspioCalAIMStatus || '').trim());
-                if (!isAuthorizedMember) return null;
+            <MemberPortalLoginLog
+              familyPortalAccessSummary={familyPortalAccessSummary}
+              familyPortalLoginExpanded={familyPortalLoginExpanded}
+              setFamilyPortalLoginExpanded={setFamilyPortalLoginExpanded}
+              setMemberPortalLoginRefreshKey={setMemberPortalLoginRefreshKey}
+              isLoadingMemberPortalLoginLog={isLoadingMemberPortalLoginLog}
+            />
+            <MemberDocumentsQuickActions
+              MemberFilesDialog={MemberFilesDialog}
+              isKaiserAuthReceivedIntake={isKaiserAuthReceivedIntake}
+              application={application}
+              effectiveCaspioCalAIMStatus={effectiveCaspioCalAIMStatus}
+              setDocumentPreview={setDocumentPreview}
+              setServiceDeliverySourceKind={setServiceDeliverySourceKind}
+              resolveDefaultServiceDeliverySourceKind={resolveDefaultServiceDeliverySourceKind}
+              setServiceDeliveryCreateDialogOpen={setServiceDeliveryCreateDialogOpen}
+              isCreatingServiceDeliveryFile={isCreatingServiceDeliveryFile}
+              handleCreateWaiversAuthorizationsPacket={handleCreateWaiversAuthorizationsPacket}
+              isCreatingWaiversAuthorizationsPacket={isCreatingWaiversAuthorizationsPacket}
+              serviceDeliveryCreateDialogOpen={serviceDeliveryCreateDialogOpen}
+              serviceDeliverySourceKind={serviceDeliverySourceKind}
+              handleCreateMemberServiceDeliveryFile={handleCreateMemberServiceDeliveryFile}
+            />
+            <KaiserReferralQuickAction
+              isKaiserPlan={isKaiserPlan}
+              application={application}
+              applicationId={applicationId}
+              appUserId={appUserId}
+              user={user}
+              isKaiserAuthReceivedIntake={isKaiserAuthReceivedIntake}
+              kaiserReferralSubmission={kaiserReferralSubmission}
+              logKaiserReferralFormGenerated={logKaiserReferralFormGenerated}
+              kaiserReferralFormGeneratedAtLabel={kaiserReferralFormGeneratedAtLabel}
+              kaiserReferralFormGeneratedByName={kaiserReferralFormGeneratedByName}
+              kaiserReferralFormGeneratedByEmail={kaiserReferralFormGeneratedByEmail}
+              assignedStaffName={assignedStaffName}
+              kaiserStep5Required={kaiserStep5Required}
+              kaiserStep5Acknowledged={kaiserStep5Acknowledged}
+              kaiserStep5AcknowledgedAtLabel={kaiserStep5AcknowledgedAtLabel}
+            />
+            <EligibilityCheckQuickAction
+              isCalaimEligible={isCalaimEligible}
+              isCalaimNotEligible={isCalaimNotEligible}
+              isCalaimPending={isCalaimPending}
+              eligibilityCompleted={eligibilityCompleted}
+              application={application}
+              memberNameDisplay={memberNameDisplay}
+              memberMrnDisplay={memberMrnDisplay}
+              healthPlanDisplay={healthPlanDisplay}
+              pathwayDisplay={pathwayDisplay}
+              memberCountyDisplay={memberCountyDisplay}
+              kaiserRegionDisplay={kaiserRegionDisplay}
+              memberDobDisplay={memberDobDisplay}
+              isUpdatingTracking={isUpdatingTracking}
+              updateTrackingStatus={updateTrackingStatus}
+              hasEligibilityUploadEvidence={hasEligibilityUploadEvidence}
+              setApplication={setApplication}
+              updateNotEligibleFlags={updateNotEligibleFlags}
+              eligibilityTemplateSelection={eligibilityTemplateSelection}
+              setEligibilityTemplateSelection={setEligibilityTemplateSelection}
+              applyEligibilityTemplate={applyEligibilityTemplate}
+              updateTrackingReason={updateTrackingReason}
+              latestEligibilitySuccessNote={latestEligibilitySuccessNote}
+              eligibilityNoteSendStatus={eligibilityNoteSendStatus}
+              isEligibilityDraftDuplicate={isEligibilityDraftDuplicate}
+              selectableEligibilityScreenshots={selectableEligibilityScreenshots}
+              setSelectedEligibilityScreenshotIds={setSelectedEligibilityScreenshotIds}
+              selectedEligibilityScreenshotIds={selectedEligibilityScreenshotIds}
+              sendEligibilityNote={sendEligibilityNote}
+              isSendingEligibilityNote={isSendingEligibilityNote}
+              eligibilityRequirements={eligibilityRequirements}
+              resetEligibilityUploads={resetEligibilityUploads}
+              isResettingEligibilityUploads={isResettingEligibilityUploads}
+              hasEligibilityUploadsToReset={hasEligibilityUploadsToReset}
+              formStatusMap={formStatusMap}
+              getFormAction={getFormAction}
+            />
 
-                const forms = Array.isArray((application as any)?.forms)
-                  ? ((application as any).forms as any[])
-                  : [];
-                const serviceDeliveryForm =
-                  forms.find((form) =>
-                    isMifServiceRequestFormName(form?.name)
-                  ) || null;
-                const rootForm = (application as any)?.serviceDeliveryForm || {};
-                const fileName = String(
-                  serviceDeliveryForm?.fileName ||
-                    serviceDeliveryForm?.uploadedFiles?.[0]?.fileName ||
-                    rootForm?.fileName ||
-                    ''
-                ).trim();
-                const downloadURL = String(
-                  serviceDeliveryForm?.downloadURL ||
-                    serviceDeliveryForm?.uploadedFiles?.[0]?.downloadURL ||
-                    rootForm?.downloadURL ||
-                    ''
-                ).trim();
-                const hasServiceDeliveryFile = Boolean(downloadURL);
+            <AssignedStaffQuickAction
+              assignedStaffName={assignedStaffName}
+              application={application}
+              setApplication={setApplication}
+              updateStaffTracker={updateStaffTracker}
+              isUpdatingFirstContactAck={isUpdatingFirstContactAck}
+              currentUserId={currentUserId}
+              updateFirstContactAck={updateFirstContactAck}
+            />
 
-                if (hasServiceDeliveryFile) {
-                  return (
-                    <div className="space-y-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="qa-trigger"
-                        onClick={() =>
-                          setDocumentPreview({
-                            title: fileName || MIF_SERVICE_DELIVERY_FORM_NAME,
-                            url: downloadURL,
-                          })
-                        }
-                      >
-                        <Eye className="h-4 w-4" />
-                        <span className="qa-label">See Service Request Form</span>
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="qa-trigger h-auto py-1.5 text-xs text-muted-foreground"
-                        onClick={() => {
-                          setServiceDeliverySourceKind(resolveDefaultServiceDeliverySourceKind());
-                          setServiceDeliveryCreateDialogOpen(true);
-                        }}
-                        disabled={isCreatingServiceDeliveryFile}
-                      >
-                        {isCreatingServiceDeliveryFile ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-3.5 w-3.5" />
-                        )}
-                        <span className="qa-label">Recreate Service Request Form</span>
-                      </Button>
-                    </div>
-                  );
-                }
-
-                return (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="qa-trigger"
-                    onClick={() => {
-                      setServiceDeliverySourceKind(resolveDefaultServiceDeliverySourceKind());
-                      setServiceDeliveryCreateDialogOpen(true);
-                    }}
-                    disabled={isCreatingServiceDeliveryFile}
-                  >
-                    {isCreatingServiceDeliveryFile ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileText className="h-4 w-4" />
-                    )}
-                    <span className="qa-label">Create Service Request Form</span>
-                  </Button>
-                );
-              })()}
-              {(() => {
-                const isAuthorizedMember =
-                  isKaiserAuthReceivedIntake ||
-                  /^authorized$/i.test(String((application as any)?.caspioCalAIMStatus || '').trim()) ||
-                  /^authorized$/i.test(String(effectiveCaspioCalAIMStatus || '').trim());
-                if (!isAuthorizedMember) return null;
-                const forms = Array.isArray((application as any)?.forms)
-                  ? ((application as any).forms as any[])
-                  : [];
-                const packetForm =
-                  forms.find((form) =>
-                    String(form?.name || '')
-                      .toLowerCase()
-                      .includes('waivers & authorizations packet')
-                  ) || null;
-                const rootPacket = (application as any)?.waiversAuthorizationsPacket || {};
-                const packetName = String(
-                  packetForm?.fileName ||
-                    packetForm?.uploadedFiles?.[0]?.fileName ||
-                    rootPacket?.fileName ||
-                    ''
-                ).trim();
-                const packetUrl = String(
-                  packetForm?.downloadURL ||
-                    packetForm?.uploadedFiles?.[0]?.downloadURL ||
-                    rootPacket?.downloadURL ||
-                    ''
-                ).trim();
-                const hasPacket = Boolean(packetUrl);
-                const hasSourcePdfs = collectWaiversAuthorizationsPdfUrls(application).length > 0;
-
-                if (hasPacket) {
-                  return (
-                    <div className="space-y-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="qa-trigger"
-                        onClick={() =>
-                          setDocumentPreview({
-                            title: packetName || WAIVERS_AUTHORIZATIONS_PACKET_FORM_NAME,
-                            url: packetUrl,
-                          })
-                        }
-                      >
-                        <Eye className="h-4 w-4" />
-                        <span className="qa-label">See Waivers &amp; Authorizations file</span>
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="qa-trigger h-auto py-1.5 text-xs text-muted-foreground"
-                        onClick={() => void handleCreateWaiversAuthorizationsPacket()}
-                        disabled={isCreatingWaiversAuthorizationsPacket || !hasSourcePdfs}
-                      >
-                        {isCreatingWaiversAuthorizationsPacket ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-3.5 w-3.5" />
-                        )}
-                        <span className="qa-label">Recreate Waivers &amp; Authorizations file</span>
-                      </Button>
-                    </div>
-                  );
-                }
-
-                return (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="qa-trigger"
-                    onClick={() => void handleCreateWaiversAuthorizationsPacket()}
-                    disabled={isCreatingWaiversAuthorizationsPacket || !hasSourcePdfs}
-                    title={
-                      hasSourcePdfs
-                        ? 'Create a separate Drive file with waiver and authorization PDFs'
-                        : 'Upload waiver and/or authorization PDFs first'
-                    }
-                  >
-                    {isCreatingWaiversAuthorizationsPacket ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileText className="h-4 w-4" />
-                    )}
-                    <span className="qa-label">Create Waivers &amp; Authorizations file</span>
-                  </Button>
-                );
-              })()}
-              <Dialog
-                open={serviceDeliveryCreateDialogOpen}
-                onOpenChange={(open) => {
-                  setServiceDeliveryCreateDialogOpen(open);
-                  if (open) {
-                    setServiceDeliverySourceKind(resolveDefaultServiceDeliverySourceKind());
-                  }
-                }}
-              >
-                <DialogContent className="max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle>Create member file for Google Drive</DialogTitle>
-                    <DialogDescription>
-                      Builds the Service Request Form PDF from this authorized member&apos;s data already in Firestore
-                      (MIF or Single Auth intake). This file is the Service Request Form only — create Waivers &amp;
-                      Authorizations as a separate downloadable file below.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">Created from</Label>
-                      <RadioGroup
-                        value={serviceDeliverySourceKind}
-                        onValueChange={(value) => setServiceDeliverySourceKind(value as 'mif' | 'single_auth')}
-                        className="grid gap-2"
-                      >
-                        <Label
-                          htmlFor="sd-source-mif"
-                          className="flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-muted/40"
-                        >
-                          <RadioGroupItem id="sd-source-mif" value="mif" className="mt-0.5" />
-                          <span>
-                            <span className="block text-sm font-medium">MIF spreadsheet member</span>
-                            <span className="text-xs text-muted-foreground">
-                              Use auth / member fields from MIF intake already on this application
-                            </span>
-                          </span>
-                        </Label>
-                        <Label
-                          htmlFor="sd-source-single-auth"
-                          className="flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-muted/40"
-                        >
-                          <RadioGroupItem id="sd-source-single-auth" value="single_auth" className="mt-0.5" />
-                          <span>
-                            <span className="block text-sm font-medium">Single Auth member</span>
-                            <span className="text-xs text-muted-foreground">
-                              Use auth / member fields from Single Auth intake already on this application
-                            </span>
-                          </span>
-                        </Label>
-                      </RadioGroup>
-                    </div>
-                    <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                      Member:{' '}
-                      <span className="font-medium text-foreground">
-                        {`${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim() || '—'}
-                      </span>
-                      {' · '}MRN{' '}
-                      <span className="font-mono text-foreground">
-                        {String((application as any)?.memberMrn || '').trim() || '—'}
-                      </span>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setServiceDeliveryCreateDialogOpen(false)}
-                        disabled={isCreatingServiceDeliveryFile}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="button"
-                        onClick={() => void handleCreateMemberServiceDeliveryFile()}
-                        disabled={isCreatingServiceDeliveryFile}
-                      >
-                        {isCreatingServiceDeliveryFile ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Creating...
-                          </>
-                        ) : (
-                          <>
-                            <FileText className="mr-2 h-4 w-4" />
-                            Create & add to Files
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-            {isKaiserPlan ? (() => {
-              const appSource = application as any;
-              const qaMemberAddress =
-                resolveKaiserReferralMailingAddress(appSource) ||
-                composeReferralAddressLine({
-                  street: appSource?.currentAddress,
-                  city: appSource?.currentCity,
-                  state: appSource?.currentState,
-                  zip: appSource?.currentZip,
-                });
-              const qaCurrentLiving = resolveKaiserReferralCurrentLocation(appSource);
-              const qaReferrerName = `${String((application as any)?.referrerFirstName || '').trim()} ${String((application as any)?.referrerLastName || '').trim()}`.trim();
-              const qaMemberPhone =
-                String((application as any)?.memberPhone || '').trim() ||
-                String((application as any)?.bestContactPhone || '').trim();
-              const qaMemberEmail =
-                String((application as any)?.memberEmail || '').trim() ||
-                String((application as any)?.bestContactEmail || '').trim();
-              const qaReferralQuery = new URLSearchParams({
-                applicationId: String(applicationId || ''),
-                userId: String(appUserId || ''),
-                returnTo: `/admin/applications/${encodeURIComponent(String(applicationId || ''))}?userId=${encodeURIComponent(String(appUserId || ''))}`,
-                memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim(),
-                memberDob: String((application as any)?.memberDob || '').trim(),
-                memberPhone: qaMemberPhone,
-                memberEmail: qaMemberEmail,
-                memberAddress: qaMemberAddress,
-                memberMrn: String((application as any)?.memberMrn || '').trim(),
-                memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),
-                caregiverName: resolveReferralAuthorizedCaregiver(application as any).name,
-                caregiverContact: resolveReferralAuthorizedCaregiver(application as any).contact,
-                ...resolveReferralBestContactParams(application as any),
-                referralDate: format(new Date(), 'yyyy-MM-dd'),
-                referrerName: qaReferrerName,
-                referrerOrganization: 'Connections Care Home Consultants, LLC',
-                referrerNpi: '1508537325',
-                referrerAddress: '1763 East Sandalwood Drive, Palm Springs, CA 92262',
-                referrerEmail: 'deydry@carehomefinders.com',
-                referrerPhone: '800-330-5993',
-                referrerRelationship: 'Other',
-                currentLocationName: qaCurrentLiving.name,
-                currentLocationAddress: qaCurrentLiving.address,
-                healthPlan: String((application as any)?.healthPlan || '').trim(),
-                memberCounty: String((application as any)?.currentCounty || (application as any)?.memberCounty || '').trim(),
-                submitterName: String(user?.displayName || '').trim(),
-                submitterEmail: String(user?.email || '').trim().toLowerCase(),
-                kaiserAuthAlreadyReceived: isKaiserAuthReceivedIntake ? '1' : '0',
-                kaiserReferralSubmittedAtIso: String(kaiserReferralSubmission?.submittedAtIso || '').trim(),
-              });
-              return (
-                <div className="space-y-2">
-                  {isKaiserAuthReceivedIntake ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="qa-trigger border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-100"
-                      disabled
-                      title="Authorization already received at intake"
-                    >
-                      <FileText className="h-4 w-4 shrink-0" />
-                      <span className="qa-label">Generate Kaiser Referral Form (Pre-Filled)</span>
-                    </Button>
-                  ) : (
-                    <Button asChild variant="outline" className="qa-trigger border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100">
-                      <Link
-                        href={`/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => {
-                          void logKaiserReferralFormGenerated();
-                        }}
-                      >
-                        <FileText className="h-4 w-4 shrink-0" />
-                        <span className="qa-label">Generate Kaiser Referral Form (Pre-Filled)</span>
-                      </Link>
-                    </Button>
-                  )}
-                  {kaiserReferralFormGeneratedAtLabel ? (
-                    <div className="rounded-md border border-blue-200 bg-blue-50/70 p-2 text-xs text-blue-900">
-                      Referral form generated at {kaiserReferralFormGeneratedAtLabel}
-                      {(kaiserReferralFormGeneratedByName || kaiserReferralFormGeneratedByEmail)
-                        ? ` by ${kaiserReferralFormGeneratedByName || kaiserReferralFormGeneratedByEmail}${kaiserReferralFormGeneratedByName && kaiserReferralFormGeneratedByEmail ? ` (${kaiserReferralFormGeneratedByEmail})` : ''}`
-                        : ''}
-                      .
-                    </div>
-                  ) : null}
-                  <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
-                    Assigned staff:{' '}
-                    <span className="font-medium text-foreground">
-                      {assignedStaffName || 'Unassigned'}
-                    </span>
-                  </div>
-                  {kaiserStep5Required ? (
-                    <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
-                      {kaiserStep5Acknowledged ? (
-                        <>
-                          Step 5 acknowledged {kaiserStep5AcknowledgedAtLabel ? `at ${kaiserStep5AcknowledgedAtLabel}` : ''}.<br />
-                          Resend is available when override is enabled in the pre-email dialog.
-                        </>
-                      ) : (
-                        'Step 5 pending: referral send acknowledgment timestamp will appear after successful send.'
-                      )}
-                    </div>
-                  ) : (
-                    <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
-                      Authorization already received at intake. Referral send workflow is not required for this member.
-                    </div>
-                  )}
-                </div>
-              );
-            })() : null}
-            <div className="order-[1]">
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="qa-trigger">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span className="qa-label">1. Eligibility check & uploads</span>
-                  <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
-                    {isCalaimEligible ? (
-                      <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
-                        Eligible
-                      </Badge>
-                    ) : isCalaimNotEligible ? (
-                      <Badge className="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50">
-                        Not Eligible
-                      </Badge>
-                    ) : isCalaimPending ? (
-                      <Badge className="border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-50">
-                        Pending
-                      </Badge>
-                    ) : null}
-                    <QaDoneMeta
-                      done={eligibilityCompleted || isCalaimEligible || isCalaimNotEligible}
-                      atMs={toMillisSafe((application as any)?.lastEligibilityCheckAt) || undefined}
-                    />
-                  </span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Eligibility check</DialogTitle>
-                  <DialogDescription>Track CalAIM eligibility status and supporting uploads.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <div>
-                        <span className="font-medium">Member:</span>{' '}
-                        {memberNameDisplay}
-                      </div>
-                      <div>
-                        <span className="font-medium">MRN:</span>{' '}
-                        {memberMrnDisplay}
-                      </div>
-                      <div>
-                        <span className="font-medium">Health Plan:</span>{' '}
-                        {healthPlanDisplay}
-                      </div>
-                      <div>
-                        <span className="font-medium">Pathway:</span>{' '}
-                        {pathwayDisplay}
-                      </div>
-                      <div>
-                        <span className="font-medium">County:</span>{' '}
-                        {memberCountyDisplay}
-                      </div>
-                      {kaiserRegionDisplay ? (
-                        <div>
-                          <span className="font-medium">Kaiser Region:</span>{' '}
-                          {kaiserRegionDisplay}
-                        </div>
-                      ) : null}
-                      <div>
-                        <span className="font-medium">DOB:</span>{' '}
-                        {memberDobDisplay}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">CalAIM Status</label>
-                      {isUpdatingTracking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                    </div>
-                    <RadioGroup
-                      value={(application as any)?.calaimTrackingStatus || ''}
-                      onValueChange={updateTrackingStatus}
-                      disabled={isUpdatingTracking || !hasEligibilityUploadEvidence}
-                      className="grid grid-cols-1 gap-2 sm:grid-cols-2"
-                    >
-                      <label
-                        htmlFor="calaim-status-eligible"
-                        className={cn(
-                          'flex cursor-pointer items-center gap-3 rounded-md border p-3',
-                          (application as any)?.calaimTrackingStatus === 'CalAIM Eligible' && 'border-emerald-400 bg-emerald-50',
-                          (isUpdatingTracking || !hasEligibilityUploadEvidence) && 'cursor-not-allowed opacity-60'
-                        )}
-                      >
-                        <RadioGroupItem id="calaim-status-eligible" value="CalAIM Eligible" />
-                        <span className="text-sm font-medium">CalAIM Eligible</span>
-                      </label>
-                      <label
-                        htmlFor="calaim-status-not-eligible"
-                        className={cn(
-                          'flex cursor-pointer items-center gap-3 rounded-md border p-3',
-                          (application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && 'border-amber-400 bg-amber-50',
-                          (isUpdatingTracking || !hasEligibilityUploadEvidence) && 'cursor-not-allowed opacity-60'
-                        )}
-                      >
-                        <RadioGroupItem id="calaim-status-not-eligible" value="Not CalAIM Eligible" />
-                        <span className="text-sm font-medium">Not CalAIM Eligible</span>
-                      </label>
-                    </RadioGroup>
-                    {!hasEligibilityUploadEvidence ? (
-                      <p className="text-xs text-muted-foreground">
-                        Upload eligibility evidence first, then check off Eligible or Not Eligible.
-                      </p>
-                    ) : null}
-
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">Reason</Label>
-                      <Select
-                        value={(application as any)?.calaimNotEligibleReason || ''}
-                        onValueChange={(value) => {
-                          const nextReason = value || '';
-                          const nextFlags = {
-                            calaimNotEligibleSwitchingProviders: nextReason === 'Switching Providers by end of Month',
-                            calaimNotEligibleHasSoc: nextReason === 'Has SOC',
-                            calaimNotEligibleOutOfCounty: nextReason === 'Not in our contracted CalAIM County',
-                            calaimNotEligibleOther: nextReason === 'Other',
-                            calaimNotEligibleReason: nextReason,
-                            calaimNotEligibleOtherReason:
-                              nextReason === 'Other' ? (application as any)?.calaimNotEligibleOtherReason || '' : '',
-                          };
-                          setApplication((prev) => (prev ? { ...prev, ...nextFlags } : null));
-                          updateNotEligibleFlags(nextFlags);
-                        }}
-                        disabled={isUpdatingTracking || (application as any)?.calaimTrackingStatus !== 'Not CalAIM Eligible'}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select a reason" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {notEligibleReasonOptions.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {(application as any)?.calaimTrackingStatus !== 'Not CalAIM Eligible' ? (
-                        <p className="text-xs text-muted-foreground">
-                          Reason fields are available when CalAIM Status is set to Not CalAIM Eligible.
-                        </p>
-                      ) : null}
-                      {(application as any)?.calaimNotEligibleReason === 'Other' && (
-                        <Textarea
-                          id="not-eligible-other-reason"
-                          rows={2}
-                          placeholder="Describe the reason..."
-                          value={(application as any)?.calaimNotEligibleOtherReason || ''}
-                          onChange={(event) => {
-                            const nextValue = event.target.value;
-                            setApplication((prev) => (prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null));
-                          }}
-                          onBlur={(event) =>
-                            updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })
-                          }
-                          disabled={isUpdatingTracking || (application as any)?.calaimTrackingStatus !== 'Not CalAIM Eligible'}
-                        />
-                      )}
-                      <div className="space-y-2 pt-2">
-                        <Label className="text-sm font-medium">Note to Member (optional)</Label>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                          <Select
-                            value={eligibilityTemplateSelection}
-                            onValueChange={(value) => setEligibilityTemplateSelection(value)}
-                            disabled={isUpdatingTracking}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Choose a template (optional)" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No template</SelectItem>
-                              <SelectItem value="health-net-molina-switch">
-                                Health Net: Member assigned to Molina
-                              </SelectItem>
-                              <SelectItem value="no-medi-cal-assigned-plan">
-                                Generic: No Medi-Cal assigned with plan
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={() => void applyEligibilityTemplate(eligibilityTemplateSelection)}
-                            disabled={isUpdatingTracking || eligibilityTemplateSelection === 'none'}
-                          >
-                            Use Template
-                          </Button>
-                        </div>
-                        <Textarea
-                          rows={3}
-                          placeholder="Add a message that explains the eligibility outcome..."
-                          value={(application as any)?.calaimTrackingReason || ''}
-                          onChange={(event) => {
-                            const nextValue = event.target.value;
-                            setApplication((prev) => (prev ? { ...prev, calaimTrackingReason: nextValue } : null));
-                          }}
-                          onBlur={(event) => updateTrackingReason(event.target.value)}
-                          disabled={isUpdatingTracking}
-                        />
-                        {latestEligibilitySuccessNote ? (
-                          <div className="rounded-md border bg-muted/20 p-2 text-xs text-muted-foreground">
-                            Last sent:{' '}
-                            {(() => {
-                              try {
-                                const d = new Date(latestEligibilitySuccessNote.createdAtIso || '');
-                                return Number.isNaN(d.getTime()) ? 'recently' : format(d, 'MMM d, yyyy h:mm a');
-                              } catch {
-                                return 'recently';
-                              }
-                            })()}
-                            {latestEligibilitySuccessNote.recipientEmail
-                              ? ` to ${latestEligibilitySuccessNote.recipientEmail}`
-                              : ''}
-                          </div>
-                        ) : null}
-                        {eligibilityNoteSendStatus.state !== 'idle' ? (
-                          <div
-                            className={cn(
-                              'rounded-md border p-2 text-xs',
-                              eligibilityNoteSendStatus.state === 'success'
-                                ? 'border-green-200 bg-green-50 text-green-800'
-                                : eligibilityNoteSendStatus.state === 'sending'
-                                  ? 'border-blue-200 bg-blue-50 text-blue-800'
-                                  : eligibilityNoteSendStatus.state === 'blocked_duplicate'
-                                    ? 'border-amber-200 bg-amber-50 text-amber-800'
-                                    : 'border-red-200 bg-red-50 text-red-800'
-                            )}
-                          >
-                            {eligibilityNoteSendStatus.message}
-                            {eligibilityNoteSendStatus.atIso
-                              ? ` (${format(new Date(eligibilityNoteSendStatus.atIso), 'MMM d, h:mm a')})`
-                              : ''}
-                          </div>
-                        ) : null}
-                        {isEligibilityDraftDuplicate ? (
-                          <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-                            This draft matches the last sent note. Sending is blocked until you change the content.
-                          </div>
-                        ) : null}
-                        {selectableEligibilityScreenshots.length > 0 ? (
-                          <div className="space-y-2 rounded-md border p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <Label className="text-xs font-medium">Screenshots to include in email</Label>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 px-2 text-xs"
-                                  onClick={() =>
-                                    setSelectedEligibilityScreenshotIds(
-                                      selectableEligibilityScreenshots.map((upload) => upload.id)
-                                    )
-                                  }
-                                >
-                                  Select All
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 px-2 text-xs"
-                                  onClick={() => setSelectedEligibilityScreenshotIds([])}
-                                >
-                                  Clear
-                                </Button>
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              {selectableEligibilityScreenshots.map((upload) => {
-                                const checked = selectedEligibilityScreenshotIds.includes(upload.id);
-                                return (
-                                  <label
-                                    key={upload.id}
-                                    className="flex items-start gap-2 rounded-md border bg-muted/20 p-2 text-xs"
-                                  >
-                                    <Checkbox
-                                      checked={checked}
-                                      onCheckedChange={(next) => {
-                                        const shouldCheck = next === true;
-                                        setSelectedEligibilityScreenshotIds((prev) => {
-                                          if (shouldCheck) {
-                                            if (prev.includes(upload.id)) return prev;
-                                            return [...prev, upload.id];
-                                          }
-                                          return prev.filter((id) => id !== upload.id);
-                                        });
-                                      }}
-                                    />
-                                    <span className="min-w-0 truncate" title={upload.fileName}>
-                                      {upload.fileName}
-                                    </span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              Selected screenshots are appended as links in the note email.
-                            </p>
-                          </div>
-                        ) : null}
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={sendEligibilityNote}
-                          disabled={isSendingEligibilityNote || isEligibilityDraftDuplicate}
-                        >
-                          {isSendingEligibilityNote ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Sending Note...
-                            </>
-                          ) : (
-                            'Send Note to Referrer'
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {eligibilityRequirements.length > 0 && (
-                    <div className="space-y-3 border-t pt-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-sm font-medium">Eligibility Uploads</Label>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => void resetEligibilityUploads()}
-                          disabled={isResettingEligibilityUploads || !hasEligibilityUploadsToReset}
-                        >
-                          {isResettingEligibilityUploads ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Resetting...
-                            </>
-                          ) : (
-                            <>
-                              <RotateCcw className="mr-2 h-4 w-4" />
-                              Delete All / Start Over
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                      <div className="space-y-3">
-                        {eligibilityRequirements.map((req) => {
-                          const formInfo = formStatusMap.get(req.title);
-                          const status = formInfo?.status || 'Pending';
-                          return (
-                            <div key={req.id} className="rounded-md border p-3 space-y-3">
-                              <div className="space-y-1">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="text-sm font-medium">{req.title}</div>
-                                  <StatusIndicator status={status} />
-                                </div>
-                                <p className="text-xs text-muted-foreground">{req.description}</p>
-                              </div>
-                              {getFormAction(req)}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </DialogContent>
-            </Dialog>
-            </div>
-
-            <div className="order-[2] space-y-2">
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="qa-trigger">
-                  <User className="h-4 w-4" />
-                  <span className="qa-label min-w-0 truncate">
-                    {assignedStaffName ? `2. Assigned: ${assignedStaffName}` : '2. Assign staff'}
-                  </span>
-                  <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
-                    <Badge variant={assignedStaffName ? 'default' : 'outline'} className="text-[10px]">
-                      {assignedStaffName ? 'Assigned' : 'Unassigned'}
-                    </Badge>
-                    <QaDoneMeta
-                      done={Boolean(assignedStaffName)}
-                      atMs={getStaffAssignmentSentAtMs(application as any) || undefined}
-                      titlePrefix="Sent to staff"
-                    />
-                  </span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Assigned staff</DialogTitle>
-                  <DialogDescription>Assign primary staff for this application.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-5">
-                  {(() => {
-                    const sentAtMs = getStaffAssignmentSentAtMs(application as any);
-                    const logEntries = getStaffAssignmentLogEntries(application as any);
-                    const lastSentLabel = sentAtMs
-                      ? (() => {
-                          try {
-                            return format(new Date(sentAtMs), 'MMM d, yyyy h:mm a');
-                          } catch {
-                            return '';
-                          }
-                        })()
-                      : '';
-                    if (!assignedStaffName && !logEntries.length) return null;
-                    return (
-                      <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950 space-y-2">
-                        <div className="font-medium">
-                          {lastSentLabel
-                            ? `Sent to staff ${lastSentLabel}`
-                            : assignedStaffName
-                              ? `Assigned: ${assignedStaffName}`
-                              : 'Assignment log'}
-                        </div>
-                        {logEntries.length > 0 ? (
-                          <ul className="space-y-1.5">
-                            {logEntries.slice(0, 6).map((entry) => {
-                              let when = '';
-                              try {
-                                when = format(new Date(entry.atIso), 'MMM d, yyyy h:mm a');
-                              } catch {
-                                when = entry.atIso;
-                              }
-                              return (
-                                <li key={entry.id} className="border-t border-emerald-200/70 pt-1.5 first:border-0 first:pt-0">
-                                  <div className="font-medium text-emerald-900">{entry.label}</div>
-                                  <div className="text-[11px] text-emerald-800/90">
-                                    {when}
-                                    {entry.byName ? ` · by ${entry.byName}` : ''}
-                                    {entry.details ? ` · ${entry.details}` : ''}
-                                  </div>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        ) : null}
-                      </div>
-                    );
-                  })()}
-                  <div className="space-y-2">
-                    <Label htmlFor="main-staff-assignment" className="text-sm font-medium flex items-center gap-2">
-                      <User className="h-4 w-4 text-muted-foreground" />
-                      Assigned Staff
-                    </Label>
-                    <StaffAssignmentDropdown
-                      application={application}
-                      onStaffChange={(staffId, staffName, meta) => {
-                        setApplication((prev) => {
-                          if (!prev) return null;
-                          const existingLog = Array.isArray((prev as any)?.memberActionLog)
-                            ? ([...(prev as any).memberActionLog] as MemberActionLogEntry[])
-                            : [];
-                          const incoming = Array.isArray(meta?.logEntries) ? meta.logEntries : [];
-                          const seen = new Set(
-                            existingLog.map((e) => String(e?.id || `${e?.actionKey}-${e?.atIso}`))
-                          );
-                          incoming.forEach((entry) => {
-                            const id = String(entry?.id || `${entry?.actionKey}-${entry?.atIso}`);
-                            if (!seen.has(id)) {
-                              existingLog.push(entry);
-                              seen.add(id);
-                            }
-                          });
-                          const next: any = {
-                            ...prev,
-                            assignedStaffId: staffId,
-                            assignedStaffName: staffName,
-                            assignedDate: meta?.assignedDate || new Date().toISOString(),
-                            memberActionLog: existingLog,
-                          };
-                          if (meta?.staffAssignmentNotifiedAt) {
-                            next.staffAssignmentNotifiedAt = meta.staffAssignmentNotifiedAt;
-                          }
-                          if (
-                            isNeedFirstContactKaiserStatus(
-                              (prev as any)?.kaiserStatus || (prev as any)?.Kaiser_Status
-                            )
-                          ) {
-                            Object.assign(next, buildFirstContactAckResetFields());
-                          }
-                          return next;
-                        });
-                        updateStaffTracker({ assignedStaffId: staffId, assignedStaffName: staffName } as any);
-                      }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    After assignment, the assigned staff opens this record and checks{' '}
-                    <span className="font-medium">Staff acknowledges assignment</span> under Assigned staff.
-                    That stops daily first-contact reminder emails for this member.
-                  </p>
-                </div>
-              </DialogContent>
-            </Dialog>
-            {shouldTrackFirstContactAck(application as any) ? (
-              <div className="rounded-md border border-violet-200 bg-violet-50/70 p-2.5 space-y-1.5">
-                <label className="flex items-start gap-2 text-xs text-violet-950">
-                  <Checkbox
-                    className="mt-0.5"
-                    checked={Boolean((application as any)?.firstContactAcknowledged)}
-                    disabled={
-                      isUpdatingFirstContactAck ||
-                      !isUserAssignedStaffForApp(application as any, currentUserId)
-                    }
-                    onCheckedChange={(checked) =>
-                      void updateFirstContactAck({ firstContactAcknowledged: Boolean(checked) })
-                    }
-                  />
-                  <span>
-                    <span className="font-medium">Staff acknowledges assignment</span>
-                    <span className="block text-[11px] text-violet-800/90 mt-0.5">
-                      Assigned staff checks this after opening the record. Until checked, daily reminders
-                      list this Need First Contact member.
-                    </span>
-                    {!isUserAssignedStaffForApp(application as any, currentUserId) ? (
-                      <span className="block text-[11px] text-violet-700 mt-1">
-                        Only {assignedStaffName || 'the assigned staff member'} can check this box.
-                      </span>
-                    ) : null}
-                    {(application as any)?.firstContactAcknowledgedBy ? (
-                      <span className="block text-[11px] text-violet-700 mt-1">
-                        Acknowledged by {String((application as any).firstContactAcknowledgedBy)}
-                        {(application as any)?.firstContactAcknowledgedAt
-                          ? ` · ${format(
-                              new Date(String((application as any).firstContactAcknowledgedAt)),
-                              'MMM d, yyyy h:mm a'
-                            )}`
-                          : ''}
-                      </span>
-                    ) : null}
-                  </span>
-                </label>
-                {isUpdatingFirstContactAck ? (
-                  <div className="flex items-center gap-2 text-[11px] text-violet-800 pl-6">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Saving…
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            </div>
-
-            {isKaiserPlan ? (
-              <div className="order-[3] rounded-md border border-blue-200 bg-blue-50/60 p-3 space-y-3">
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <Label className="text-sm font-medium">3. Kaiser Status *</Label>
-                    <QaDoneMeta
-                      done={kaiserStatusSelectedForCaspio || (caspioPushed && Boolean(kaiserStatusPickerValue))}
-                      atMs={
-                        toMillisSafe((application as any)?.kaiserPrePushStatusPickedAt) ||
-                        toMillisSafe((application as any)?.kaiserStatusSyncedFromCaspioAt) ||
-                        toMillisSafe((application as any)?.kaiserStatusSyncedFromCacheAt) ||
-                        toMillisSafe((application as any)?.kaiserStatusUpdatedAt) ||
-                        undefined
-                      }
-                    />
-                  </div>
-                  {showManualKaiserStatusSection ? (
-                    <div className="mt-2 space-y-2">
-                      <Select
-                        value={kaiserStatusSelectValue}
-                        onValueChange={(value) => {
-                          if (value === '__none__') {
-                            // Only clear when a Caspio push status was selected.
-                            // Do not wipe tracker statuses like "T2038 Requested".
-                            if (kaiserStatusSelectedForCaspio || isKaiserNotInterested) {
-                              void updateDraftKaiserStatus('');
-                            }
-                            return;
-                          }
-                          void updateDraftKaiserStatus(value);
-                        }}
-                      >
-                        <SelectTrigger className="h-9 bg-background">
-                          <SelectValue placeholder="Select Kaiser status" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[320px]">
-                          <SelectItem value="__none__">Not selected</SelectItem>
-                          {kaiserStatusIsUnlisted ? (
-                            <SelectGroup>
-                              <SelectLabel className="text-[11px]">Current (from Caspio)</SelectLabel>
-                              <SelectItem value={kaiserStatusPickerValue}>{kaiserStatusPickerValue}</SelectItem>
-                            </SelectGroup>
-                          ) : null}
-                          <SelectGroup>
-                            <SelectLabel className="text-[11px]">Before Caspio push</SelectLabel>
-                            {prePushKaiserStatusOptions.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel className="text-[11px]">All Kaiser statuses</SelectLabel>
-                            {laterKaiserStatusOptions.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      {isKaiserNotInterested ? (
-                        <div className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs text-rose-900">
-                          Member marked <span className="font-semibold">Not interested</span>. Logged to the Not
-                          Interested list. Caspio push is blocked for this status.
-                        </div>
-                      ) : null}
-                      {!caspioPushed && kaiserStatusPickerValue && !kaiserStatusSelectedForCaspio && !isKaiserNotInterested ? (
-                        <p className="text-[11px] text-muted-foreground">
-                          Tracker status: {kaiserStatusPickerValue}. Choose a “Before Caspio push” status above.
-                        </p>
-                      ) : null}
-                      {!caspioPushed && !kaiserStatusSelectedForCaspio && !isKaiserNotInterested ? (
-                        <p className="text-[11px] text-red-700">Required before Push to Caspio.</p>
-                      ) : null}
-                      {caspioPushed ? (
-                        <p className="text-[11px] text-muted-foreground">
-                          Manual changes here update the app only — also change it in Caspio, or the daily check will
-                          set it back to Caspio’s value.
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="mt-2 space-y-2">
-                      <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                        {kaiserStatusPickerValue || 'Not set'}
-                      </div>
-                      <p className="text-xs text-blue-800">Read only. Synced from Caspio.</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="border-t border-blue-200/80 pt-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <Label className="text-sm font-medium">4. CalAIM Status</Label>
-                    {isUpdatingCaspioStatus ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
-                  </div>
-                  <div className="mt-2 space-y-2">
-                    <Select
-                      value={
-                        applicationInactiveCalaimStatus(application as any) ||
-                        (effectiveCaspioCalAIMStatus === 'Authorized' || effectiveCaspioCalAIMStatus === 'Pending'
-                          ? effectiveCaspioCalAIMStatus
-                          : '__none__')
-                      }
-                      onValueChange={(value) => {
-                        if (value === '__none__') {
-                          void updateCaspioCalAIMStatus('');
-                          return;
-                        }
-                        void updateCaspioCalAIMStatus(value);
-                      }}
-                      disabled={isUpdatingCaspioStatus}
-                    >
-                      <SelectTrigger className="h-9 bg-background">
-                        <SelectValue placeholder="Select CalAIM status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Not selected</SelectItem>
-                        <SelectItem value="Authorized">Authorized</SelectItem>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        {INACTIVE_CALAIM_STATUSES.map((status) => (
-                          <SelectItem key={status} value={status}>
-                            {status}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {effectiveCaspioCalAIMStatus &&
-                    effectiveCaspioCalAIMStatus !== 'Authorized' &&
-                    effectiveCaspioCalAIMStatus !== 'Pending' ? (
-                      <p className="text-[11px] text-muted-foreground">
-                        Caspio CalAIM_Status: <span className="font-medium">{effectiveCaspioCalAIMStatus}</span>
-                      </p>
-                    ) : null}
-                    {!calaimStatusSelectedForCaspio && !caspioPushed ? (
-                      <p className="text-[11px] text-red-700">
-                        Required before Push to Caspio — choose Authorized or Pending.
-                      </p>
-                    ) : null}
-                    {(() => {
-                      const wantsReferral =
-                        normalizeStatusToken(kaiserStatusPickerValue) === normalizeStatusToken('T2038 Requested') ||
-                        effectiveCaspioCalAIMStatus === 'Pending';
-                      if (!wantsReferral) return null;
-                      const clientId2 = String(
-                        (application as any)?.client_ID2 ||
-                          (application as any)?.clientId2 ||
-                          (application as any)?.Client_ID2 ||
-                          (application as any)?.caspioClientId2 ||
-                          ''
-                      ).trim();
-                      if (!caspioPushed || !clientId2) {
-                        return (
-                          <p className="text-[11px] text-amber-800">
-                            Kaiser Referral Generator opens after this member is pushed to Caspio
-                            {caspioPushed && !clientId2 ? ' and Client_ID2 is on the application' : ''}.
-                          </p>
-                        );
-                      }
-                      return (
-                        <Button asChild variant="outline" size="sm" className="h-8 w-full bg-background text-xs">
-                          <Link
-                            href={`/admin/kaiser-referral-generator?clientId2=${encodeURIComponent(clientId2)}&source=caspio`}
-                          >
-                            <LinkIcon className="mr-1.5 h-3.5 w-3.5" />
-                            Kaiser Referral Generator
-                          </Link>
-                        </Button>
-                      );
-                    })()}
-                  </div>
-                </div>
-
-                {caspioPushed ? (
-                  <div className="border-t border-blue-200/80 pt-3 space-y-1.5">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 w-full bg-background text-xs"
-                      onClick={() => void checkStatusesInCaspioNow()}
-                      disabled={isCheckingCaspioStatus}
-                    >
-                      {isCheckingCaspioStatus ? (
-                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                      )}
-                      Check Caspio now (Kaiser + CalAIM status)
-                    </Button>
-                    <p className="text-[11px] text-muted-foreground">
-                      Checked daily against Caspio.
-                      {(() => {
-                        const lastMs = Math.max(
-                          toMillisSafe((application as any)?.caspioStatusCheckedAt),
-                          toMillisSafe((application as any)?.kaiserStatusSyncedFromCaspioAt),
-                          toMillisSafe((application as any)?.calaimStatusSyncedFromCaspioAt)
-                        );
-                        return lastMs > 0 ? ` Last synced ${format(new Date(lastMs), 'MMM d, yyyy h:mm a')}.` : '';
-                      })()}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+            <KaiserStatusQuickAction
+              isKaiserPlan={isKaiserPlan}
+              kaiserStatusSelectedForCaspio={kaiserStatusSelectedForCaspio}
+              caspioPushed={caspioPushed}
+              kaiserStatusPickerValue={kaiserStatusPickerValue}
+              application={application}
+              showManualKaiserStatusSection={showManualKaiserStatusSection}
+              kaiserStatusSelectValue={kaiserStatusSelectValue}
+              isKaiserNotInterested={isKaiserNotInterested}
+              updateDraftKaiserStatus={updateDraftKaiserStatus}
+              kaiserStatusIsUnlisted={kaiserStatusIsUnlisted}
+              prePushKaiserStatusOptions={prePushKaiserStatusOptions}
+              laterKaiserStatusOptions={laterKaiserStatusOptions}
+              isUpdatingCaspioStatus={isUpdatingCaspioStatus}
+              effectiveCaspioCalAIMStatus={effectiveCaspioCalAIMStatus}
+              updateCaspioCalAIMStatus={updateCaspioCalAIMStatus}
+              calaimStatusSelectedForCaspio={calaimStatusSelectedForCaspio}
+              checkStatusesInCaspioNow={checkStatusesInCaspioNow}
+              isCheckingCaspioStatus={isCheckingCaspioStatus}
+            />
 
             <div className="order-[4] space-y-1">
             {(() => {
@@ -14206,392 +11543,39 @@ function ApplicationDetailPageContent() {
               <span className="qa-label">Pull Client_ID2 only</span>
             </Button>
             </div>
-            <div className="order-[10]">
-            <Dialog open={isReversePullPreviewOpen} onOpenChange={setIsReversePullPreviewOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="qa-trigger"
-                  onClick={() => {
-                    if (!isReversePullPreviewOpen) {
-                      void openReversePullPreview();
-                    }
-                  }}
-                >
-                  {isLoadingReversePullPreview ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-                  <span className="qa-label">Precheck Caspio → CS Summary pull</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Precheck Caspio → CS Summary pull</DialogTitle>
-                  <DialogDescription>
-                    Review exactly which CS Summary fields will change before applying Caspio values.
-                    Nothing is written until you click Apply.
-                  </DialogDescription>
-                </DialogHeader>
-                {isLoadingReversePullPreview ? (
-                  <div className="py-8 text-sm text-muted-foreground flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Building reverse pull preview...
-                  </div>
-                ) : reversePullPreview ? (
-                  <div className="space-y-4">
-                    <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
-                      <AlertTitle>
-                        Fields this action will update:{' '}
-                        {reversePullWillUpdateItems.length}
-                      </AlertTitle>
-                      <AlertDescription className="space-y-2 text-xs">
-                        <div>
-                          Safe apply fills empty fields only ({reversePullPreview.summary.fillEmpty}).
-                          Overwrite mode also replaces existing values ({reversePullPreview.summary.overwrite}).
-                        </div>
-                        {reversePullWillUpdateItems.length === 0 ? (
-                          <div className="font-medium">
-                            No CS Summary fields will change with the current settings.
-                          </div>
-                        ) : (
-                          <div className="max-h-[180px] overflow-auto rounded border border-emerald-200 bg-white">
-                            <div className="grid grid-cols-4 gap-2 border-b bg-emerald-50/80 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-                              <div>CS Summary field</div>
-                              <div>Current on form</div>
-                              <div>Will become</div>
-                              <div>Action</div>
-                            </div>
-                            {reversePullWillUpdateItems.map((item, index) => (
-                              <div
-                                key={`will-update-${item.targetCsField || item.csField}-${index}`}
-                                className="grid grid-cols-4 gap-2 border-b px-2 py-1.5 text-[11px]"
-                              >
-                                <div className="font-medium">{item.targetCsField || item.csField}</div>
-                                <div className="truncate text-muted-foreground" title={item.currentValue || '(empty)'}>
-                                  {item.currentValue || '(empty)'}
-                                </div>
-                                <div className="truncate font-medium" title={item.incomingValue || '—'}>
-                                  {item.incomingValue || '—'}
-                                </div>
-                                <div>
-                                  {item.status === 'fill_empty' ? 'Fill empty' : 'Overwrite'}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </AlertDescription>
-                    </Alert>
-
-                    <div className="grid gap-2 md:grid-cols-5 text-xs">
-                      <div className="rounded border bg-muted/30 p-2">
-                        <div className="text-muted-foreground">Checked fields</div>
-                        <div className="font-semibold">{reversePullPreview.summary.totalMapped}</div>
-                      </div>
-                      <div className="rounded border bg-emerald-50 p-2">
-                        <div className="text-emerald-700">Fill Empty</div>
-                        <div className="font-semibold text-emerald-800">{reversePullPreview.summary.fillEmpty}</div>
-                      </div>
-                      <div className="rounded border bg-amber-50 p-2">
-                        <div className="text-amber-700">Would Overwrite</div>
-                        <div className="font-semibold text-amber-800">{reversePullPreview.summary.overwrite}</div>
-                      </div>
-                      <div className="rounded border bg-slate-50 p-2">
-                        <div className="text-slate-700">Unchanged</div>
-                        <div className="font-semibold text-slate-800">{reversePullPreview.summary.unchanged}</div>
-                      </div>
-                      <div className="rounded border bg-rose-50 p-2">
-                        <div className="text-rose-700">Missing in Caspio</div>
-                        <div className="font-semibold text-rose-800">{reversePullPreview.summary.missing}</div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-md border p-3">
-                      <div className="space-y-1">
-                        <div className="text-sm font-medium">Include overwrite candidates</div>
-                        <div className="text-xs text-muted-foreground">
-                          Off = only empty CS Summary fields. On = also show fields that already have values.
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={reversePullIncludeOverwrites}
-                          onCheckedChange={(checked) => setReversePullIncludeOverwrites(Boolean(checked))}
-                        />
-                        <span className="text-xs">
-                          Include overwrites ({reversePullPreview.summary.overwrite})
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-md border p-3">
-                      <div className="space-y-1">
-                        <div className="text-sm font-medium">Show only fields that will update</div>
-                        <div className="text-xs text-muted-foreground">
-                          Hides unchanged / missing-in-Caspio rows so the list matches what Apply will write.
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={reversePullShowWillUpdateOnly}
-                          onCheckedChange={(checked) => {
-                            const next = Boolean(checked);
-                            setReversePullShowWillUpdateOnly(next);
-                            if (next) setReversePullShowOnlyMissing(false);
-                          }}
-                        />
-                        <span className="text-xs">Will update only</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-md border p-3">
-                      <div className="space-y-1">
-                        <div className="text-sm font-medium">Show only fill-empty rows</div>
-                        <div className="text-xs text-muted-foreground">
-                          Narrower filter: only blank CS Summary fields Caspio can fill.
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={reversePullShowOnlyMissing}
-                          onCheckedChange={(checked) => {
-                            const next = Boolean(checked);
-                            setReversePullShowOnlyMissing(next);
-                            if (next) setReversePullShowWillUpdateOnly(false);
-                          }}
-                        />
-                        <span className="text-xs">
-                          Only missing from CS Summary
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="rounded-md border">
-                      <div className="grid grid-cols-5 gap-2 border-b bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        <div>CS field</div>
-                        <div>Caspio field</div>
-                        <div>Current</div>
-                        <div>Incoming</div>
-                        <div>Status</div>
-                      </div>
-                      <div className="max-h-[320px] overflow-auto">
-                        {reversePullVisibleItems.length === 0 ? (
-                          <div className="px-3 py-4 text-xs text-muted-foreground">
-                            {reversePullShowOnlyMissing
-                              ? 'No missing CS Summary fields are available from Caspio in this preview.'
-                              : reversePullShowWillUpdateOnly
-                                ? 'No fields will update with the current settings.'
-                              : 'No fields available in this preview.'}
-                          </div>
-                        ) : reversePullVisibleItems.map((item, index) => (
-                          <div key={`${item.csField}-${item.caspioField}-${index}`} className="grid grid-cols-5 gap-2 border-b px-3 py-2 text-xs">
-                            <div className="font-medium">
-                              {item.targetCsField || item.csField}
-                              {item.targetCsField && item.targetCsField !== item.csField ? (
-                                <div className="text-[10px] font-normal text-muted-foreground">
-                                  {`mapped from ${item.csField}`}
-                                </div>
-                              ) : null}
-                            </div>
-                            <div className="text-muted-foreground">{item.caspioField}</div>
-                            <div className="truncate" title={item.currentValue || '(empty)'}>
-                              {item.currentValue || '(empty)'}
-                            </div>
-                            <div className="truncate" title={item.incomingValue || 'No value from Caspio'}>
-                              {item.incomingValue || '—'}
-                            </div>
-                            <div>
-                              <Badge
-                                variant="outline"
-                                className={
-                                  item.status === 'fill_empty'
-                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                                    : item.status === 'overwrite'
-                                      ? 'border-amber-300 bg-amber-50 text-amber-700'
-                                      : item.status === 'unchanged'
-                                        ? 'border-slate-300 bg-slate-50 text-slate-700'
-                                        : 'border-rose-300 bg-rose-50 text-rose-700'
-                                }
-                              >
-                                {item.status === 'fill_empty'
-                                  ? 'Fill empty'
-                                  : item.status === 'overwrite'
-                                    ? 'Overwrite'
-                                    : item.status === 'unchanged'
-                                      ? 'Unchanged'
-                                      : 'Missing'}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs text-muted-foreground">
-                        Source: {reversePullPreview.mappingSource === 'local-preview' ? 'local locked preview mapping' : 'shared locked mapping'}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => void openReversePullPreview()}
-                          disabled={isLoadingReversePullPreview}
-                        >
-                          {isLoadingReversePullPreview ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                          Refresh precheck
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => void applyReversePullPreview('safe')}
-                          disabled={isApplyingReversePullPreview || reversePullPreview.summary.fillEmpty <= 0}
-                        >
-                          {isApplyingReversePullPreview ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                          Apply {reversePullPreview.summary.fillEmpty} empty field{reversePullPreview.summary.fillEmpty === 1 ? '' : 's'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setReversePullConfirmOverwriteOpen(true)}
-                          disabled={isApplyingReversePullPreview || reversePullPreview.summary.overwrite <= 0}
-                        >
-                          Overwrite {reversePullPreview.summary.overwrite} existing field{reversePullPreview.summary.overwrite === 1 ? '' : 's'}
-                        </Button>
-                      </div>
-                    </div>
-                    <AlertDialog open={reversePullConfirmOverwriteOpen} onOpenChange={setReversePullConfirmOverwriteOpen}>
-                      <AlertDialogContent className="max-w-2xl">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Overwrite existing CS Summary values?</AlertDialogTitle>
-                          <AlertDialogDescription asChild>
-                            <div className="space-y-3 text-sm text-muted-foreground">
-                              <p>
-                                This will replace existing CS Summary fields with Caspio values for this member.
-                                Overwrite candidates: {reversePullPreview.summary.overwrite}.
-                              </p>
-                              {reversePullOverwriteItems.length > 0 ? (
-                                <div className="max-h-[220px] overflow-auto rounded border bg-background text-foreground">
-                                  <div className="grid grid-cols-3 gap-2 border-b bg-muted/40 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                    <div>Field</div>
-                                    <div>Current</div>
-                                    <div>Will become</div>
-                                  </div>
-                                  {reversePullOverwriteItems.map((item, index) => (
-                                    <div
-                                      key={`overwrite-confirm-${item.targetCsField || item.csField}-${index}`}
-                                      className="grid grid-cols-3 gap-2 border-b px-2 py-1.5 text-[11px]"
-                                    >
-                                      <div className="font-medium">{item.targetCsField || item.csField}</div>
-                                      <div className="truncate" title={item.currentValue}>{item.currentValue || '(empty)'}</div>
-                                      <div className="truncate font-medium" title={item.incomingValue}>{item.incomingValue || '—'}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel disabled={isApplyingReversePullPreview}>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={(event) => {
-                              event.preventDefault();
-                              void applyReversePullWithOverwrite().finally(() => setReversePullConfirmOverwriteOpen(false));
-                            }}
-                            disabled={isApplyingReversePullPreview}
-                          >
-                            {isApplyingReversePullPreview ? (
-                              <span className="inline-flex items-center gap-2">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Applying...
-                              </span>
-                            ) : (
-                              'Confirm Overwrite'
-                            )}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                ) : (
-                  <div className="py-4 text-sm text-muted-foreground">
-                    Open this dialog to run a precheck before applying Caspio values.
-                  </div>
-                )}
-              </DialogContent>
-            </Dialog>
-            </div>
-            <div className="order-[11]">
-            {showPrePushNotesSection ? (
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
-                <Label htmlFor="quick-actions-pre-push-notes" className="text-xs font-medium text-muted-foreground">
-                  Notes
-                </Label>
-                {originalNotesPushedToCaspio || laterNotesPushedToCaspio.length > 0 ? (
-                  <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-[11px] text-emerald-950 space-y-2">
-                    <div className="font-medium">Notes pushed to Caspio</div>
-                    {originalNotesPushedToCaspio ? (
-                      <div className="whitespace-pre-wrap">{originalNotesPushedToCaspio}</div>
-                    ) : null}
-                    {laterNotesPushedToCaspio.map((entry, index) => {
-                      const at = Date.parse(entry.pushedAtIso);
-                      const label = [
-                        Number.isNaN(at) ? '' : format(new Date(at), 'MMM d, yyyy h:mm a'),
-                        entry.pushedByName,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ');
-                      return (
-                        <div
-                          key={`${entry.pushedAtIso}-${index}`}
-                          className="border-t border-emerald-200 pt-2 whitespace-pre-wrap"
-                        >
-                          <div className="font-medium">Update{label ? ` (${label})` : ''}:</div>
-                          {entry.notes}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : adminIntakeNotes ? (
-                  <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-[11px] text-blue-900 whitespace-pre-wrap">
-                    <span className="font-medium">Imported admin intake notes:</span>
-                    {'\n'}
-                    {adminIntakeNotes}
-                  </div>
-                ) : null}
-                <Textarea
-                  id="quick-actions-pre-push-notes"
-                  value={prePushNotesDraft}
-                  onChange={(event) => setPrePushNotesDraft(event.target.value)}
-                  rows={4}
-                  placeholder={
-                    notesAlreadyPushedToCaspio
-                      ? 'Add updated notes for the next Caspio notes push (original notes above stay on this application).'
-                      : 'Add family call/intake notes before Caspio push.'
-                  }
-                />
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] text-muted-foreground">
-                    {notesAlreadyPushedToCaspio
-                      ? 'Original notes stay visible above. New text here is what gets sent on the next Caspio notes push.'
-                      : 'Saved to draft and sent on Caspio push (member notes field when mapped + Caspio client notes log).'}
-                  </p>
-                  <div className="text-[11px] text-muted-foreground flex items-center gap-2">
-                    {isSavingPrePushNotes || prePushNotesAutosaveState === 'saving' ? (
-                      <>
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        Saving...
-                      </>
-                    ) : prePushNotesAutosaveState === 'saved' ? (
-                      `Saved${prePushNotesSavedAtIso ? ` ${format(new Date(prePushNotesSavedAtIso), 'h:mm a')}` : ''}`
-                    ) : prePushNotesAutosaveState === 'error' ? (
-                      'Autosave failed'
-                    ) : (
-                      'Autosave on'
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            </div>
+            <CaspioReversePullQuickAction
+              isReversePullPreviewOpen={isReversePullPreviewOpen}
+              setIsReversePullPreviewOpen={setIsReversePullPreviewOpen}
+              openReversePullPreview={openReversePullPreview}
+              isLoadingReversePullPreview={isLoadingReversePullPreview}
+              reversePullPreview={reversePullPreview}
+              reversePullWillUpdateItems={reversePullWillUpdateItems}
+              reversePullIncludeOverwrites={reversePullIncludeOverwrites}
+              setReversePullIncludeOverwrites={setReversePullIncludeOverwrites}
+              reversePullShowWillUpdateOnly={reversePullShowWillUpdateOnly}
+              setReversePullShowWillUpdateOnly={setReversePullShowWillUpdateOnly}
+              setReversePullShowOnlyMissing={setReversePullShowOnlyMissing}
+              reversePullShowOnlyMissing={reversePullShowOnlyMissing}
+              reversePullVisibleItems={reversePullVisibleItems}
+              applyReversePullPreview={applyReversePullPreview}
+              isApplyingReversePullPreview={isApplyingReversePullPreview}
+              setReversePullConfirmOverwriteOpen={setReversePullConfirmOverwriteOpen}
+              reversePullConfirmOverwriteOpen={reversePullConfirmOverwriteOpen}
+              reversePullOverwriteItems={reversePullOverwriteItems}
+              applyReversePullWithOverwrite={applyReversePullWithOverwrite}
+            />
+            <PrePushNotesQuickAction
+              showPrePushNotesSection={showPrePushNotesSection}
+              originalNotesPushedToCaspio={originalNotesPushedToCaspio}
+              laterNotesPushedToCaspio={laterNotesPushedToCaspio}
+              adminIntakeNotes={adminIntakeNotes}
+              prePushNotesDraft={prePushNotesDraft}
+              setPrePushNotesDraft={setPrePushNotesDraft}
+              notesAlreadyPushedToCaspio={notesAlreadyPushedToCaspio}
+              isSavingPrePushNotes={isSavingPrePushNotes}
+              prePushNotesAutosaveState={prePushNotesAutosaveState}
+              prePushNotesSavedAtIso={prePushNotesSavedAtIso}
+            />
             <div className="order-[5] space-y-2">
             <IlsServiceStartedEmailDialog
               application={application}
@@ -14618,843 +11602,99 @@ function ApplicationDetailPageContent() {
               }
             />
             </div>
-            <div className="order-[8] space-y-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border bg-muted/10 p-3">
-              <div className="sm:col-span-2 flex items-center justify-between gap-2">
-                <Label className="text-xs font-medium text-muted-foreground">8. Email reminders</Label>
-                <QaDoneMeta
-                  done={Boolean((application as any)?.emailRemindersEnabled)}
-                  atMs={toMillisSafe((application as any)?.emailRemindersEnabledAt) || undefined}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-muted-foreground">Email reminders frequency</Label>
-                <Select
-                  value={Boolean((application as any)?.emailRemindersEnabled) ? String(documentReminderFrequencyDays) : 'none'}
-                  onValueChange={(v) => {
-                    if (v === 'none') {
-                      updateReminderSettings({ emailRemindersEnabled: false });
-                      return;
-                    }
-                    const nextAtMs = documentReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
-                    updateReminderSettings({
-                      emailRemindersEnabled: true,
-                      emailRemindersEnabledAt: new Date().toISOString(),
-                      documentReminderFrequencyDays: Number(v),
-                      documentReminderNextAtMs: nextAtMs,
-                    });
-                  }}
-                  disabled={isUpdatingReminderControls}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Frequency" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {reminderFrequencyOptions.map((d) => (
-                      <SelectItem key={`qa-email-doc-freq-${d}`} value={String(d)}>
-                        Once a week
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-muted-foreground">Next email reminder date</Label>
-                <Input
-                  type="date"
-                  value={toDateInputValue(documentReminderNextAtMs)}
-                  onChange={(event) => {
-                    const nextAtMs = fromDateInputToMs(event.target.value);
-                    updateReminderSettings({ documentReminderNextAtMs: nextAtMs });
-                  }}
-                  disabled={isUpdatingReminderControls}
-                />
-              </div>
-              <p className="sm:col-span-2 text-[11px] text-muted-foreground">
-                Establish the member in Caspio first, then use Email Primary Contact after CS Summary is filled out online.
-                Push CS Summary updates to Caspio to enable auto reminders.
-              </p>
-            </div>
-            </div>
+            <EmailRemindersQuickAction
+              application={application}
+              documentReminderFrequencyDays={documentReminderFrequencyDays}
+              updateReminderSettings={updateReminderSettings}
+              documentReminderNextAtMs={documentReminderNextAtMs}
+              DAY_MS={DAY_MS}
+              isUpdatingReminderControls={isUpdatingReminderControls}
+              reminderFrequencyOptions={reminderFrequencyOptions}
+              toDateInputValue={toDateInputValue}
+              fromDateInputToMs={fromDateInputToMs}
+            />
 
             <div className="order-[20] space-y-2">
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="qa-trigger">
-                  <Target className="h-4 w-4" />
-                  <span className="qa-label">Application progression</span>
-                  <span className="ml-auto flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
-                      {String((application as any)?.assignedStaffName || '').trim() || 'Unassigned'}
-                    </Badge>
-                  </span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Application progression</DialogTitle>
-                  <DialogDescription>
-                    View Caspio workflow status and tracking fields. Updates should be made in the tracker pages (Caspio-backed), not here.
-                    <span className="mt-2 block text-xs text-muted-foreground">
-                      Assigned staff:{' '}
-                      <span className="font-medium text-foreground">
-                        {String((application as any)?.assignedStaffName || '').trim() || 'Unassigned'}
-                      </span>
-                    </span>
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">Workflow status</label>
-                      <span className="text-xs text-muted-foreground">{application.healthPlan} workflow</span>
-                    </div>
+            <ApplicationProgressionDialog
+              application={application}
+              healthNetCurrentStatus={healthNetCurrentStatus}
+              isKaiserPlan={isKaiserPlan}
+              isHealthNetPlan={isHealthNetPlan}
+              effectiveNextStep={effectiveNextStep}
+              staffTracker={staffTracker}
+            />
 
-                    <div className="rounded-md border bg-muted/30 p-3 space-y-3">
-                      {Boolean((application as any)?.caspioSent) ? (
-                        <>
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="space-y-1">
-                              <div className="text-xs text-muted-foreground">Current status</div>
-                              <div className="text-sm font-medium">
-                                {String(
-                                  (application as any)?.healthPlan?.toLowerCase?.().includes('kaiser')
-                                    ? ((application as any)?.kaiserStatus || '')
-                                    : (application as any)?.healthPlan?.toLowerCase?.().includes('health net')
-                                      ? (healthNetCurrentStatus || '')
-                                      : ''
-                                ).trim() || '—'}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {(application as any)?.healthPlan?.toLowerCase?.().includes('kaiser') ? (
-                                <Button asChild variant="outline" size="sm">
-                                  <Link href="/admin/kaiser-tracker">Open Kaiser Tracker</Link>
-                                </Button>
-                              ) : (application as any)?.healthPlan?.toLowerCase?.().includes('health net') ? (
-                                <Button asChild variant="outline" size="sm">
-                                  <Link href="/admin/progress-tracker">Open Progress Tracker</Link>
-                                </Button>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            This page is read-only for workflow status and next-step tracking. Edits are handled in the tracker pages after the application is in Caspio.
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-sm text-muted-foreground">
-                          Not yet sent to Caspio. Workflow status / next step tracking will appear after the application is pushed to Caspio.
-                        </div>
-                      )}
-                    </div>
-                  </div>
+            <ReminderSettingsDialog
+              isReminderDialogOpen={isReminderDialogOpen}
+              setIsReminderDialogOpen={setIsReminderDialogOpen}
+              emailReminderSectionRef={emailReminderSectionRef}
+              application={application}
+              isUpdatingReminderControls={isUpdatingReminderControls}
+              updateReminderSettings={updateReminderSettings}
+              currentReminderMissingItems={currentReminderMissingItems}
+              documentReminderFrequencyDays={documentReminderFrequencyDays}
+              documentReminderNextAtMs={documentReminderNextAtMs}
+              DAY_MS={DAY_MS}
+              reminderFrequencyOptions={reminderFrequencyOptions}
+              toDateInputValue={toDateInputValue}
+              fromDateInputToMs={fromDateInputToMs}
+              staffTestReminderEmail={staffTestReminderEmail}
+              loadTestMissingDocsPreview={loadTestMissingDocsPreview}
+              isLoadingReminderPreview={isLoadingReminderPreview}
+              sendTestMissingDocsReminder={sendTestMissingDocsReminder}
+              isSendingTestReminder={isSendingTestReminder}
+              reminderPreview={reminderPreview}
+              statusReminderSectionRef={statusReminderSectionRef}
+              statusReminderFrequencyDays={statusReminderFrequencyDays}
+              statusReminderNextAtMs={statusReminderNextAtMs}
+              isKaiserPlan={isKaiserPlan}
+              isAlfaVisitCompleteStatusSelected={isAlfaVisitCompleteStatusSelected}
+              handleFamilyStatusProgressChange={handleFamilyStatusProgressChange}
+              alfaVisitCompleteStatusLabel={alfaVisitCompleteStatusLabel}
+              loadTestStatusReminderPreview={loadTestStatusReminderPreview}
+              isLoadingStatusReminderPreview={isLoadingStatusReminderPreview}
+              sendTestStatusReminder={sendTestStatusReminder}
+              isSendingStatusTestReminder={isSendingStatusTestReminder}
+              statusReminderPreview={statusReminderPreview}
+              isHealthNetPlan={isHealthNetPlan}
+              familyStatusProgressValue={familyStatusProgressValue}
+              familyProgressOptions={familyProgressOptions}
+              familyProgressNeedsDeniedReason={familyProgressNeedsDeniedReason}
+              familyStatusDeniedReason={familyStatusDeniedReason}
+              setApplication={setApplication}
+              handleFamilyDeniedReasonBlur={handleFamilyDeniedReasonBlur}
+              handleManualFamilyStatusSend={handleManualFamilyStatusSend}
+              isSendingFamilyStatusNow={isSendingFamilyStatusNow}
+              familyStatusHistory={familyStatusHistory}
+            />
 
-                  <div className="space-y-3 border-t pt-4">
-                    <div className="text-sm font-medium">Next step tracking (Caspio)</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">Suggested next step</div>
-                        <div className="text-sm font-medium">
-                          {String((isKaiserPlan || isHealthNetPlan) ? (effectiveNextStep || '') : '').trim() || '—'}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">Next step due date</div>
-                        <div className="text-sm font-medium">
-                          {(() => {
-                            const raw: any =
-                              (application as any)?.Next_Step_Due_Date ||
-                              (application as any)?.nextStepDueDate ||
-                              (application as any)?.Kaiser_Next_Step_Date ||
-                              (application as any)?.kaiserNextStepDate ||
-                              (application as any)?.nextStepDate ||
-                              (staffTracker as any)?.nextStepDate ||
-                              null;
-                            try {
-                              const d: Date | null = raw?.toDate?.() || (raw ? new Date(raw) : null);
-                              const ms = d?.getTime?.();
-                              if (!ms || Number.isNaN(ms)) return '—';
-                              return format(d as Date, 'MMM d, yyyy');
-                            } catch {
-                              return '—';
-                            }
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      To change workflow, next step, next step date, or assigned staff, use the tracker pages (Caspio-backed).
-                    </div>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <AuthorizationUploadsDialog
+              latestAuthorizationUploadLabel={latestAuthorizationUploadLabel}
+              latestAuthorizationRecord={latestAuthorizationRecord}
+              isKaiserApplication={isKaiserApplication}
+              kaiserH2022Records={kaiserH2022Records}
+              setAuthorizationUpload={setAuthorizationUpload}
+              authorizationUpload={authorizationUpload}
+              authorizationTypes={authorizationTypes}
+              authorizationUploading={authorizationUploading}
+              authorizationUploadProgress={authorizationUploadProgress}
+              handleAuthorizationUpload={handleAuthorizationUpload}
+              authorizationSearch={authorizationSearch}
+              setAuthorizationSearch={setAuthorizationSearch}
+              getDaysUntil={getDaysUntil}
+              formatAuthorizationDate={formatAuthorizationDate}
+              filteredAuthorizationRecords={filteredAuthorizationRecords}
+            />
 
-            <Dialog open={isReminderDialogOpen} onOpenChange={setIsReminderDialogOpen}>
-              <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Missing Docs and status reminders</DialogTitle>
-                  <DialogDescription>
-                    Configure reminder cadence and preview reminder content before test-sending.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div ref={emailReminderSectionRef} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
-                    <div className="flex items-center space-x-2">
-                      <Mail className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <Label htmlFor="email-reminders-quick" className="text-sm font-medium">
-                          Email reminders for missing documents
-                        </Label>
-                        <p className="text-xs text-muted-foreground">
-                          Recipient: {(application as any)?.referrerEmail || 'Email not available'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      {isUpdatingReminderControls && <Loader2 className="h-4 w-4 animate-spin" />}
-                      <Switch
-                        id="email-reminders-quick"
-                        checked={Boolean((application as any)?.emailRemindersEnabled)}
-                        onCheckedChange={(enabled) =>
-                          updateReminderSettings({
-                            emailRemindersEnabled: Boolean(enabled),
-                            ...(enabled ? { emailRemindersEnabledAt: new Date().toISOString() } : {}),
-                          })
-                        }
-                        disabled={isUpdatingReminderControls}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="p-2 bg-slate-50 border border-slate-200 rounded">
-                    <p className="text-xs font-medium text-slate-800 mb-1">Currently required missing documents (email content):</p>
-                    {currentReminderMissingItems.length > 0 ? (
-                      <ul className="text-xs text-slate-700 space-y-1">
-                        {currentReminderMissingItems.map((doc) => (
-                          <li key={doc} className="flex items-center gap-1">
-                            <div className="w-1 h-1 bg-slate-500 rounded-full"></div>
-                            {doc}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-xs text-green-700">All required documents are currently complete.</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="email-reminder-frequency-quick">Email reminder frequency</Label>
-                    <Select
-                      value={Boolean((application as any)?.emailRemindersEnabled) ? String(documentReminderFrequencyDays) : 'none'}
-                      onValueChange={(v) => {
-                        if (v === 'none') {
-                          updateReminderSettings({ emailRemindersEnabled: false });
-                          return;
-                        }
-                        const nextAtMs = documentReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
-                        updateReminderSettings({
-                          emailRemindersEnabled: true,
-                          emailRemindersEnabledAt: new Date().toISOString(),
-                          documentReminderFrequencyDays: Number(v),
-                          documentReminderNextAtMs: nextAtMs,
-                        });
-                      }}
-                      disabled={isUpdatingReminderControls}
-                    >
-                      <SelectTrigger id="email-reminder-frequency-quick" className="w-full">
-                        <SelectValue placeholder="Frequency" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {reminderFrequencyOptions.map((d) => (
-                          <SelectItem key={`quick-doc-freq-${d}`} value={String(d)}>
-                            Once a week
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email-reminder-next-date-quick">Next email reminder date</Label>
-                    <Input
-                      id="email-reminder-next-date-quick"
-                      type="date"
-                      value={toDateInputValue(documentReminderNextAtMs)}
-                      onChange={(event) => {
-                        const nextAtMs = fromDateInputToMs(event.target.value);
-                        updateReminderSettings({ documentReminderNextAtMs: nextAtMs });
-                      }}
-                      disabled={isUpdatingReminderControls}
-                    />
-                  </div>
-
-                  <div className="space-y-2 p-3 border rounded-lg bg-muted/20">
-                    <Label htmlFor="staff-test-reminder-email" className="text-sm font-medium">
-                      Staff test reminder email
-                    </Label>
-                    <Input
-                      id="staff-test-reminder-email"
-                      type="email"
-                      value={staffTestReminderEmail}
-                      readOnly
-                      disabled
-                    />
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                      <Button
-                        variant="secondary"
-                        onClick={loadTestMissingDocsPreview}
-                        disabled={isLoadingReminderPreview || !staffTestReminderEmail}
-                      >
-                        {isLoadingReminderPreview ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Loading...
-                          </>
-                        ) : (
-                          <>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Preview Test
-                          </>
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={sendTestMissingDocsReminder}
-                        disabled={isSendingTestReminder || !staffTestReminderEmail}
-                      >
-                        {isSendingTestReminder ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Sending...
-                          </>
-                        ) : (
-                          'Send Test'
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {reminderPreview && (
-                    <div className="rounded border bg-white p-3 space-y-2">
-                      <div className="text-xs font-semibold">Reminder email preview (what applicant sees)</div>
-                      <div className="text-xs text-muted-foreground">To: {reminderPreview.recipientEmail}</div>
-                      <div className="text-xs text-muted-foreground">Subject: {reminderPreview.subject}</div>
-                      <div className="text-xs">
-                        Hi {reminderPreview.referrerName}, this is a reminder that the application for {reminderPreview.memberName} is still missing:
-                      </div>
-                      {reminderPreview.missingItems.length > 0 ? (
-                        <ul className="text-xs space-y-1">
-                          {reminderPreview.missingItems.map((item) => (
-                            <li key={item} className="flex items-center gap-1">
-                              <div className="w-1 h-1 bg-slate-500 rounded-full"></div>
-                              {item}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className="text-xs text-muted-foreground">No missing items.</div>
-                      )}
-                    </div>
-                  )}
-
-                  <div ref={statusReminderSectionRef} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
-                    <div className="flex items-center space-x-2">
-                      <Bell className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <Label htmlFor="status-reminders-quick" className="text-sm font-medium">
-                          Status update reminders
-                        </Label>
-                        <p className="text-xs text-muted-foreground">Send application status updates to user</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      {isUpdatingReminderControls && <Loader2 className="h-4 w-4 animate-spin" />}
-                      <Switch
-                        id="status-reminders-quick"
-                        checked={Boolean((application as any)?.statusRemindersEnabled)}
-                        onCheckedChange={(enabled) => updateReminderSettings({ statusRemindersEnabled: Boolean(enabled) })}
-                        disabled={isUpdatingReminderControls}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="status-reminder-frequency-quick">Status reminder frequency</Label>
-                    <Select
-                      value={Boolean((application as any)?.statusRemindersEnabled) ? String(statusReminderFrequencyDays) : 'none'}
-                      onValueChange={(v) => {
-                        if (v === 'none') {
-                          updateReminderSettings({ statusRemindersEnabled: false });
-                          return;
-                        }
-                        const nextAtMs = statusReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
-                        updateReminderSettings({
-                          statusRemindersEnabled: true,
-                          statusReminderFrequencyDays: Number(v),
-                          statusReminderNextAtMs: nextAtMs,
-                        });
-                      }}
-                      disabled={isUpdatingReminderControls}
-                    >
-                      <SelectTrigger id="status-reminder-frequency-quick" className="w-full">
-                        <SelectValue placeholder="Frequency" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {reminderFrequencyOptions.map((d) => (
-                          <SelectItem key={`quick-status-freq-${d}`} value={String(d)}>
-                            Once a week
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {isKaiserPlan ? (
-                    <div className="rounded-lg border bg-muted/20 p-3">
-                      <label className="flex items-start gap-2">
-                        <Checkbox
-                          checked={isAlfaVisitCompleteStatusSelected}
-                          onCheckedChange={(checked) => {
-                            if (Boolean(checked)) {
-                              void handleFamilyStatusProgressChange(alfaVisitCompleteStatusLabel);
-                              return;
-                            }
-                            if (isAlfaVisitCompleteStatusSelected) {
-                              void handleFamilyStatusProgressChange('none');
-                            }
-                          }}
-                          disabled={isUpdatingReminderControls}
-                        />
-                        <div className="space-y-1">
-                          <span className="text-sm font-medium">ALFA visit complete with signoffs and sent to ILS</span>
-                          <p className="text-xs text-muted-foreground">
-                            Marks this status update and syncs the Application progress value below.
-                          </p>
-                        </div>
-                      </label>
-                    </div>
-                  ) : null}
-                  <div className="space-y-2 p-3 border rounded-lg bg-muted/20">
-                    <Label htmlFor="staff-test-status-reminder-email" className="text-sm font-medium">
-                      Staff test status email
-                    </Label>
-                    <Input
-                      id="staff-test-status-reminder-email"
-                      type="email"
-                      value={staffTestReminderEmail}
-                      readOnly
-                      disabled
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      Uses current <span className="font-medium">Application progress</span> value below.
-                    </div>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                      <Button
-                        variant="secondary"
-                        onClick={loadTestStatusReminderPreview}
-                        disabled={isLoadingStatusReminderPreview || !staffTestReminderEmail}
-                      >
-                        {isLoadingStatusReminderPreview ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Loading...
-                          </>
-                        ) : (
-                          <>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Preview Test
-                          </>
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={sendTestStatusReminder}
-                        disabled={isSendingStatusTestReminder || !staffTestReminderEmail}
-                      >
-                        {isSendingStatusTestReminder ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Sending...
-                          </>
-                        ) : (
-                          'Send Test'
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                  {statusReminderPreview && (
-                    <div className="rounded border bg-white p-3 space-y-2">
-                      <div className="text-xs font-semibold">Status reminder preview (what applicant sees)</div>
-                      <div className="text-xs text-muted-foreground">To: {statusReminderPreview.recipientEmail}</div>
-                      <div className="text-xs text-muted-foreground">Subject: {statusReminderPreview.subject}</div>
-                      <div className="text-xs">
-                        Hi {statusReminderPreview.referrerName}, {statusReminderPreview.message}
-                      </div>
-                      {statusReminderPreview.deniedReason ? (
-                        <div className="text-xs text-muted-foreground">
-                          Denied reason: {statusReminderPreview.deniedReason}
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-
-                  {(isKaiserPlan || isHealthNetPlan) && (
-                    <div className="space-y-2 rounded-lg border p-3 bg-muted/20">
-                      <Label htmlFor="family-status-progress" className="text-sm font-medium">
-                        Application progress (status reminders to families)
-                      </Label>
-                      <Select
-                        value={familyStatusProgressValue || 'none'}
-                        onValueChange={(value) => {
-                          void handleFamilyStatusProgressChange(value);
-                        }}
-                        disabled={isUpdatingReminderControls}
-                      >
-                        <SelectTrigger id="family-status-progress">
-                          <SelectValue placeholder="Select progress status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {familyProgressOptions.map((option) => (
-                            <SelectItem key={`family-progress-${option}`} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {familyProgressNeedsDeniedReason && (
-                        <div className="space-y-2">
-                          <Label htmlFor="family-status-denied-reason" className="text-sm font-medium">
-                            Authorization denied reason
-                          </Label>
-                          <Textarea
-                            id="family-status-denied-reason"
-                            rows={3}
-                            placeholder="Enter denial reason for family status updates..."
-                            value={familyStatusDeniedReason}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              setApplication((prev) =>
-                                prev ? ({ ...(prev as any), familyStatusDeniedReason: nextValue } as any) : prev
-                              );
-                            }}
-                            onBlur={(event) => {
-                              void handleFamilyDeniedReasonBlur(event.target.value);
-                            }}
-                            disabled={isUpdatingReminderControls}
-                          />
-                        </div>
-                      )}
-                      <Button
-                        variant="outline"
-                        className="w-full sm:w-auto"
-                        onClick={() => {
-                          void handleManualFamilyStatusSend();
-                        }}
-                        disabled={
-                          isSendingFamilyStatusNow ||
-                          !familyStatusProgressValue ||
-                          (familyProgressNeedsDeniedReason && !String(familyStatusDeniedReason || '').trim())
-                        }
-                      >
-                        {isSendingFamilyStatusNow ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Sending status...
-                          </>
-                        ) : (
-                          'Send status update now'
-                        )}
-                      </Button>
-
-                      {familyStatusHistory.length > 0 && (
-                        <div className="space-y-1 rounded border p-2 bg-white">
-                          <div className="text-xs font-medium text-muted-foreground">Recent status emails</div>
-                          {familyStatusHistory.slice(0, 5).map((entry: any, idx: number) => {
-                            const when = (() => {
-                              try {
-                                const d = new Date(entry?.sentAtMs || entry?.sentAtIso || '');
-                                return Number.isNaN(d.getTime()) ? '' : format(d, 'MMM d, h:mm a');
-                              } catch {
-                                return '';
-                              }
-                            })();
-                            return (
-                              <div key={`family-status-history-${idx}`} className="text-xs text-muted-foreground">
-                                {when ? `${when} - ` : ''}{String(entry?.status || 'Status update')}
-                                {String(entry?.reason || '').trim() ? ` (Reason: ${String(entry.reason).trim()})` : ''}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="qa-trigger">
-                  <UploadCloud className="h-4 w-4" />
-                  <span className="qa-label">Authorization uploads</span>
-                </Button>
-              </DialogTrigger>
-              {latestAuthorizationUploadLabel ? (
-                <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
-                  Last authorization upload: {latestAuthorizationUploadLabel}
-                  {String(latestAuthorizationRecord?.type || '').trim()
-                    ? ` (${String(latestAuthorizationRecord?.type || '').trim()})`
-                    : ''}
-                </div>
-              ) : null}
-              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Authorization uploads</DialogTitle>
-                  <DialogDescription>
-                    Track authorization windows and upload documents. Use search to find previous auths for reauthorizations.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  {isKaiserApplication ? (
-                    <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm">
-                      <div className="font-medium text-indigo-900">Kaiser ongoing H2022 authorizations</div>
-                      <div className="mt-1 text-indigo-800">
-                        Use this section for ongoing six-month reassessment authorizations after T2038 expires.
-                        Upload the H2022 PDF and keep start/end dates current.
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary">H2022 records: {kaiserH2022Records.length}</Badge>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setAuthorizationUpload((prev) => ({ ...prev, type: 'H2022' }))}
-                        >
-                          Set Type to H2022
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                  <div className="space-y-2">
-                    <Label htmlFor="authorization-type">Authorization Type</Label>
-                    <Select
-                      value={authorizationUpload.type}
-                      onValueChange={(value) => setAuthorizationUpload((prev) => ({ ...prev, type: value }))}
-                    >
-                      <SelectTrigger id="authorization-type">
-                        <SelectValue placeholder="Select authorization type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {authorizationTypes.map((type) => (
-                          <SelectItem key={type} value={type}>
-                            {type}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="authorization-start">Start Date</Label>
-                      <Input
-                        id="authorization-start"
-                        type="date"
-                        value={authorizationUpload.startDate}
-                        onChange={(event) => setAuthorizationUpload((prev) => ({ ...prev, startDate: event.target.value }))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="authorization-end">End Date</Label>
-                      <Input
-                        id="authorization-end"
-                        type="date"
-                        value={authorizationUpload.endDate}
-                        onChange={(event) => setAuthorizationUpload((prev) => ({ ...prev, endDate: event.target.value }))}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="authorization-file">Authorization Document</Label>
-                    <Input
-                      id="authorization-file"
-                      type="file"
-                      onChange={(event) => setAuthorizationUpload((prev) => ({ ...prev, file: event.target.files?.[0] || null }))}
-                    />
-                  </div>
-                  {authorizationUploading && <Progress value={authorizationUploadProgress} className="h-1 w-full" />}
-                  <Button onClick={handleAuthorizationUpload} className="w-full" disabled={authorizationUploading}>
-                    {authorizationUploading ? 'Uploading...' : 'Save Authorization'}
-                  </Button>
-
-                  <Separator />
-
-                  <div className="space-y-2">
-                    <Label htmlFor="authorization-search">Search Previous Authorizations</Label>
-                    <Input
-                      id="authorization-search"
-                      value={authorizationSearch}
-                      onChange={(event) => setAuthorizationSearch(event.target.value)}
-                      placeholder="Search by type, date, or file name..."
-                    />
-                  </div>
-
-                  {isKaiserApplication ? (
-                    <div className="space-y-2">
-                      <Label>Ongoing H2022 end-date tracker</Label>
-                      {kaiserH2022Records.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No H2022 records uploaded yet.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {kaiserH2022Records.map((record) => {
-                            const daysUntilEnd = getDaysUntil(record.endDate);
-                            const isExpiringSoon = typeof daysUntilEnd === 'number' && daysUntilEnd <= 30;
-                            return (
-                              <div key={`h2022-${record.id || `${record.startDate}-${record.fileName}`}`} className="rounded-md border p-2 text-sm">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="font-medium">
-                                    H2022
-                                    {isExpiringSoon ? (
-                                      <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">
-                                        Expires in {daysUntilEnd} days
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                  {record.downloadURL ? (
-                                    <Button asChild variant="ghost" size="sm">
-                                      <a href={record.downloadURL} target="_blank" rel="noopener noreferrer">
-                                        <Download className="mr-2 h-4 w-4" />
-                                        View PDF
-                                      </a>
-                                    </Button>
-                                  ) : null}
-                                </div>
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                  Start: {formatAuthorizationDate(record.startDate)} | End: {formatAuthorizationDate(record.endDate)}
-                                  {record.fileName ? ` | File: ${record.fileName}` : ''}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-
-                  {filteredAuthorizationRecords.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No authorization records found.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {filteredAuthorizationRecords.map((record) => {
-                        const daysUntilEnd = getDaysUntil(record.endDate);
-                        const isExpiringSoon = typeof daysUntilEnd === 'number' && daysUntilEnd <= 30;
-                        return (
-                          <div key={record.id || `${record.type}-${record.startDate}`} className="rounded-md border p-3 text-sm">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="font-medium">
-                                {record.type || 'Authorization'}
-                                {isExpiringSoon && (
-                                  <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">
-                                    Expiring in {daysUntilEnd} days
-                                  </span>
-                                )}
-                              </div>
-                              {record.downloadURL && (
-                                <Button asChild variant="ghost" size="sm">
-                                  <a href={record.downloadURL} target="_blank" rel="noopener noreferrer">
-                                    <Download className="mr-2 h-4 w-4" />
-                                    View
-                                  </a>
-                                </Button>
-                              )}
-                            </div>
-                            <div className="mt-2 text-xs text-muted-foreground space-y-1">
-                              <div>Start: {formatAuthorizationDate(record.startDate)}</div>
-                              <div>End: {formatAuthorizationDate(record.endDate)}</div>
-                              <div>Uploaded: {formatAuthorizationDate(record.uploadedAt)}</div>
-                              {record.fileName && <div>File: {record.fileName}</div>}
-                              {record.createdByName && <div>Uploaded by: {record.createdByName}</div>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="qa-trigger">
-                  <FileText className="h-4 w-4" />
-                  <span className="qa-label">Individual service plans (ISP)</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Individual service plans</DialogTitle>
-                  <DialogDescription>
-                    Upload Individual Service Plans for backend record-keeping (not part of the pathway).
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="isp-date">ISP Date</Label>
-                    <Input
-                      id="isp-date"
-                      type="date"
-                      value={ispUpload.planDate}
-                      onChange={(event) => setIspUpload((prev) => ({ ...prev, planDate: event.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="isp-file">ISP Document</Label>
-                    <Input
-                      id="isp-file"
-                      type="file"
-                      onChange={(event) => setIspUpload((prev) => ({ ...prev, file: event.target.files?.[0] || null }))}
-                    />
-                  </div>
-                  {ispUploading && <Progress value={ispUploadProgress} className="h-1 w-full" />}
-                  <Button onClick={handleIspUpload} className="w-full" disabled={ispUploading}>
-                    {ispUploading ? 'Uploading...' : 'Save ISP'}
-                  </Button>
-
-                  <Separator />
-
-                  {ispRecords.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No ISP records uploaded yet.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {ispRecords.map((record) => (
-                        <div key={record.id || `${record.planDate}-${record.fileName}`} className="rounded-md border p-3 text-sm">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="font-medium">ISP {formatAuthorizationDate(record.planDate)}</div>
-                            {record.downloadURL && (
-                              <Button asChild variant="ghost" size="sm">
-                                <a href={record.downloadURL} target="_blank" rel="noopener noreferrer">
-                                  <Download className="mr-2 h-4 w-4" />
-                                  View
-                                </a>
-                              </Button>
-                            )}
-                          </div>
-                          <div className="mt-2 text-xs text-muted-foreground space-y-1">
-                            {record.fileName && <div>File: {record.fileName}</div>}
-                            {record.createdByName && <div>Uploaded by: {record.createdByName}</div>}
-                            <div>Uploaded: {formatAuthorizationDate(record.uploadedAt)}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </DialogContent>
-            </Dialog>
+            <IndividualServicePlansDialog
+              ispUpload={ispUpload}
+              setIspUpload={setIspUpload}
+              ispUploading={ispUploading}
+              ispUploadProgress={ispUploadProgress}
+              handleIspUpload={handleIspUpload}
+              ispRecords={ispRecords}
+              formatAuthorizationDate={formatAuthorizationDate}
+            />
 
             <Dialog>
               <DialogTrigger asChild>
