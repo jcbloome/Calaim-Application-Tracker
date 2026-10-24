@@ -15,10 +15,10 @@
   - `applicationInactiveCalaimStatus` accepts any object (the all-optional param type was rejected as a weak type for `Application`).
   - Kaiser cover sheet template calls `field.disableReadOnly()` directly instead of an invalid `DropdownFieldLike` cast.
   - Files: `next.config.ts`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/lib/inactive-calaim-status.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`.
-  - Commit: _pending_.
+  - Commit: `13bbe4e0`.
 - **Removed leftover test/debug pages and unused test APIs.** Deleted public pages `/test-billy`, `/test-reset`, `/test-simple`, `/test-working`, `/debug-login`, `/login-debugger`; admin pages `/admin/client-notes-demo` and the orphaned duplicate `/admin/daily-tasks-new`; unreferenced APIs `/api/test`, `/api/debug/list-applications`, `/api/caspio/test`, `/api/test-caspio`, `/api/test-google-maps`; empty `password-guesser`, `test-auth-fields`, `debug-caspio-fields` folders. `/swvisit` “View Your Assignments” now links to `/sw-portal/roster` (was the mock `test-billy` page with a hard-coded “60 members” badge). Kept: allowlisted test APIs used by admin tools, the admin Development & Testing hub, and legacy redirect pages (`california-map`, `sw-claims`, `sw-claims-tracking`).
   - Files: `src/app/swvisit/page.tsx`, `src/app/api/auth/simple-password-reset/route.ts`, `CLIENT_NOTES_SYSTEM.md`, deleted routes above.
-  - Commit: _pending_.
+  - Commit: `13bbe4e0`.
 - **Still open:** split the largest pages (`applications/create`, `ils-mif-consolidator`, `isp-workflow`, `alft-tracker`, `applications/[applicationId]`); deploy the CORS changes in `functions/` after `firebase login --reauth`.
 
 ## Changes 2026-10-22
