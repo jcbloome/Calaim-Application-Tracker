@@ -91,7 +91,6 @@ export async function GET(request: NextRequest) {
     
     // Calculate uptime percentage (last 24 hours)
     const now = new Date();
-    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const lastSuccessfulSync = new Date(healthStatus.lastSuccessfulSync);
     const timeSinceLastSuccess = now.getTime() - lastSuccessfulSync.getTime();
     const uptimePercentage = timeSinceLastSuccess < 60 * 60 * 1000 ? 100 : // Less than 1 hour = 100%

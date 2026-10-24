@@ -11,8 +11,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useLanguage } from '@/components/LanguageProvider';
 
-type LanguageCode = 'en' | 'es';
-
 export function LanguageSwitcher({ className = '' }: { className?: string }) {
   const { language: currentLanguage, setLanguage } = useLanguage();
   const languageLabel = useMemo(

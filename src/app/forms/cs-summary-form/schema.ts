@@ -12,17 +12,9 @@ const normalizePhone = (value: unknown) => {
   if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
   return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
 };
-
-const requiredPhone = z.string().transform((val) => normalizePhone(val)).refine((val) => phoneRegex.test(val), { message: ' ' });
 const optionalPhone = z.string().optional().nullable().transform(val => normalizePhone(val ?? '')).refine(val => val === '' || !val || phoneRegex.test(val), {
   message: " ",
 });
-
-const requiredEmail = z.string().refine(value => {
-    if (!value) return false; // Must not be empty
-    if (value.trim().toUpperCase() === 'N/A') return true; // Allow 'N/A'
-    return z.string().email().safeParse(value).success; // Check for valid email format
-}, { message: " " });
 
 const optionalEmail = z.string().optional().nullable().refine(value => {
     if (!value) return true; // Allow empty, null, or undefined

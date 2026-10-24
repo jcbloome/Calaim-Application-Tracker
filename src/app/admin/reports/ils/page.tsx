@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
@@ -249,7 +249,7 @@ export default function IlsReportPage() {
               ILS Weekly Report
             </CardTitle>
             <CardDescription>
-              CalAIM Members with ILS_View = "Yes" • As of {format(new Date(), 'PPPP')}
+              CalAIM Members with ILS_View = &quot;Yes&quot; • As of {format(new Date(), 'PPPP')}
             </CardDescription>
             <div className="text-sm text-muted-foreground mt-2">
               Total ILS Members: <span className="font-semibold text-primary">{ilsMembers.length}</span>
@@ -364,7 +364,7 @@ export default function IlsReportPage() {
               <div className="text-center text-muted-foreground py-10">
                 <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p className="text-lg font-medium mb-2">No ILS Data Loaded</p>
-                <p className="mb-4">Click "Refresh ILS Data" to load ILS members data</p>
+                <p className="mb-4">Click &quot;Refresh ILS Data&quot; to load ILS members data</p>
                 <Button onClick={fetchILSMembers} disabled={isLoading}>
                   {isLoading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

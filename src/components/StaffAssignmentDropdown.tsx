@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { User, Mail, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
-import { getStaffEmail, getAllStaff } from '@/lib/staff-directory';
+import { getStaffEmail } from '@/lib/staff-directory';
 
 interface Member {
   id: string;
@@ -117,7 +117,7 @@ export function StaffAssignmentDropdown({
         description: `Email notification sent to ${member.kaiser_user_assignment}`,
         className: 'bg-blue-100 text-blue-900 border-blue-200',
       });
-    } catch (error) {
+    } catch  {
       toast({
         variant: 'destructive',
         title: 'Email Failed',

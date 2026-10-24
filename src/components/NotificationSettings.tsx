@@ -10,22 +10,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { notifyNotificationSettingsChanged } from '@/lib/notification-utils';
-import { 
-  Bell, 
-  Mail, 
-  Volume2, 
-  VolumeX, 
-  Settings, 
+import {
+  Bell,
+  Mail,
+  Volume2,
+  Settings,
   Target,
   Zap,
-  Users,
-  MessageSquare,
   CheckCircle2,
-  AlertTriangle,
   Save,
   Loader2,
   Play,
-  Pause
 } from 'lucide-react';
 import { useFunctions } from '@/firebase';
 import { httpsCallable } from 'firebase/functions';
@@ -128,7 +123,7 @@ const ANIMATION_OPTIONS = [
 export default function NotificationSettings() {
   const functions = useFunctions();
   const [settings, setSettings] = useState<NotificationSettings>(DEFAULT_SETTINGS);
-  const [isLoading, setIsLoading] = useState(false);
+  const [, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [testingSound, setTestingSound] = useState(false);
   const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
@@ -237,7 +232,7 @@ export default function NotificationSettings() {
         description: `Playing ${SOUND_OPTIONS.find(s => s.value === settings.browserNotifications.soundType)?.label}`,
         className: 'bg-blue-100 text-blue-900 border-blue-200',
       });
-    } catch (error) {
+    } catch  {
       toast({
         variant: 'destructive',
         title: 'Sound Test Failed',
@@ -646,11 +641,10 @@ export default function NotificationSettings() {
     const isRealDesktop = Boolean(desktopNotifications && !desktopNotifications.__shim);
     if (!desktopNotifications || !isRealDesktop) return;
     setDesktopAvailable(true);
-    let unsubscribe: (() => void) | undefined;
     desktopNotifications.getState()
       .then((state) => setDesktopState(state))
       .catch((error) => console.warn('Failed to read desktop notification state:', error));
-    unsubscribe = desktopNotifications.onChange((state) => {
+    const unsubscribe = desktopNotifications.onChange((state) => {
       setDesktopState(state);
     });
     return () => {
@@ -677,7 +671,7 @@ export default function NotificationSettings() {
           title: 'Checking for updates',
           description: 'The desktop app is checking for updates in the background.'
         });
-      } catch (error) {
+      } catch  {
         toast({
           title: 'Update check failed',
           description: 'Unable to check for updates right now.',

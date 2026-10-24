@@ -1,12 +1,11 @@
 // Workflow Automation Engine (Option B)
 // Centralizes workflow progression logic and enables automation
 
-import type { 
-  WorkflowConfig, 
-  WorkflowStep, 
-  AutomationRule, 
-  UnifiedTask, 
-  HealthPlan 
+import type {
+  WorkflowConfig,
+  AutomationRule,
+  UnifiedTask,
+  HealthPlan,
 } from './types';
 import { calculateRecommendedDueDate, addBusinessDays } from './date-utils';
 

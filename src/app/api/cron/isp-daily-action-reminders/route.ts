@@ -7,18 +7,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
-const toMs = (value: any) => {
-  if (!value) return 0;
-  try {
-    if (typeof value === 'number') return value;
-    if (typeof value?.toMillis === 'function') return value.toMillis();
-    if (typeof value?.toDate === 'function') return value.toDate().getTime();
-    const parsed = new Date(value).getTime();
-    return Number.isNaN(parsed) ? 0 : parsed;
-  } catch {
-    return 0;
-  }
-};
 
 /**
  * Daily ISP action reminders (default ON).

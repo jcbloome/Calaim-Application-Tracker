@@ -199,7 +199,7 @@ export function StaffMemberManagementModal({
             {staffName} - Member Management
           </DialogTitle>
           <DialogDescription>
-            View {members.length} members assigned to {staffName}. Use "Pull Member Notes" on demand to refresh all notes and today activity.
+            View {members.length} members assigned to {staffName}. Use &quot;Pull Member Notes&quot; on demand to refresh all notes and today activity.
           </DialogDescription>
         </DialogHeader>
 
@@ -334,7 +334,7 @@ export function StaffMemberManagementModal({
                           <div className="text-xs text-muted-foreground">No notes found for this member.</div>
                         )
                       ) : (
-                        <div className="text-xs text-muted-foreground">Not pulled yet. Click "Pull Member Notes".</div>
+                        <div className="text-xs text-muted-foreground">Not pulled yet. Click &quot;Pull Member Notes&quot;.</div>
                       )}
                     </div>
                   </CardContent>

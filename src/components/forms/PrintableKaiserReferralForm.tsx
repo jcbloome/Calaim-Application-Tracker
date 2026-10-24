@@ -493,15 +493,10 @@ export function PrintableKaiserReferralForm({
   const [lastAutosavedAtIso, setLastAutosavedAtIso] = React.useState('');
   const memberName = formValues.memberName;
   const referrerRelationship = lineValue(formValues.referrerRelationship).toLowerCase();
-  const referralDate = formValues.referralDate;
   const memberAddress = formValues.memberAddress;
   const currentLocationAddress = formValues.currentLocationAddress;
   const referrerName = formValues.referrerName;
-  const referrerOrg = formValues.referrerOrganization;
   const referrerEmail = formValues.referrerEmail;
-  const referrerPhone = formValues.referrerPhone;
-  const referrerNpi = formValues.referrerNpi;
-  const referrerAddress = formValues.referrerAddress;
   const memberCounty = lineValue(prefill.memberCounty);
   const countyDerivedRegion = getKaiserRegionFromCounty(memberCounty);
   const [selectedKaiserRegion, setSelectedKaiserRegion] = React.useState<KaiserRegion>(() =>
@@ -1740,7 +1735,7 @@ export function PrintableKaiserReferralForm({
               Kaiser Permanente ONLY accepts referrals for Medi-Cal Members whose coverage is assigned to Kaiser Permanente.
             </p>
             <p>
-              Kaiser Permanente employs a "No Wrong Door" approach for Enhanced Care Management (ECM), Complex Case Management (CCM),
+              Kaiser Permanente employs a &quot;No Wrong Door&quot; approach for Enhanced Care Management (ECM), Complex Case Management (CCM),
               Community Health Worker (CHW), and Community Supports (CS) referrals. Referrals should be submitted to the Member&apos;s
               Managed Care Plan (MCP) and will be accepted from all points of care within the continuum.
             </p>

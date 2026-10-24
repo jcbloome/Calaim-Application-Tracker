@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     }));
 
     const now = Date.now();
-    const getCadenceMs = (appData: any) => {
+    const getCadenceMs = (_appData: any) => {
       return 7 * 24 * 60 * 60 * 1000;
     };
     const getNextReminderMs = (appData: any) => {

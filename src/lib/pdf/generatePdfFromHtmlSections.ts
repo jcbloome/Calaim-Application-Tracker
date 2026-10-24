@@ -80,62 +80,6 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-function rowInkScore(
-  ctx: CanvasRenderingContext2D,
-  y: number,
-  width: number,
-  sampleStepPx: number
-): number {
-  // Sample a few pixels across the row and count "dark" pixels as ink.
-  // Lower score => more whitespace => safer page break.
-  const w = Math.max(1, width);
-  const step = Math.max(8, sampleStepPx);
-  const xs: number[] = [];
-  for (let x = 0; x < w; x += step) xs.push(x);
-  if (xs[xs.length - 1] !== w - 1) xs.push(w - 1);
-
-  let ink = 0;
-  for (const x of xs) {
-    const img = ctx.getImageData(x, clamp(y, 0, ctx.canvas.height - 1), 1, 1).data;
-    const r = img[0] ?? 255;
-    const g = img[1] ?? 255;
-    const b = img[2] ?? 255;
-    const avg = (r + g + b) / 3;
-    // Treat anything noticeably darker than white as ink.
-    if (avg < 245) ink++;
-  }
-  return ink / xs.length;
-}
-
-function findSafeBreakY(
-  ctx: CanvasRenderingContext2D,
-  preferredY: number,
-  minY: number,
-  maxY: number
-): number {
-  const start = clamp(Math.floor(preferredY) - 80, minY, maxY);
-  const end = clamp(Math.floor(preferredY) + 20, minY, maxY);
-  const w = ctx.canvas.width;
-
-  let bestY = clamp(Math.floor(preferredY), minY, maxY);
-  let bestScore = Number.POSITIVE_INFINITY;
-
-  for (let y = start; y <= end; y++) {
-    const s0 = rowInkScore(ctx, y, w, 48);
-    const dist = Math.abs(y - preferredY);
-    const score = s0 + dist * 0.0005;
-    if (score < bestScore) {
-      bestScore = score;
-      bestY = y;
-    }
-  }
-
-  if (bestScore > 0.22) {
-    return clamp(Math.floor(preferredY), minY, maxY);
-  }
-  return bestY;
-}
-
 type KeepTogetherRange = { top: number; bottom: number; height: number };
 
 /** Collect ISP question/signature cards. Only merge cards on the same grid row. */

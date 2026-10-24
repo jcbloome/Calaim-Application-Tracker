@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
 
 export async function POST() {
@@ -51,7 +51,7 @@ export async function POST() {
     if (insertResponseText && insertResponseText.trim() !== '') {
       try {
         result = JSON.parse(insertResponseText);
-      } catch (parseError) {
+      } catch  {
         console.log('⚠️ Response is not JSON, treating as success');
         result = { message: 'Insert successful but no JSON response' };
       }

@@ -15,7 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 
 function ContinueInvitePageContent() {
   const auth = useAuth();
-  const { user, isUserLoading } = useUser();
+  const { user } = useUser();
   const router = useRouter();
   const searchParams = useSearchParams() ?? new URLSearchParams();
   const { toast } = useToast();

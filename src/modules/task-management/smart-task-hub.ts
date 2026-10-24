@@ -1,15 +1,13 @@
 // Smart Task Management Hub (Option C)
 // AI-powered task prioritization and intelligent workload management
 
-import type { 
-  UnifiedTask, 
-  TaskPriority, 
-  TaskFilter, 
-  TaskGroup, 
+import type {
+  UnifiedTask,
+  TaskPriority,
+  TaskGroup,
   PrioritizationConfig,
-  TaskAnalytics 
+  TaskAnalytics,
 } from './types';
-import { calculateTaskDates } from './date-utils';
 
 // Smart Task Hub Class
 export class SmartTaskHub {

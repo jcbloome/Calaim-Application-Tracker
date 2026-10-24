@@ -3,25 +3,19 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
-  UserPlus, 
-  FileText, 
-  Send, 
-  Search, 
-  Filter,
+import {
+  UserPlus,
+  FileText,
+  Send,
+  Search,
   Clock,
   AlertTriangle,
   CheckCircle,
-  Phone,
-  Mail,
-  MessageSquare
 } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import type { Application } from '@/lib/definitions';
 import type { Timestamp } from 'firebase/firestore';
@@ -31,7 +25,7 @@ interface QuickActionPanelProps {
   onRefresh: () => void;
 }
 
-export function QuickActionPanel({ applications, onRefresh }: QuickActionPanelProps) {
+export function QuickActionPanel({ applications }: QuickActionPanelProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [isCreatingUser, setIsCreatingUser] = useState(false);

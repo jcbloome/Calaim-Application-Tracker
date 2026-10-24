@@ -996,7 +996,6 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const ispContact2Relationship = String(payload.ispContact2Relationship || '').trim();
     const ispContact2Phone = String(payload.ispContact2Phone || '').trim();
     const ispContact2Email = String(payload.ispContact2Email || '').trim();
-    const ispLastVerified = String(payload.ispLastVerified || '').trim();
     const assessmentPurpose = String(payload.assessmentPurpose || '').trim();
     const visitLocationSource = String(payload.visitLocationSource || '').trim();
     const askCaregiverOnArrival = Boolean(payload.askCaregiverOnArrival);

@@ -1,4 +1,3 @@
-import { z } from 'zod';
 
 // Caspio configuration for your two-table structure
 const CASPIO_CONFIG = {
@@ -263,7 +262,7 @@ async function getCaspioAccessToken(): Promise<string> {
       try {
         const errorJson = JSON.parse(errorText);
         console.log('❌ OAuth Error JSON:', errorJson);
-      } catch (parseError) {
+      } catch  {
         console.log('❌ OAuth Error (not JSON):', errorText);
       }
       

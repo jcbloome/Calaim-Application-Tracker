@@ -361,7 +361,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
         </CardHeader>
         <CardContent>
           <div className="text-center text-sm text-muted-foreground">
-            You're all set! Two-factor authentication is active.
+            You&apos;re all set! Two-factor authentication is active.
           </div>
         </CardContent>
       </Card>

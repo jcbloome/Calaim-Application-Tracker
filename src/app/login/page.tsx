@@ -8,7 +8,7 @@ import {
   setPersistence,
   onAuthStateChanged,
 } from 'firebase/auth';
-import type { AuthError, User } from 'firebase/auth';
+import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -20,7 +20,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useToast } from '@/hooks/use-toast';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { AccessibleButton } from '@/components/ui/accessible-button';
 import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
@@ -41,7 +40,6 @@ function LoginPageContent() {
   const firestore = useFirestore();
   const router = useRouter();
   const searchParams = useSearchParams() ?? new URLSearchParams();
-  const { toast } = useToast();
   const enhancedToast = useEnhancedToast();
   const { user, isUserLoading, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   // NOTE: Do not auto-route "user login" into the SW portal.

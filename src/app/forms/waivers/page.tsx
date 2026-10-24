@@ -442,7 +442,7 @@ function WaiversFormComponent() {
 
                             <Section title="Member/POA Waiver and Release of Liability" icon={FileText}>
                                 <h4 className="font-bold">1. Acknowledgment of Independent Entities</h4>
-                                <p>The undersigned (Member or Power of Attorney/Legal Authorized Representative) acknowledges that Connections Care Home Consultants LLC ("CONNECTIONS") is a referral and administrative consultant. I understand that the Residential Care Facilities for the Elderly (RCFE) or Adult Residential Facilities (ARF) referred by CONNECTIONS are independent businesses. They are not owned, operated, managed, or supervised by CONNECTIONS.</p>
+                                <p>The undersigned (Member or Power of Attorney/Legal Authorized Representative) acknowledges that Connections Care Home Consultants LLC (&quot;CONNECTIONS&quot;) is a referral and administrative consultant. I understand that the Residential Care Facilities for the Elderly (RCFE) or Adult Residential Facilities (ARF) referred by CONNECTIONS are independent businesses. They are not owned, operated, managed, or supervised by CONNECTIONS.</p>
 
                                 <h4 className="font-bold">2. Assumption of Risk</h4>
                                 <p>I understand that placement in a care facility involves inherent risks, including but not limited to medical emergencies, physical injuries, falls, or complications from care. I voluntarily assume all risks associated with the Member’s residency and care at any facility selected, whether or not referred by CONNECTIONS.</p>
@@ -460,7 +460,7 @@ function WaiversFormComponent() {
                                 <p>I agree that I will not initiate any legal action, lawsuit, or administrative claim against CONNECTIONS for damages, injuries, or losses caused by the acts, omissions, or conditions of a third-party care facility. I acknowledge that my sole legal recourse for matters involving the quality of care or physical safety resides against the facility providing the direct care.</p>
 
                                 <h4 className="font-bold">5. RN Assessment (ISP) Disclosure</h4>
-                                <p>I understand that while a CONNECTIONS RN may perform an Individual Service Plan (ISP) for the purpose of CalAIM tier-level determination, this assessment does not constitute the "management of care." The facility is solely responsible for creating its own care plan and ensuring the Member’s daily needs and safety are met.</p>
+                                <p>I understand that while a CONNECTIONS RN may perform an Individual Service Plan (ISP) for the purpose of CalAIM tier-level determination, this assessment does not constitute the &quot;management of care.&quot; The facility is solely responsible for creating its own care plan and ensuring the Member’s daily needs and safety are met.</p>
 
                                  <Alert variant="warning" className="mt-4">
                                     <AlertCircle className="h-4 w-4" />
@@ -478,7 +478,7 @@ function WaiversFormComponent() {
 
                             <Section title="Freedom of Choice Waiver" icon={HeartHandshake}>
                                 <p>I (or my POA) understand I have a choice to receive services in the community. Community Support for Assisted Living Transition is available to help me. I (or my POA) can choose to accept or decline these services.</p>
-                                <p>If I accept these services, I will receive assistance from Connections Care Home Consultants to move into a community-based RCFE/ARF. They will help me find a place, coordinate paperwork, and ensure I am settled in. The CS will be authorized and the "assisted living" portion will be paid for by my Managed Care Plan.</p>
+                                <p>If I accept these services, I will receive assistance from Connections Care Home Consultants to move into a community-based RCFE/ARF. They will help me find a place, coordinate paperwork, and ensure I am settled in. The CS will be authorized and the &quot;assisted living&quot; portion will be paid for by my Managed Care Plan.</p>
                                 <p>If I decline these services, I am choosing to remain where I am, and I will not receive the transition support services offered by this program at this time.</p>
                                 <div className="p-4 border rounded-md space-y-3 mt-4 bg-background">
                                     <h3 className="font-medium text-base text-amber-700">My Choice <span className="text-destructive">*</span></h3>

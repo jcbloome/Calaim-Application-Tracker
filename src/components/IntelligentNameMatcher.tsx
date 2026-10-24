@@ -9,23 +9,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Brain, 
-  Users, 
-  CheckCircle2, 
-  AlertTriangle, 
+import {
+  Brain,
+  CheckCircle2,
+  AlertTriangle,
   X,
-  RefreshCw,
   Loader2,
   FileText,
   User,
   MapPin,
-  Activity,
-  Download,
   Upload,
   Target,
-  Zap,
-  TrendingUp
+  TrendingUp,
 } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
@@ -152,27 +147,6 @@ export default function IntelligentNameMatcher() {
     } finally {
       setIsImporting(false);
     }
-  };
-
-  const getMatchTypeBadge = (matchType: string, confidence: string) => {
-    if (matchType === 'exact') {
-      return <Badge className="bg-green-100 text-green-800 border-green-200"><CheckCircle2 className="mr-1 h-3 w-3" />Exact Match</Badge>;
-    } else if (matchType === 'fuzzy' && confidence === 'high') {
-      return <Badge className="bg-blue-100 text-blue-800 border-blue-200"><Target className="mr-1 h-3 w-3" />High Confidence</Badge>;
-    } else if (matchType === 'fuzzy') {
-      return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200"><AlertTriangle className="mr-1 h-3 w-3" />Medium Confidence</Badge>;
-    } else if (matchType === 'partial') {
-      return <Badge className="bg-orange-100 text-orange-800 border-orange-200"><AlertTriangle className="mr-1 h-3 w-3" />Partial Match</Badge>;
-    } else {
-      return <Badge className="bg-red-100 text-red-800 border-red-200"><X className="mr-1 h-3 w-3" />No Match</Badge>;
-    }
-  };
-
-  const getConfidenceColor = (score: number) => {
-    if (score >= 80) return 'text-green-600';
-    if (score >= 60) return 'text-blue-600';
-    if (score >= 40) return 'text-yellow-600';
-    return 'text-red-600';
   };
 
   return (

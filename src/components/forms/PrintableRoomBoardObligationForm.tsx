@@ -33,7 +33,7 @@ export function PrintableRoomBoardObligationForm({
         </div>
 
         <div>
-          The Managed Care Plan (MCP) "Assisted Living" payment at Tier Level{' '}
+          The Managed Care Plan (MCP) &quot;Assisted Living&quot; payment at Tier Level{' '}
           <span className="inline-block min-w-[70px] border-b border-black align-baseline">&nbsp;</span>{' '}
           is
         </div>
@@ -42,17 +42,17 @@ export function PrintableRoomBoardObligationForm({
         </div>
 
         <div>
-          The Member's agreed "Room and Board" payment: ${' '}
+          The Member&apos;s agreed &quot;Room and Board&quot; payment: ${' '}
           <span className="inline-block min-w-[220px] border-b border-black align-baseline">&nbsp;</span>.
         </div>
 
         <p>
           I, the member or authorized representative named above, agree to pay to{' '}
-          <span className="inline-block min-w-[300px] border-b border-black align-baseline">&nbsp;</span> (Name of Facility) the amount indicated above for the "Room and Board" payment. If the amount is less than $1,626 and the member is eligible for the Non-Medical Out of Home Care (NMOHC) Payment (the maximum amount is $1,626): the member 1) pays the RCFE/ARF $1,444 and retains $182 for personal need expenses, although this supplemental amount varies and 2) will work with RCFE/ARF to apply for the NMOHC supplemental payment.
+          <span className="inline-block min-w-[300px] border-b border-black align-baseline">&nbsp;</span> (Name of Facility) the amount indicated above for the &quot;Room and Board&quot; payment. If the amount is less than $1,626 and the member is eligible for the Non-Medical Out of Home Care (NMOHC) Payment (the maximum amount is $1,626): the member 1) pays the RCFE/ARF $1,444 and retains $182 for personal need expenses, although this supplemental amount varies and 2) will work with RCFE/ARF to apply for the NMOHC supplemental payment.
         </p>
 
         <p>
-          This statement is provided solely for the purpose of applying for the CalAIM Community Support with the MCP based on documented income (e.g., social security annual award letter or bank statement). <span className="font-semibold">It does not preclude any other additional financial arrangement made with the RCFE/ARF, such as additional "room and board" payments for a private room or to access RCFEs/ARFs in more expensive geographic areas.</span>
+          This statement is provided solely for the purpose of applying for the CalAIM Community Support with the MCP based on documented income (e.g., social security annual award letter or bank statement). <span className="font-semibold">It does not preclude any other additional financial arrangement made with the RCFE/ARF, such as additional &quot;room and board&quot; payments for a private room or to access RCFEs/ARFs in more expensive geographic areas.</span>
         </p>
 
         <div className="pt-2">

@@ -5,25 +5,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useUser } from '@/firebase';
 import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
-import { 
-  Loader2, 
-  RefreshCw, 
-  Search, 
+import {
+  Loader2,
+  RefreshCw,
+  Search,
   MessageSquareText,
   Calendar,
-  User,
   AlertTriangle,
-  CheckCircle2,
-  Clock,
   ExternalLink,
   FileText,
-  Bell
+  Bell,
 } from 'lucide-react';
 import { format, isToday, isThisWeek, isThisMonth } from 'date-fns';
 import Link from 'next/link';
@@ -67,8 +63,8 @@ export default function StaffNotesInterface() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'timestamp' | 'priority'>('timestamp');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy] = useState<'timestamp' | 'priority'>('timestamp');
+  const [sortOrder] = useState<'asc' | 'desc'>('desc');
   
   
   const { user } = useUser();
@@ -112,7 +108,7 @@ export default function StaffNotesInterface() {
   };
 
   const filteredAndSortedNotes = useMemo(() => {
-    let filtered = notes.filter(note => {
+    const filtered = notes.filter(note => {
       // Search filter
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();

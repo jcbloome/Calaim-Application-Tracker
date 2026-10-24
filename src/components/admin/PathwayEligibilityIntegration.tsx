@@ -40,11 +40,10 @@ export function PathwayEligibilityIntegration({
 
   const {
     eligibilityData: currentEligibility,
-    isLoading,
     updateEligibility,
     saveEligibilityVerification,
     isEligibilityComplete,
-    eligibilityRequirement
+    eligibilityRequirement,
   } = useEligibilityVerification({
     initialData: eligibilityData,
     onUpdate: onEligibilityUpdate

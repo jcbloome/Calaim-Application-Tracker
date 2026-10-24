@@ -95,20 +95,6 @@ const formatDate = (date: any) => {
     return 'Invalid Date';
 };
 
-const toHtmlDate = (date: any) => {
-    if (!date) return '';
-    if (typeof date === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(date)) {
-        const [month, day, year] = date.split('/');
-        return `${year}-${month}-${day}`;
-    }
-    if (date && typeof date.toDate === 'function') {
-        const d = date.toDate();
-        if (!isNaN(d.getTime())) return format(d, 'yyyy-MM-dd');
-    }
-    const parsed = new Date(String(date));
-    return isNaN(parsed.getTime()) ? '' : format(parsed, 'yyyy-MM-dd');
-};
-
 
 function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean }) {
     const router = useRouter();

@@ -148,7 +148,7 @@ export async function GET(request: Request) {
 
   let data: ArrayBuffer;
   let sha256: string | null = localMeta?.sha256 || null;
-  let headers = new Headers();
+  const headers = new Headers();
 
   try {
     const localBuffer = await fs.readFile(localInstallerPath);

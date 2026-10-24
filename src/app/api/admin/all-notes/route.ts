@@ -28,13 +28,13 @@ export async function GET(request: NextRequest) {
 
     for (const collection of collections) {
       try {
-        let query: any = adminDb.collection(collection.name)
+        const query: any = adminDb.collection(collection.name)
           .orderBy('timestamp', 'desc')
           .limit(limit);
         let snapshot: admin.firestore.QuerySnapshot;
         try {
           snapshot = await query.get();
-        } catch (orderError) {
+        } catch  {
           // Fallback for collections without timestamp
           snapshot = await adminDb.collection(collection.name).limit(limit).get();
         }

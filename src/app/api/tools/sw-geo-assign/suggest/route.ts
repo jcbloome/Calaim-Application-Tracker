@@ -33,8 +33,6 @@ async function verifyAdminAccess(request: NextRequest) {
   return { isAdmin: isAdmin as boolean };
 }
 
-const uniq = (arr: string[]) => Array.from(new Set(arr.map((s) => String(s || '').trim()).filter(Boolean)));
-
 async function asyncPool<T, R>(limit: number, items: T[], task: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let nextIndex = 0;

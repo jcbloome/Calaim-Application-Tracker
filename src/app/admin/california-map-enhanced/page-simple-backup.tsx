@@ -92,7 +92,7 @@ export default function EnhancedCaliforniaMapPage() {
           </CardHeader>
           <CardContent>
             <ol className="list-decimal list-inside space-y-2 text-sm">
-              <li>Click "Test API Calls" button above</li>
+              <li>Click &quot;Test API Calls&quot; button above</li>
               <li>Open browser console (F12 → Console tab)</li>
               <li>Look for detailed debugging output</li>
               <li>Check the API results displayed above</li>

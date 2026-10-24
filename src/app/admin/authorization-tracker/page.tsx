@@ -9,30 +9,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
-import { useFunctions } from '@/firebase';
-import { httpsCallable } from 'firebase/functions';
-import { format, parseISO, differenceInDays, addDays, isBefore, isAfter, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
-import { 
-  Calendar, 
-  AlertTriangle, 
-  CheckCircle, 
-  Clock, 
-  RefreshCw, 
-  Filter, 
-  Download,
-  DollarSign,
-  Building,
-  User,
+import { format, parseISO, differenceInDays, addDays, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import {
+  Calendar,
+  AlertTriangle,
+  RefreshCw,
+  Filter,
   Phone,
-  Mail,
   X,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
   TrendingUp,
-  PieChart
 } from 'lucide-react';
-import { EmptyState } from '@/components/EmptyState';
 import { UpdateAuthorizationDialog } from './components/UpdateAuthorizationDialog';
 
 interface AuthorizationMember {
@@ -100,7 +89,7 @@ const getAuthStatus = (endDate?: string): 'active' | 'expiring' | 'expired' | 'p
     if (daysRemaining < 0) return 'expired';
     if (daysRemaining <= 14) return 'expiring';
     return 'active';
-  } catch (error) {
+  } catch  {
     console.warn('Invalid date format:', endDate);
     return 'none';
   }
@@ -114,7 +103,7 @@ const getDaysRemaining = (endDate?: string): number | undefined => {
     if (isNaN(end.getTime())) return undefined; // Invalid date
     
     return differenceInDays(end, new Date());
-  } catch (error) {
+  } catch  {
     return undefined;
   }
 };
@@ -283,9 +272,8 @@ const formatDateTimeSafe = (dateString?: string) => {
 };
 
 export default function AuthorizationTracker() {
-  const { user, isAdmin } = useAdmin();
+  const { isAdmin } = useAdmin();
   const { toast } = useToast();
-  const functions = useFunctions();
   
   const [members, setMembers] = useState<AuthorizationMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -306,72 +294,6 @@ export default function AuthorizationTracker() {
   // Sorting state
   const [sortColumn, setSortColumn] = useState<string>('memberName');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-
-  // Set mock data for demonstration when functions aren't deployed
-  const setMockData = () => {
-    const mockMembers: AuthorizationMember[] = [
-      {
-        id: 'mock-1',
-        memberName: 'Sample Member',
-        mrn: 'MRN123456',
-        healthPlan: 'Kaiser',
-        primaryContact: 'Maria Garcia',
-        contactPhone: '(555) 123-4567',
-        contactEmail: 'maria@example.com',
-        authStartDateT2038: '2024-01-01',
-        authEndDateT2038: '2024-12-31',
-        authStartDateH2022: '2024-06-01',
-        authEndDateH2022: '2024-11-30',
-        t2038Status: 'active',
-        h2022Status: 'expiring',
-        t2038DaysRemaining: 200,
-        h2022DaysRemaining: 10,
-        needsAttention: true
-      },
-      {
-        id: 'mock-2',
-        memberName: 'Michael Chen',
-        mrn: 'MRN789012',
-        healthPlan: 'Health Net',
-        primaryContact: 'Jennifer Smith',
-        contactPhone: '(555) 987-6543',
-        contactEmail: 'jennifer@example.com',
-        authStartDateT2038: '2024-03-15',
-        authEndDateT2038: '2025-03-14',
-        authStartDateH2022: '2024-03-15',
-        authEndDateH2022: '2025-03-14',
-        t2038Status: 'active',
-        h2022Status: 'active',
-        t2038DaysRemaining: 120,
-        h2022DaysRemaining: 120,
-        needsAttention: false
-      },
-      {
-        id: 'mock-3',
-        memberName: 'Emily Rodriguez',
-        mrn: 'MRN345678',
-        healthPlan: 'Kaiser',
-        primaryContact: 'Robert Wilson',
-        contactPhone: '(555) 456-7890',
-        contactEmail: 'robert@example.com',
-        authStartDateT2038: '2023-08-01',
-        authEndDateT2038: '2024-01-20',
-        t2038Status: 'expired',
-        h2022Status: 'none',
-        t2038DaysRemaining: -10,
-        needsAttention: true
-      }
-    ];
-    
-    setMembers(mockMembers);
-    setIsLoading(false);
-    
-    toast({
-      title: 'Demo Mode',
-      description: 'Showing sample data. Authorization functions need to be deployed for live data.',
-      variant: 'default'
-    });
-  };
 
   // Fetch ALL members with authorization data using API route with exact Caspio field names
   const fetchAuthorizationData = async () => {
@@ -586,18 +508,6 @@ export default function AuthorizationTracker() {
     setSelectedStatus('all');
     setShowExpiringOnly(false);
     setSelectedMemberId('');
-  };
-
-  const handleMcoMetricClick = (mcoFilter: string, metric: 'urgent' | 't2038Active' | 'h2022Active') => {
-    setSelectedMCO(mcoFilter);
-    setSelectedPlanMetric(metric);
-    setSelectedFilter('all');
-    setSelectedMonth('all');
-    setSelectedMonthSegment('all');
-    setSelectedMonthAuthType('all');
-    setSelectedStatus('all');
-    setShowExpiringOnly(false);
-    scrollToMemberBreakdown();
   };
 
   const authorizationScopedMembers = useMemo(
@@ -1217,7 +1127,7 @@ export default function AuthorizationTracker() {
                   Kaiser members missing H2022 dates: {kaiserNeedsIlsRoutingMembers.length}
                 </div>
                 <div className="text-sm text-blue-700">
-                  These members are in Kaiser status "Final- Member at RCFE" or "R &amp; B Sent Pending ILS Contract"
+                  These members are in Kaiser status &quot;Final- Member at RCFE&quot; or &quot;R &amp; B Sent Pending ILS Contract&quot;
                   but are missing H2022 start/end dates and should be tracked in ILS Pending Tracker.
                 </div>
               </div>
@@ -1679,7 +1589,7 @@ export default function AuthorizationTracker() {
                             <div className="text-muted-foreground">
                               <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
                               <p className="font-medium">No Authorization Data Loaded</p>
-                              <p className="text-sm">Click 'Refresh Data' to load authorization data from Caspio</p>
+                              <p className="text-sm">Click &apos;Refresh Data&apos; to load authorization data from Caspio</p>
                             </div>
                           ) : (
                             <div className="text-muted-foreground">
@@ -1883,7 +1793,7 @@ export default function AuthorizationTracker() {
                       <>
                         <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
                         <p className="font-medium">No Authorization Data Loaded</p>
-                        <p className="text-sm">Click 'Refresh Data' to load authorization data from Caspio</p>
+                        <p className="text-sm">Click &apos;Refresh Data&apos; to load authorization data from Caspio</p>
                       </>
                     ) : (
                       <>

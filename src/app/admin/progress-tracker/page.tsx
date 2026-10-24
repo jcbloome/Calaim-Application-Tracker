@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect, useCallback, Suspense } from 'reac
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore } from '@/firebase';
-import { collection, Timestamp, getDocs, collectionGroup, type Query } from 'firebase/firestore';
+import { collection, getDocs, collectionGroup, type Query } from 'firebase/firestore';
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';

@@ -4,9 +4,8 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { Loader2, Database, CheckCircle2, AlertTriangle, Users, ArrowRight, Map, Copy, RefreshCw } from 'lucide-react';
+import { Loader2, Database, CheckCircle2, AlertTriangle, Users, Map, Copy, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -23,7 +22,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
@@ -187,110 +185,11 @@ const stripUndefinedDeep = (value: any): any => {
 // CalAIM Members Table Field Names (loaded from Caspio)
 const caspioMembersFieldNames: string[] = [];
 
-// CalAIM Members Table Fields
-const caspioMembersFields = {
-  // Basic Member Information
-  client_ID2: "12345",
-  Client_ID2: "12345", // Alternative field name
-  memberFirstName: "",
-  memberLastName: "",
-  Senior_First: "",
-  Senior_Last: "",
-  
-  // Member Details
-  memberMediCalNum: "",
-  memberMrn: "",
-  MCP_CIN: "", // Kaiser MRN field
-  MC: "", // Medi-Cal number field
-  memberCounty: "",
-  Member_County: "",
-  memberDob: "",
-  memberAge: "",
-  sex: "",
-  memberLanguage: "",
-  
-  // Health Plan & MCO
-  CalAIM_MCO: "",
-  CalAIM_MCP: "",
-  HealthPlan: "",
-  healthPlan: "",
-  
-  // Status Fields
-  CalAIM_Status: "",
-  Kaiser_Status: "",
-  pathway: "",
-  SNF_Diversion_or_Transition: "",
-  
-  // Contact Information
-  bestContactFirstName: "",
-  bestContactLastName: "",
-  bestContactPhone: "",
-  bestContactEmail: "",
-  bestContactRelationship: "",
-  bestContactLanguage: "",
-  
-  // Secondary Contact
-  secondaryContactFirstName: "",
-  secondaryContactLastName: "",
-  secondaryContactPhone: "",
-  secondaryContactEmail: "",
-  secondaryContactRelationship: "",
-  
-  // Referrer Information
-  referrerFirstName: "",
-  referrerLastName: "",
-  referrerPhone: "",
-  referrerEmail: "",
-  referrerRelationship: "",
-  agency: "",
-  
-  // Location Information
-  currentLocation: "",
-  currentAddress: "",
-  currentCity: "",
-  currentState: "",
-  currentZip: "",
-  currentCounty: "",
-  
-  // ISP Information
-  ispFirstName: "",
-  ispLastName: "",
-  ispPhone: "",
-  ispEmail: "",
-  ispFacilityName: "",
-  
-  // RCFE Information
-  rcfeName: "",
-  rcfeAddress: "",
-  rcfeAdminName: "",
-  rcfeAdminPhone: "",
-  rcfeAdminEmail: "",
-  
-  // Kaiser Process Dates
-  Kaiser_T2038_Requested_Date: "",
-  Kaiser_T2038_Received_Date: "",
-  Kaiser_Tier_Level_Requested_Date: "",
-  Kaiser_Tier_Level_Received_Date: "",
-  
-  // ILS RCFE Contract Dates
-  ILS_RCFE_Sent_For_Contract_Date: "",
-  ILS_RCFE_Received_Contract_Date: "",
-  
-  // Administrative Fields
-  DateCreated: "",
-  LastUpdated: "",
-  created_date: "",
-  last_updated: "",
-  next_steps_date: "",
-  kaiser_user_assignment: ""
-};
-
 export default function CaspioTestPage() {
   const auth = useAuth();
   const firestore = useFirestore();
   const { user } = useUser();
-  const [isRunning, setIsRunning] = useState(false);
-  const [testResults, setTestResults] = useState<TestResponse | null>(null);
+  const [testResults] = useState<TestResponse | null>(null);
   const [isSingleTestRunning, setIsSingleTestRunning] = useState(false);
   const [singleTestResults, setSingleTestResults] = useState<any>(null);
   const [singleTestPreviewOpen, setSingleTestPreviewOpen] = useState(false);
@@ -359,16 +258,7 @@ export default function CaspioTestPage() {
   };
   
   // Use new Caspio integration module
-  const { 
-    members, 
-    syncStatus, 
-    isLoading, 
-    isSyncing, 
-    error, 
-    syncMembers, 
-    performFullSync, 
-    clearError 
-  } = useCaspioSync();
+  useCaspioSync();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -827,86 +717,6 @@ export default function CaspioTestPage() {
     }));
   }, [dynamicCaspioFields]);
 
-  const loadSavedCaspioFields = async () => {
-    if (typeof window === 'undefined') return;
-    try {
-      const fallback = localStorage.getItem(caspioFieldsKey);
-      if (fallback) {
-        const parsed = JSON.parse(fallback);
-        if (Array.isArray(parsed?.fields) && parsed.fields.length > 0) {
-          setDynamicCaspioFields(parsed.fields);
-          if (parsed.updatedAt) {
-            setLastRefreshTime(parsed.updatedAt);
-          }
-          toast({
-            title: "Saved Fields Loaded",
-            description: `Loaded ${parsed.fields.length} cached fields from this browser.`,
-          });
-          return;
-        }
-      }
-
-      const idToken = await auth?.currentUser?.getIdToken().catch(() => undefined);
-      const response = await fetch('/api/caspio-table-fields?tableName=CalAIM_tbl_Members', {
-        method: 'GET',
-        headers: {
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-      });
-
-      const data = await response.json();
-      if (response.ok && data.success && Array.isArray(data.fields) && data.fields.length > 0) {
-        setDynamicCaspioFields(data.fields);
-        if (data.updatedAt) {
-          setLastRefreshTime(new Date(data.updatedAt).getTime());
-        } else {
-          setLastRefreshTime(Date.now());
-        }
-        localStorage.setItem(caspioFieldsKey, JSON.stringify({
-          fields: data.fields,
-          updatedAt: Date.now(),
-        }));
-        toast({
-          title: "Saved Fields Loaded",
-          description: `Loaded ${data.fields.length} fields from saved cache.`,
-        });
-        return;
-      }
-      throw new Error('No cached fields returned from API.');
-    } catch (error: any) {
-      const fallback = localStorage.getItem(caspioFieldsKey);
-      if (!fallback) {
-        toast({
-          variant: "destructive",
-          title: "No Saved Fields",
-          description: "No saved Caspio field list found in this browser.",
-        });
-        return;
-      }
-      try {
-        const parsed = JSON.parse(fallback);
-        if (Array.isArray(parsed?.fields) && parsed.fields.length > 0) {
-          setDynamicCaspioFields(parsed.fields);
-          if (parsed.updatedAt) {
-            setLastRefreshTime(parsed.updatedAt);
-          }
-          toast({
-            title: "Saved Fields Loaded",
-            description: `Loaded ${parsed.fields.length} cached fields from this browser.`,
-          });
-          return;
-        }
-        throw new Error('Saved cache is empty.');
-      } catch (parseError: any) {
-        toast({
-          variant: "destructive",
-          title: "Load Failed",
-          description: parseError.message || "Could not load saved Caspio fields.",
-        });
-      }
-    }
-  };
-
   const recoverMappingsFromFirebase = async () => {
     setIsRecoveringFirebaseDrafts(true);
     try {
@@ -1162,73 +972,6 @@ export default function CaspioTestPage() {
     }
   };
 
-  const runCaspioMemberSyncTest = async () => {
-    setIsRunning(true);
-    setTestResults(null);
-
-    try {
-      // Go DIRECTLY to the simple API route - no Firebase function at all
-      console.log('🧪 Starting SIMPLE Caspio test via API route ONLY...');
-      
-      const apiResponse = await fetch('/api/caspio-simple-test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!apiResponse.ok) {
-        throw new Error(`API route failed: ${apiResponse.status} ${apiResponse.statusText}`);
-      }
-      
-      const data = await apiResponse.json();
-      console.log('📊 Simple API test results:', data);
-      
-      // Convert the response to match the expected format
-      const formattedData = {
-        success: data.success,
-        message: data.message,
-        results: [{
-          member: data.testData ? `${data.testData.Senior_First} ${data.testData.Senior_Last}` : 'Test User',
-          success: data.success,
-          clientTableResult: data.response,
-          error: data.success ? undefined : data.message
-        }],
-        summary: {
-          totalTested: 1,
-          successful: data.success ? 1 : 0,
-          failed: data.success ? 0 : 1
-        }
-      };
-      
-      setTestResults(formattedData);
-      
-      if (data.success) {
-        toast({
-          title: 'Test Completed (Simple API)',
-          description: data.message,
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Test Failed',
-          description: data.message,
-        });
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Simple API test failed:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Test Error',
-        description: `Simple API failed: ${error.message}`,
-      });
-    } finally {
-      setIsRunning(false);
-    }
-  };
-
   const getLockedFieldNames = () => {
     if (!lockedMappings || Object.keys(lockedMappings).length === 0) {
       return null;
@@ -1386,63 +1129,6 @@ export default function CaspioTestPage() {
       });
     } finally {
       setIsSingleTestRunning(false);
-    }
-  };
-
-  // Remove the old fallback logic since we're going direct to API
-  const runCaspioMemberSyncTestOLD = async () => {
-    setIsRunning(true);
-    setTestResults(null);
-
-    try {
-      // Skip Firebase function for now, go directly to API route
-      console.log('🧪 Starting Caspio member sync test via API route (bypassing Firebase)...');
-      throw new Error('Bypassing Firebase function to test API route directly');
-    } catch (error: any) {
-      console.error('❌ Firebase function failed, trying API route fallback:', error);
-      
-      try {
-        // Fallback to SIMPLE API route (bypassing cache issues)
-        console.log('🔄 Trying SIMPLE API route fallback...');
-        const apiResponse = await fetch('/api/caspio-simple-test', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (!apiResponse.ok) {
-          throw new Error(`API route failed: ${apiResponse.status} ${apiResponse.statusText}`);
-        }
-        
-        const data = await apiResponse.json() as TestResponse;
-        console.log('📊 API route test results:', data);
-        setTestResults(data);
-        
-        if (data.success) {
-          toast({
-            title: 'Test Completed (API Route)',
-            description: data.message,
-            className: 'bg-blue-100 text-blue-900 border-blue-200',
-          });
-        } else {
-          toast({
-            variant: 'destructive',
-            title: 'Test Failed',
-            description: data.message,
-          });
-        }
-        
-      } catch (apiError: any) {
-        console.error('❌ Both Firebase function and API route failed:', apiError);
-        toast({
-          variant: 'destructive',
-          title: 'Test Error',
-          description: `Both methods failed. Firebase: ${error.message}. API: ${apiError.message}`,
-        });
-      }
-    } finally {
-      setIsRunning(false);
     }
   };
 

@@ -3,10 +3,9 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
-import { collection, collectionGroup, onSnapshot, Timestamp } from 'firebase/firestore';
+import { collection, collectionGroup, onSnapshot } from 'firebase/firestore';
 import { 
   FileText, 
   Upload, 
@@ -15,7 +14,7 @@ import {
   TrendingUp,
   Loader2
 } from 'lucide-react';
-import { format, startOfDay, endOfDay, isToday, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import { format, startOfDay, endOfDay, isToday, startOfWeek, endOfWeek, startOfMonth } from 'date-fns';
 
 interface DailyStats {
   newDocuments: number;

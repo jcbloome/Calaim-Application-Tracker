@@ -4,7 +4,7 @@
 import React, { useMemo, useState, useEffect, useCallback, Suspense } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, doc, writeBatch, getDocs, collectionGroup, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDocs, collectionGroup, setDoc, serverTimestamp } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
@@ -29,7 +29,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { type FileSystemActiveBucket } from '@/lib/application-file-system';
 import { isInactiveCalaimApplication } from '@/lib/inactive-calaim-status';
 import { getApplicationFileSystemPlacement } from '@/lib/application-file-system';
 import { applicationNeedsStaffReview } from '@/lib/review-queue';
@@ -248,7 +247,6 @@ function AdminApplicationsPageContent() {
   const [allApplications, setAllApplications] = useState<WithId<Application & FormValues>[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [updatingOverrides, setUpdatingOverrides] = useState<Set<string>>(new Set());
 
   // Filter states
   const [healthPlanFilter, setHealthPlanFilter] = useState('all');
@@ -642,12 +640,6 @@ function AdminApplicationsPageContent() {
     [allApplications]
   );
 
-  const nonCompletedApplicationsCount = useMemo(
-    () =>
-      allApplications.filter((app) => !isInactiveCalaimApplication(app) && isOpenInStaffQueue(app)).length,
-    [allApplications]
-  );
-
   const inactiveApplicationsCount = useMemo(
     () => allApplications.filter((app) => isInactiveCalaimApplication(app)).length,
     [allApplications]
@@ -678,67 +670,6 @@ function AdminApplicationsPageContent() {
   const handleSelectionChange = (id: string, checked: boolean) => {
     setSelected(prev => checked ? [...prev, id] : prev.filter(item => item !== id));
   };
-
-  const handleSetPlacementOverride = useCallback(
-    async (app: WithId<Application & FormValues>, override: FileSystemActiveBucket | null) => {
-      if (!firestore) return;
-      const cleanUserId = String((app as any)?.userId || '').trim();
-      const normalizedUserId =
-        ['undefined', 'null', 'nan'].includes(cleanUserId.toLowerCase()) ? '' : cleanUserId;
-      const isAdminSource =
-        String((app as any)?.source || '').trim().toLowerCase() === 'admin' ||
-        String(app.id || '').startsWith('admin_app_') ||
-        !normalizedUserId;
-
-      setUpdatingOverrides((prev) => new Set(prev).add(app.id));
-      const nowIso = new Date().toISOString();
-      const payload = {
-        fileSystemPlacementOverride: override,
-        fileSystemPlacementUpdatedAt: serverTimestamp(),
-        fileSystemPlacementUpdatedAtIso: nowIso,
-        fileSystemPlacementUpdatedByName: String(user?.displayName || '').trim() || null,
-        fileSystemPlacementUpdatedByEmail: String(user?.email || '').trim() || null,
-        fileSystemPlacementUpdatedByUid: String(user?.uid || '').trim() || null,
-      };
-
-      try {
-        const writes: Promise<void>[] = [];
-        if (normalizedUserId) {
-          writes.push(
-            setDoc(doc(firestore, `users/${normalizedUserId}/applications`, app.id), payload, { merge: true })
-          );
-        }
-        if (isAdminSource) {
-          writes.push(setDoc(doc(firestore, 'applications', app.id), payload, { merge: true }));
-        }
-        await Promise.all(writes);
-
-        setAllApplications((prev) =>
-          prev.map((entry) => (entry.id === app.id ? ({ ...entry, ...payload } as any) : entry))
-        );
-
-        toast({
-          title: 'Placement updated',
-          description: override
-            ? `Application moved to ${override} by manual override.`
-            : 'Manual override cleared. Auto placement is now active.',
-        });
-      } catch (updateError: any) {
-        toast({
-          variant: 'destructive',
-          title: 'Unable to update placement',
-          description: updateError?.message || 'Failed to update file system placement.',
-        });
-      } finally {
-        setUpdatingOverrides((prev) => {
-          const next = new Set(prev);
-          next.delete(app.id);
-          return next;
-        });
-      }
-    },
-    [firestore, toast, user?.displayName, user?.email, user?.uid]
-  );
 
   const handleDelete = async () => {
     if (!firestore || selected.length === 0) return;
@@ -896,20 +827,6 @@ function AdminApplicationsPageContent() {
     setCalaimStatusFilter('all');
     setMemberFilter('');
     setSummaryViewFilter('non-complete');
-  };
-
-  const resetToAllApplicationsView = () => {
-    setHealthPlanFilter('all');
-    setPathwayFilter('all');
-    setStatusFilter('all');
-    setCaseActivityFilter('all');
-    setInternalStatusFilter('all');
-    setStaffFilter('all');
-    setIntakeFilter('all');
-    setCalaimStatusFilter('all');
-    setMemberFilter('');
-    setReviewFilter('all');
-    setSummaryViewFilter('all');
   };
 
   const applySummaryViewFilter = (

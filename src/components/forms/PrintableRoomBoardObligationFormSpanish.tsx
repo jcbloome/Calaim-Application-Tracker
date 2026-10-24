@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { PrintableFormLayout } from './PrintableFormLayout';
-import { PrintableField, PrintableFormSection } from './PrintableFormFields';
+import { PrintableField } from './PrintableFormFields';
 
 interface PrintableRoomBoardObligationFormSpanishProps {
   memberName?: string;
@@ -42,37 +42,37 @@ export function PrintableRoomBoardObligationFormSpanish({
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
-              El miembro del MCP es responsable de pagar al RCFE la porción de "alojamiento y comida" y el MCP es
-              responsable de pagar al RCFE la porción de "servicios de vida asistida".
+              El miembro del MCP es responsable de pagar al RCFE la porción de &quot;alojamiento y comida&quot; y el MCP es
+              responsable de pagar al RCFE la porción de &quot;servicios de vida asistida&quot;.
             </p>
             <p>
               Para miembros elegibles para SSI/SSP y el pago 2026 de Non-Medical Out of Home Care (NMOHC), el SSI/SSP sube
               a $1,626.07. El miembro normalmente conserva $182 para gastos personales y el RCFE recibe el saldo de
-              $1,444.07 como pago por "alojamiento y comida". Cualquier ingreso por encima de $1,444.07 no se paga como
-              "alojamiento y comida" a menos que el miembro quiera pagar más para acceder a áreas geográficas más costosas
+              $1,444.07 como pago por &quot;alojamiento y comida&quot;. Cualquier ingreso por encima de $1,444.07 no se paga como
+              &quot;alojamiento y comida&quot; a menos que el miembro quiera pagar más para acceder a áreas geográficas más costosas
               o que el RCFE/ARF acepte una cantidad mayor por un cuarto privado (ya que el programa no exige cuartos privados).
             </p>
             <p>
-              Los miembros no elegibles para NMOHC aún tendrán una obligación de "alojamiento y comida", pero el monto
+              Los miembros no elegibles para NMOHC aún tendrán una obligación de &quot;alojamiento y comida&quot;, pero el monto
               podría ser flexible según el RCFE y el nivel escalonado evaluado.
             </p>
             <p>
               Los miembros que no pueden pagar ninguna porción de alojamiento y comida generalmente no son elegibles para
-              el CS, ya que los requisitos del programa exigen un pago de "alojamiento y comida" del miembro (o su familia).
+              el CS, ya que los requisitos del programa exigen un pago de &quot;alojamiento y comida&quot; del miembro (o su familia).
             </p>
             <p>
               Trabajar con CalAIM es a discreción de los RCFEs. Los RCFEs, especialmente en áreas más costosas, podrían no
               participar en CalAIM. Las familias que buscan colocar a miembros en áreas de bienes raíces costosos deben
               tener la expectativa realista de que los RCFEs de CalAIM podrían estar ubicados en áreas más asequibles. Antes
-              de aceptar miembros de CalAIM, los RCFEs necesitarán conocer el pago de "alojamiento y comida".
+              de aceptar miembros de CalAIM, los RCFEs necesitarán conocer el pago de &quot;alojamiento y comida&quot;.
             </p>
             <p>
               El RCFE también puede requerir que el miembro/familia firme un acuerdo de admisión o contrato por separado
-              que confirme la obligación de "alojamiento y comida".
+              que confirme la obligación de &quot;alojamiento y comida&quot;.
             </p>
             <p>
-              Si el miembro solicita un cuarto privado, o si las tarifas del RCFE seleccionado superan el "alojamiento y
-              comida" estándar más el pago de "vida asistida" del MCP, el RCFE puede requerir un acuerdo por separado para
+              Si el miembro solicita un cuarto privado, o si las tarifas del RCFE seleccionado superan el &quot;alojamiento y
+              comida&quot; estándar más el pago de &quot;vida asistida&quot; del MCP, el RCFE puede requerir un acuerdo por separado para
               que el miembro/familia pague una cantidad adicional. Cualquier cantidad adicional no se refleja en este
               formulario de compromiso.
             </p>
@@ -88,13 +88,13 @@ export function PrintableRoomBoardObligationFormSpanish({
             <div className="flex items-start gap-2">
               <div className="h-4 w-4 border border-gray-400 print:border-black mt-0.5" />
               <p>
-                El miembro/representante autorizado acepta pagar la porción requerida de "alojamiento y comida".
+                El miembro/representante autorizado acepta pagar la porción requerida de &quot;alojamiento y comida&quot;.
               </p>
             </div>
             <div className="flex items-start gap-2">
               <div className="h-4 w-4 border border-gray-400 print:border-black mt-0.5" />
               <p>
-                El miembro/representante autorizado no está de acuerdo en pagar la porción requerida de "alojamiento y comida".
+                El miembro/representante autorizado no está de acuerdo en pagar la porción requerida de &quot;alojamiento y comida&quot;.
               </p>
             </div>
           </div>

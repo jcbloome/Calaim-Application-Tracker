@@ -50,10 +50,10 @@ const infoSections = [
       </>,
       <>
         <strong>2. Contact the Medi-Cal Managed Care <a href="mailto:MMCDOmbudsmanOffice@dhcs.ca.gov" className="text-primary hover:underline">Ombudsman</a></strong><br />
-        If HCO says they cannot speed up the process, the Medi-Cal Managed Care Ombudsman is the "escalation" office. They have the authority to investigate enrollment errors and can sometimes manually override an assignment if it is preventing a member from receiving necessary care or a safe discharge.<br />
+        If HCO says they cannot speed up the process, the Medi-Cal Managed Care Ombudsman is the &quot;escalation&quot; office. They have the authority to investigate enrollment errors and can sometimes manually override an assignment if it is preventing a member from receiving necessary care or a safe discharge.<br />
         <strong>Phone:</strong> 1-888-452-8609<br />
         <strong>Email:</strong> Available via link above<br />
-        <strong>What to say:</strong> "The member was randomly assigned to Molina despite requesting Health Net. This error is preventing access to CalAIM SNF-to-community transition services, effectively keeping the member institutionalized longer than necessary."
+        <strong>What to say:</strong> &quot;The member was randomly assigned to Molina despite requesting Health Net. This error is preventing access to CalAIM SNF-to-community transition services, effectively keeping the member institutionalized longer than necessary.&quot;
       </>,
     ],
   },

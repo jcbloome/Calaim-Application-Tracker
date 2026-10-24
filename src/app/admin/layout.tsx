@@ -1,6 +1,6 @@
 'use client';
 
-import React, { ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -28,12 +28,10 @@ import {
   Heart,
   Printer,
   FolderSync,
-  Bell,
   BellRing,
   Database,
   FileEdit,
   Mail,
-  Brain,
   ChevronDown,
   ChevronRight,
   Activity,
@@ -42,15 +40,12 @@ import {
   FileText,
   TestTube2,
   Map as MapIcon,
-  Calendar,
   DollarSign,
   Navigation,
   Wrench,
   UserPlus,
-  CalendarCheck,
   RefreshCw,
   Users,
-  RotateCcw,
   TrendingUp,
   UserCheck,
   FileBarChart,
@@ -65,15 +60,13 @@ import {
   UserX,
   Moon,
   Flag,
-  type LucideIcon
+  type LucideIcon,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth, useFirestore } from '@/firebase';
 import { setPortalSessionOfflineClient, trackLoginActivityClient } from '@/lib/login-activity-client';
 import { useGlobalNotifications } from '@/components/NotificationProvider';
-import { StaffNotificationBell } from '@/components/StaffNotificationBell';
 import { SocialWorkerRedirect } from '@/components/SocialWorkerRedirect';
 import {
   DropdownMenu,
@@ -91,9 +84,7 @@ import {
   NavigationMenuList,
   navigationMenuTriggerStyle,
 } from '@/components/ui/navigation-menu';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { collection, collectionGroup, doc, documentId, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
+import { collection, collectionGroup, doc, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
 import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon';
 import { AuthGuard } from '@/components/AuthGuard';
@@ -297,7 +288,7 @@ function AdminHeader() {
   const searchParams = useSearchParams() ?? new URLSearchParams();
   const router = useRouter();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
-  const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
+  const [, setHoveredSubmenu] = useState<string | null>(null);
   const [headerSearch, setHeaderSearch] = useState('');
   const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
@@ -341,7 +332,7 @@ function AdminHeader() {
   const [standalonePendingCount, setStandalonePendingCount] = useState(0);
   const [priorityNotesCount, setPriorityNotesCount] = useState(0);
   const [assignmentAlertCount, setAssignmentAlertCount] = useState(0);
-  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const [, setChatUnreadCount] = useState(0);
   const [alftPendingCount, setAlftPendingCount] = useState(0);
   const [alftAdminActionCount, setAlftAdminActionCount] = useState(0);
   const [alftRnActionCount, setAlftRnActionCount] = useState(0);
@@ -761,10 +752,6 @@ function AdminHeader() {
 
     let userApps: any[] = [];
     let standaloneUploads: any[] = [];
-    let unsubUserApps: (() => void) | undefined;
-    let unsubStandaloneUploads: (() => void) | undefined;
-    let isActive = true;
-
     const computeCount = () => {
       const combined = userApps;
       // Keep header counters aligned with /admin/applications list behavior:
@@ -802,7 +789,6 @@ function AdminHeader() {
       let standaloneCount = 0;
       let standaloneLatestMs = 0;
       const standaloneNotes: Array<{ message: string; timestampMs: number; url: string; author: string }> = [];
-      let alftCount = 0;
       let alftAdminCount = 0;
       let alftRnCount = 0;
       let alftLatestMs = 0;
@@ -1169,7 +1155,6 @@ function AdminHeader() {
         // ALFT gets its own toggle + count.
         const rowLabel = isAlft ? (docType || 'ALFT') : (docType || 'Standalone upload');
         if (alftActionable) {
-          alftCount += 1;
           alftLatestMs = Math.max(alftLatestMs, ms);
           alftNotes.push({ message: `${memberName} — ${rowLabel}`, timestampMs: ms, url, author });
         } else if (!isAlft) {
@@ -1234,23 +1219,12 @@ function AdminHeader() {
       setUnassignedKaiserDocActions(
         unassignedKaiserDocs.sort((a, b) => a.memberName.localeCompare(b.memberName))
       );
-
-      // Review notifications (CS + documents) are only for recipients explicitly enabled in system settings.
-      // - CS: can auto-expand (low volume).
-      // - Docs: show in pill, but DO NOT auto-expand (high volume/noisy).
-      const allowDocsDesktop = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowDocs);
       const allowCsDesktop = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowCs);
       const allowStandaloneDesktop = Boolean(
         reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowStandalone
       );
       const allowEligibilityDesktop = Boolean(
         reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowEligibility
-      );
-      const allowAlftDesktop = Boolean(
-        reviewPopupPrefs.enabled &&
-        reviewPopupPrefs.alftElectronEnabled &&
-        reviewPopupPrefs.recipientEnabled &&
-        reviewPopupPrefs.allowAlft
       );
 
       // Review arrivals are count-only in Action Items / desktop review pill.
@@ -1466,7 +1440,7 @@ function AdminHeader() {
       }
     };
 
-    unsubUserApps = onSnapshot(
+    const unsubUserApps = onSnapshot(
       userAppsQuery,
       (snapshot) => {
         userApps = snapshot.docs.map((docSnap) => ({
@@ -1483,7 +1457,7 @@ function AdminHeader() {
       }
     );
 
-    unsubStandaloneUploads = onSnapshot(
+    const unsubStandaloneUploads = onSnapshot(
       standaloneUploadsQuery,
       (snapshot) => {
         standaloneUploads = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
@@ -1497,9 +1471,8 @@ function AdminHeader() {
     );
 
     return () => {
-      isActive = false;
-      unsubUserApps?.();
-      unsubStandaloneUploads?.();
+      unsubUserApps();
+      unsubStandaloneUploads();
     };
   }, [
     isAdmin ? firestore : null,
@@ -1547,32 +1520,6 @@ function AdminHeader() {
 
     purgeSystemNotifications();
   }, [firestore, user?.uid]);
-
-  const renderCsSummaryBadge = () => {
-    if (newCsSummaryCount <= 0) return null;
-    return (
-      <span
-        className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700"
-        title="CS Summary forms need review"
-      >
-        <BellRing className="h-3 w-3" />
-        {newCsSummaryCount}
-      </span>
-    );
-  };
-
-  const renderUploadBadge = () => {
-    if (newUploadCount <= 0) return null;
-    return (
-      <span
-        className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700"
-        title="New uploaded documents need acknowledgement"
-      >
-        <Bell className="h-3 w-3" />
-        {newUploadCount}
-      </span>
-    );
-  };
 
   const renderPlanBadges = () => {
     const items = [

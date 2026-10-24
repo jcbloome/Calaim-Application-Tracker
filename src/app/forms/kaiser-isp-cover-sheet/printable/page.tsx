@@ -334,7 +334,6 @@ function KaiserIspCoverSheetPrintableContent() {
   const caspioTierLevel = prefill.caspioTierLevel;
   const currentLivingSituation = prefill.currentLivingSituation;
   const changeOfCondition = prefill.changeOfCondition;
-  const ispSocialWorker = ensureMswTitle(normalizePersonName(prefill.ispSocialWorker));
   const ispRn = normalizePersonName(prefill.ispRn);
   const assessmentDoneByRn = Boolean(prefill.assessmentDoneByRn);
   const assessmentAdminDisplay = formatAssessmentAdminName(

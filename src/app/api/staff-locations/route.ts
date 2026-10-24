@@ -14,7 +14,7 @@ interface StaffMember {
   status: 'Active' | 'Inactive';
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     console.log('🏥 Fetching staff locations from Caspio...');
     

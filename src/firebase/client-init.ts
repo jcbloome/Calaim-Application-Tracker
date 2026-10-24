@@ -2,10 +2,10 @@
 // It should ONLY be imported by top-level client components (e.g., FirebaseClientProvider).
 import { firebaseConfig } from '@/firebase/config';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth, browserLocalPersistence } from 'firebase/auth';
+import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
-import { getFunctions, Functions, connectFunctionsEmulator } from 'firebase/functions';
+import { getFunctions, Functions } from 'firebase/functions';
 
 export interface FirebaseSdks {
   firebaseApp: FirebaseApp;

@@ -14,12 +14,6 @@ const normalizeStatusText = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
-const buildNoActionScopedSet = (statuses?: string[]) => {
-  const base = Array.isArray(statuses) ? statuses : [];
-  return new Set(
-    [...base, 'T2038 received, Needs First Contact', 'R B Needed'].map((status) => normalizeStatusText(status))
-  );
-};
 
 const ACTIVE_STATUS_DEFINITIONS = [
   'T2028 Received, Needs First Contact',
@@ -75,15 +69,10 @@ export function KaiserStaffAssignments({
   openStaffMemberModal,
   openMemberModal,
   noActionByStaff,
-  noActionScopedStatuses,
   onRefreshNoAction,
   isRefreshingNoAction,
   notesSyncLastAtLabel,
 }: KaiserStaffAssignmentsProps) {
-  const noActionScopedSet = React.useMemo(
-    () => buildNoActionScopedSet(noActionScopedStatuses),
-    [noActionScopedStatuses]
-  );
   const activeStatusSet = React.useMemo(() => buildActiveStatusSet(), []);
 
   return (

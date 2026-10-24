@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -128,11 +127,6 @@ export default function AdminLoginClient() {
       // session isolation from signing out on the first redirect.
       safeLocalStorageSet('calaim_session_type', 'admin');
       safeLocalStorageSet(ADMIN_LAST_ACTIVITY_KEY, String(Date.now()));
-
-      const isRealDesktop =
-        typeof window !== 'undefined' &&
-        Boolean((window as any).desktopNotifications) &&
-        !Boolean((window as any).desktopNotifications?.__shim);
 
       // Keep admin sessions stable across refreshes/restarts to prevent unexpected sign-outs.
       // Using local persistence here fixes staff being bounced back to login on some environments.

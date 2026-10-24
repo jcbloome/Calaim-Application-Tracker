@@ -78,7 +78,6 @@ export async function POST(req: NextRequest) {
     }
 
     const intakeRef = adminDb.collection('standalone_upload_submissions').doc(intakeId);
-    const intakeSnap = intakeSnapEarly;
     const intake = intakeEarly;
     const toolCode = clean((intake as any)?.toolCode, 50).toUpperCase();
     const docType = clean((intake as any)?.documentType, 120).toLowerCase();

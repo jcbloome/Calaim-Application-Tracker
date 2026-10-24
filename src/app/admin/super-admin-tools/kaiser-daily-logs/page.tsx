@@ -293,7 +293,7 @@ export default function KaiserDailyLogsPage() {
 
             <details>
               <summary className="cursor-pointer text-sm font-medium">
-                Today's Notes ({Array.isArray(row.todayNotes) ? row.todayNotes.length : 0})
+                Today&apos;s Notes ({Array.isArray(row.todayNotes) ? row.todayNotes.length : 0})
               </summary>
               <div className="mt-2 space-y-2">
                 {(row.todayNotes || []).map((note) => (

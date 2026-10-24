@@ -405,7 +405,6 @@ function buildDefaultDraft(params: {
     memberName,
     contactName,
     memberMrn,
-    hasKaiserAuthorizationAtIntake,
     isKaiserProgramIntro,
     hasPriorIntroEmail,
     missingDocuments,

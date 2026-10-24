@@ -219,7 +219,7 @@ export default function IlsLogTrackerPage() {
         </CardHeader>
         <CardContent>
           {rowsWithDelta.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No snapshots yet. Click "Capture This Week" to start tracking.</div>
+            <div className="text-sm text-muted-foreground">No snapshots yet. Click &quot;Capture This Week&quot; to start tracking.</div>
           ) : (
             <div className="space-y-3">
               <div className="text-xs text-muted-foreground">

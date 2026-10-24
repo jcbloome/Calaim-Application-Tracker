@@ -11,10 +11,8 @@ interface PrintableDeclarationFormSpanishProps {
 }
 
 export function PrintableDeclarationFormSpanish({
-  memberName = '',
-  memberMrn = '',
   applicationId,
-  showPrintButton = true
+  showPrintButton = true,
 }: PrintableDeclarationFormSpanishProps) {
   return (
     <PrintableFormLayout

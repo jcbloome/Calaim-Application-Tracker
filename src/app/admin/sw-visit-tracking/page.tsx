@@ -9,11 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { 
+import {
   FileBarChart,
   Calendar,
   MapPin,
-  User,
   Building,
   AlertTriangle,
   CheckCircle,
@@ -26,7 +25,7 @@ import {
   BarChart3,
   TrendingUp,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '@/firebase';
 import { appConfirm } from '@/components/AppDialogHost';
@@ -82,7 +81,6 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [expandedVisitId, setExpandedVisitId] = useState<string | null>(null);
-  const [claimDatesByVisit, setClaimDatesByVisit] = useState<Record<string, { submittedAt?: string; paidAt?: string }>>({});
   const [geoResolvedByVisit, setGeoResolvedByVisit] = useState<Record<string, { address?: string; status: 'idle' | 'loading' | 'error' }>>({});
   const [deletingVisitId, setDeletingVisitId] = useState<string | null>(null);
   const [deleteReasonByVisitId, setDeleteReasonByVisitId] = useState<Record<string, string>>({});
@@ -405,19 +403,6 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
     } finally {
       setDeletingVisitId(null);
     }
-  };
-
-  const getResolvedGeoAddress = (visit: VisitRecord) => {
-    return geoResolvedByVisit[visit.id]?.address || visit.geolocationAddress || '';
-  };
-
-  const getGeoMatchStatus = (visit: VisitRecord) => {
-    const resolved = getResolvedGeoAddress(visit);
-    if (!resolved) return 'Unknown';
-    const rcfe = visit.rcfeAddress.toLowerCase();
-    const geo = resolved.toLowerCase();
-    if (rcfe && geo && (geo.includes(rcfe) || rcfe.includes(geo))) return 'Match';
-    return 'Mismatch';
   };
 
   useEffect(() => {

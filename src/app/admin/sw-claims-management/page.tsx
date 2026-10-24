@@ -10,28 +10,23 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
-import { collection, query, orderBy, limit, onSnapshot, doc, where, writeBatch, serverTimestamp } from 'firebase/firestore';
-import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
-import { 
-  DollarSign, 
-  Eye, 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
-  Users, 
-  Car, 
-  MapPin,
-  Calendar,
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
+import {
+  DollarSign,
+  Eye,
+  CheckCircle,
+  XCircle,
+  Clock,
   Filter,
   Download,
   AlertCircle,
   TrendingUp,
   Trash2,
-  Loader2
+  Loader2,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
@@ -89,7 +84,7 @@ interface ClaimSummary {
 
 export default function SWClaimsManagementPage() {
   const firestore = useFirestore();
-  const { isSuperAdmin, isClaimsStaff, user: adminUser } = useAdmin();
+  const { isSuperAdmin, user: adminUser } = useAdmin();
   const { toast } = useToast();
   
   const [claims, setClaims] = useState<ClaimSubmission[]>([]);

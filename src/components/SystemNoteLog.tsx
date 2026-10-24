@@ -6,13 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  RefreshCw, 
-  Search, 
-  Download, 
-  MessageSquare, 
-  User, 
-  Clock, 
+import {
+  RefreshCw,
+  Download,
+  MessageSquare,
+  User,
+  Clock,
   Filter,
   ArrowUpDown,
   ArrowUp,
@@ -20,8 +19,7 @@ import {
   Loader2,
   FileText,
   Eye,
-  Calendar,
-  Bell
+  Bell,
 } from 'lucide-react';
 import {
   Table,

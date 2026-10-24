@@ -18,12 +18,12 @@ import { useAuth } from '@/firebase';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, msUntilNextLocalMidnight, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SWTopNav } from '@/components/sw/SWTopNav';
-import { 
-  MapPin, 
-  Star, 
-  AlertTriangle, 
-  CheckCircle, 
-  Clock, 
+import {
+  MapPin,
+  Star,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
   User,
   Building,
   Phone,
@@ -33,12 +33,10 @@ import {
   ArrowRight,
   RotateCcw,
   Trash2,
-  Home,
   Shield,
   Users,
   LogOut,
-  Download,
-  Loader2
+  Loader2,
 } from 'lucide-react';
 
 interface MemberVisitQuestionnaire {
@@ -337,9 +335,6 @@ function SWVisitVerificationContent() {
     totalAmount: number;
   }>>({});
 
-  const [isExportingMonth, setIsExportingMonth] = useState(false);
-  const exportMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
-
   const completedVisitsForSelectedRcfe = useMemo(() => {
     if (!selectedRCFE?.id) return [];
     return completedVisits.filter((v) => v.rcfeId === selectedRCFE.id);
@@ -353,8 +348,6 @@ function SWVisitVerificationContent() {
     setSelectedSignoffVisitIds((prev) => {
       const all = completedVisitsForSelectedRcfe.map((v) => String(v.visitId || '').trim()).filter(Boolean);
       if (all.length === 0) return [];
-      // If the previous selection is for the same set, keep it.
-      const prevSet = new Set(prev.map((x) => String(x).trim()).filter(Boolean));
       const allSet = new Set(all);
       const isSubset = prev.length > 0 && prev.every((id) => allSet.has(id));
       if (isSubset) return prev.filter((id) => allSet.has(id));
@@ -413,15 +406,6 @@ function SWVisitVerificationContent() {
     return null;
   }, [getMemberKey, membersAtSelectedRcfe, selectedRCFE, signedOffByRcfeId, visitedByRcfeId]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const swKey = String((user as any)?.uid || '').trim();
-    if (!swKey) return;
-    const key = `sw-visit-progress:${swKey}:${exportMonth}`;
-    // No persisted save-progress; questionnaire is short and intentionally ephemeral.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [(user as any)?.uid, exportMonth]);
-
   // Sign-off data
   const [signOffData, setSignOffData] = useState({
     rcfeStaffName: '',
@@ -445,12 +429,12 @@ function SWVisitVerificationContent() {
     lastMode?: string | null;
   } | null>(null);
   const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
-  const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
+  const [, setLoadingMonthStatuses] = useState(false);
   const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
   const [draftVisitsByMemberId, setDraftVisitsByMemberId] = useState<
     Record<string, { visitId: string; flagged: boolean }>
   >({});
-  const [loadingDraftVisits, setLoadingDraftVisits] = useState(false);
+  const [, setLoadingDraftVisits] = useState(false);
   const [memberEligibilityById, setMemberEligibilityById] = useState<Record<string, MemberEligibility>>({});
   const [loadingMemberEligibility, setLoadingMemberEligibility] = useState(false);
 
@@ -585,87 +569,6 @@ function SWVisitVerificationContent() {
       setLoadingMemberEligibility(false);
     }
   }, [claimDayKey, getIdToken, isSocialWorker, selectedRCFE?.id, selectedRCFE?.members]);
-
-  const downloadMonthlyVisitsCsv = useCallback(async () => {
-    if (!user) return;
-    setIsExportingMonth(true);
-    try {
-      const idToken = await getIdToken();
-      if (!idToken) throw new Error('Not signed in');
-      const res = await fetch('/api/sw-visits/monthly-export', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ month: exportMonth }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `Export failed (${res.status})`);
-      }
-
-      const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
-      const header = [
-        'Date',
-        'Member',
-        'RCFE',
-        'RCFE Address',
-        'Visit ID',
-        'Flagged',
-        'Signed Off',
-        'Daily Visit Count',
-        'Daily Visit Fees',
-        'Daily Gas',
-        'Daily Total',
-      ];
-      const escape = (value: any) => {
-        const raw = String(value ?? '');
-        if (raw.includes(',') || raw.includes('"') || raw.includes('\n')) {
-          return `"${raw.replace(/"/g, '""')}"`;
-        }
-        return raw;
-      };
-      const csv = [
-        header.join(','),
-        ...rows.map((r) =>
-          [
-            r.date || '',
-            r.memberName || '',
-            r.rcfeName || '',
-            r.rcfeAddress || '',
-            r.visitId || '',
-            r.flagged ? 'Yes' : 'No',
-            r.signedOff ? 'Yes' : 'No',
-            r.dailyVisitCount ?? '',
-            r.dailyVisitFees ?? '',
-            r.dailyGas ?? '',
-            r.dailyTotal ?? '',
-          ].map(escape).join(',')
-        ),
-      ].join('\n');
-
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sw-visits-${exportMonth}.csv`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      toast({
-        title: 'Export downloaded',
-        description: `Saved sw-visits-${exportMonth}.csv`,
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Export failed',
-        description: error?.message || 'Could not download export.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsExportingMonth(false);
-    }
-  }, [exportMonth, getIdToken, toast, user]);
 
   // Update socialWorkerId when user data becomes available
   useEffect(() => {
@@ -2502,7 +2405,7 @@ function SWVisitVerificationContent() {
             {questionStep === 4 && (
               <Card>
                 <CardHeader>
-                  <CardTitle>4. Do they have concerns they'd like to share? <span className="text-red-500">*</span></CardTitle>
+                  <CardTitle>4. Do they have concerns they&apos;d like to share? <span className="text-red-500">*</span></CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {questionnaire.memberConcerns.hasConcerns === true &&
@@ -3400,7 +3303,7 @@ function SWVisitVerificationContent() {
                             } else {
                               throw new Error(result?.error || 'Sign-off submission failed');
                             }
-                          } catch (error) {
+                          } catch  {
                             toast({
                               title: "Submission Error",
                               description: "Failed to submit sign-off. Please try again.",
@@ -3588,7 +3491,7 @@ function SWVisitVerificationContent() {
 
                 {/* Visit Summary */}
                 <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                  <h3 className="font-medium text-gray-900">Today's Progress</h3>
+                  <h3 className="font-medium text-gray-900">Today&apos;s Progress</h3>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-gray-600">Completed Visits:</span>

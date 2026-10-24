@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAdmin } from '@/hooks/use-admin';
-import { Shield, User, AlertCircle, CheckCircle } from 'lucide-react';
+import { Shield, AlertCircle, CheckCircle } from 'lucide-react';
 import { useFirestore } from '@/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -86,7 +86,7 @@ export function AdminStatusDebug() {
           Admin Status Debug
         </CardTitle>
         <CardDescription>
-          Current user's admin privileges and navigation access
+          Current user&apos;s admin privileges and navigation access
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -130,7 +130,7 @@ export function AdminStatusDebug() {
         {!isSuperAdmin && user && (
           <div className="pt-4 border-t">
             <p className="text-xs text-muted-foreground mb-3">
-              Super Admin navigation is hidden because you don't have super admin privileges.
+              Super Admin navigation is hidden because you don&apos;t have super admin privileges.
             </p>
             <Button 
               onClick={grantSuperAdminAccess}
@@ -154,7 +154,7 @@ export function AdminStatusDebug() {
               <span className="text-sm font-medium">Super Admin menu should be visible!</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Look for "Super Admin" in the navigation menu.
+              Look for &quot;Super Admin&quot; in the navigation menu.
             </p>
           </div>
         )}

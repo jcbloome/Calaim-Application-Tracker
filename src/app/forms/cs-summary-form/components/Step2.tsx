@@ -323,7 +323,7 @@ export default function Step2() {
       <Card className="border-l-4 border-accent">
         <CardHeader>
           <CardTitle>Section 6: Current Location Information</CardTitle>
-          <CardDescription>Details about the member's current and customary residence.</CardDescription>
+          <CardDescription>Details about the member&apos;s current and customary residence.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-4 p-4 border rounded-md">

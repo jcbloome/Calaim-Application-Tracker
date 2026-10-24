@@ -37,10 +37,12 @@ interface StaffNotificationBellProps {
   icon?: React.ComponentType<{ className?: string }>;
 }
 
-export function StaffNotificationBell({ userId, className = '', icon: Icon = Bell }: StaffNotificationBellProps) {
-  if (WEB_NOTIFICATIONS_MOTHBALLED) {
-    return null;
-  }
+export function StaffNotificationBell(props: StaffNotificationBellProps) {
+  if (WEB_NOTIFICATIONS_MOTHBALLED) return null;
+  return <StaffNotificationBellContent {...props} />;
+}
+
+function StaffNotificationBellContent({ userId, className = '', icon: Icon = Bell }: StaffNotificationBellProps) {
   const { user } = useAdmin();
   const firestore = useFirestore();
   const router = useRouter();

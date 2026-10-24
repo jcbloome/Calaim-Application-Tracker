@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
@@ -164,7 +163,6 @@ const isSubmittedAssignment = (status: string, workflowStatus?: string) => {
 export default function SWHomePage() {
   const auth = useAuth();
   const firestore = useFirestore();
-  const router = useRouter();
   const { toast } = useToast();
   const { user, socialWorkerData, isSocialWorker, isLoading: swLoading } = useSocialWorker();
 
@@ -566,7 +564,7 @@ export default function SWHomePage() {
       {SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED && hasLoadedOnce && totalMembers > 0 && (
         <div className="mb-6 rounded-xl border bg-card p-4 shadow-sm">
           <div className="mb-2 flex items-center justify-between text-sm font-medium">
-            <span>Today's progress</span>
+            <span>Today&apos;s progress</span>
             <span className="text-muted-foreground">
               {completedMembers} of {totalMembers} members complete
             </span>
@@ -728,7 +726,7 @@ function MemberRow({ member, facility, flags, hasDraft, isNewAssignment }: Membe
   const questUrl = `/sw-visit-verification?memberId=${encodeURIComponent(member.id)}&memberName=${encodeURIComponent(member.name)}&rcfeId=${encodeURIComponent(facility.id)}&rcfeName=${encodeURIComponent(facility.name)}&rcfeAddress=${encodeURIComponent(facility.address || '')}`;
   const signOffUrl = `/sw-portal/sign-off?memberId=${encodeURIComponent(member.id)}&rcfeId=${encodeURIComponent(facility.id)}`;
 
-  const { nextAction, completed, signedOff, claimSubmitted } = flags;
+  const { nextAction, signedOff, claimSubmitted } = flags;
 
   return (
     <div className="flex items-center gap-3 px-4 py-3">

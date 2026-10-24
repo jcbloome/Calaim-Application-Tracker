@@ -25,12 +25,6 @@ interface ClientNote {
   deleted?: boolean;
 }
 
-interface UserRegistration {
-  userId: string;
-  userFullName: string;
-  role: string;
-}
-
 // Helper function to get notes from Firestore
 async function getNotesFromFirestore(clientId2: string | null, userId: string | null): Promise<ClientNote[]> {
   const firestore = admin.firestore();
@@ -522,7 +516,7 @@ async function fetchFromCaspioAndSave(
 }
 
 // Helper function to format notes response
-function formatNotesResponse(notes: ClientNote[], clientId2?: string): NextResponse {
+function formatNotesResponse(notes: ClientNote[], _clientId2?: string): NextResponse {
   // Group notes by client for easier access
   const notesByClient = notes.reduce((acc: any, note) => {
     if (!acc[note.clientId2]) {

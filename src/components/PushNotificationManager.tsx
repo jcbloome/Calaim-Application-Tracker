@@ -14,14 +14,16 @@ interface PushNotificationManagerProps {
 
 const shouldSuppressBrowserNotifications = () => shouldSuppressWebAlerts();
 
-export default function PushNotificationManager({ onTokenReceived }: PushNotificationManagerProps) {
-  if (WEB_NOTIFICATIONS_MOTHBALLED || isRealDesktop()) {
-    // Electron is the single notification system. Also, web notifications are mothballed.
-    return null;
-  }
+export default function PushNotificationManager(props: PushNotificationManagerProps) {
+  // Electron is the single notification system. Also, web notifications are mothballed.
+  if (WEB_NOTIFICATIONS_MOTHBALLED || isRealDesktop()) return null;
+  return <PushNotificationManagerContent {...props} />;
+}
+
+function PushNotificationManagerContent({ onTokenReceived }: PushNotificationManagerProps) {
   const [isSupported, setIsSupported] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>('default');
-  const [fcmToken, setFcmToken] = useState<string | null>(null);
+  const [, setFcmToken] = useState<string | null>(null);
   const { user } = useUser();
   const { toast } = useToast();
 
@@ -166,57 +168,6 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
     }
   };
 
-  // Request permission manually
-  const requestPermission = async () => {
-    if (!isSupported) {
-      toast({
-        title: "Not Supported",
-        description: "Push notifications are not supported in this browser",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      if (typeof window === 'undefined' || !('Notification' in window)) {
-        toast({
-          title: "Not Available",
-          description: "Notifications are not available in this environment",
-          variant: "destructive",
-        });
-        return false;
-      }
-      
-      const newPermission = await Notification.requestPermission();
-      setPermission(newPermission);
-
-      if (newPermission === 'granted') {
-        toast({
-          title: "Permission Granted",
-          description: "You'll now receive desktop notifications for note assignments",
-        });
-        
-        // Re-initialize to get token
-        if (typeof window !== 'undefined') {
-          window.location.reload();
-        }
-      } else {
-        toast({
-          title: "Permission Denied",
-          description: "Please enable notifications in your browser settings to receive alerts",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Error requesting permission:', error);
-      toast({
-        title: "Error",
-        description: "Failed to request notification permission",
-        variant: "destructive",
-      });
-    }
-  };
-
   // Don't render anything - this is a background service
   return null;
 }
@@ -224,7 +175,7 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
 // Hook for using push notifications in components
 export function usePushNotifications() {
   const [isEnabled, setIsEnabled] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
+  const [token] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {

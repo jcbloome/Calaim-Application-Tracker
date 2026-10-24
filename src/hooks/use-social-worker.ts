@@ -387,5 +387,8 @@ export function SocialWorkerProvider({ children }: { children: ReactNode }) {
 export function useSocialWorker(): SocialWorkerContextValue {
   const context = useContext(SocialWorkerContext);
   if (context) return context;
+  // Whether a SocialWorkerProvider wraps a component never changes during its lifetime,
+  // so this branch is stable across renders.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useSocialWorkerState();
 }

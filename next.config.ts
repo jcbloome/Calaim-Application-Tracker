@@ -48,8 +48,7 @@ const nextConfig: NextConfig = {
     ]
   },
   eslint: {
-    // Temporarily ignore ESLint errors during builds
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   typescript: {
     ignoreBuildErrors: false,

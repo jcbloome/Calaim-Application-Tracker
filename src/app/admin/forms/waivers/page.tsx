@@ -3,15 +3,14 @@
 
 import React, { useState, Suspense, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock, ShieldCheck, FileText, HeartHandshake } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { ArrowLeft, Loader2, FileCheck2, AlertCircle, ShieldCheck, FileText, HeartHandshake } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
-import type { Application, FormStatus } from '@/lib/definitions';
+import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import type { Application } from '@/lib/definitions';
 import { mergeApplicationForms } from '@/lib/merge-application-forms';
-import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
@@ -64,9 +63,7 @@ function Section({ title, icon: Icon, children }: { title: string, icon: React.E
 }
 
 function WaiversFormComponent() {
-    const [isLoading, setIsLoading] = useState(false);
-    const { toast } = useToast();
-    const router = useRouter();
+    const [isLoading] = useState(false);
     const searchParams = useSearchParams() ?? new URLSearchParams();
     const applicationId = searchParams.get('applicationId');
     const appUserIdRaw = searchParams.get('userId'); // For admins
@@ -113,7 +110,6 @@ function WaiversFormComponent() {
       return { ...(base as any), forms } as Application;
     }, [primaryApplication, fallbackApplication]);
     const isLoadingApplication = isLoadingPrimaryApplication || isLoadingFallbackApplication;
-    const isReadOnly = application?.status === 'Completed & Submitted' || application?.status === 'Approved';
     const backLink = appUserId
       ? `/admin/applications/${applicationId}?userId=${appUserId}`
       : `/admin/applications/${applicationId}`;
@@ -209,13 +205,6 @@ function WaiversFormComponent() {
         }
     }, [application]);
 
-    const isFormComplete = () => {
-        if (!signerType || !signerName || !focChoice || !ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard) return false;
-        if (!monthlyIncome.trim()) return false;
-        if (signerType === 'representative' && !signerRelationship) return false;
-        return true;
-    };
-
     const handleSubmit = async () => {
         // This function is for user-facing form, admins will not submit.
         // We can leave this logic as it won't be triggered in the admin view.
@@ -301,7 +290,7 @@ function WaiversFormComponent() {
                     </Section>
 
                     <Section title="Liability Waiver & Hold Harmless Agreement" icon={FileText}>
-                        <p><strong>Intention.</strong> The purpose of this agreement ('Agreement') is to forever release and discharge Connections Care Home Consultants, LLC (the 'Company') and all its agents, officers, and employees (collectively referred to as 'Releasees') from all liability for injury or damages that may arise out of the resident/client's ('Resident') participation in the Community Supports program ('Program'). Resident understands that this Agreement covers liability, claims, and actions caused in whole or in part by any acts or failures to act of the Releasees, including, but not to, negligence, fault, or breach of contract.</p>
+                        <p><strong>Intention.</strong> The purpose of this agreement (&apos;Agreement&apos;) is to forever release and discharge Connections Care Home Consultants, LLC (the &apos;Company&apos;) and all its agents, officers, and employees (collectively referred to as &apos;Releasees&apos;) from all liability for injury or damages that may arise out of the resident/client&apos;s (&apos;Resident&apos;) participation in the Community Supports program (&apos;Program&apos;). Resident understands that this Agreement covers liability, claims, and actions caused in whole or in part by any acts or failures to act of the Releasees, including, but not to, negligence, fault, or breach of contract.</p>
                         <p><strong>Assumption of Risk.</strong> Resident understands that their participation in the Program may involve a risk of injury or even death from various causes. Resident assumes all possible risks, both known and unknown, of participating in the Program and agrees to release, defend, indemnify, and hold harmless the Releasees from any injury, loss, liability, damage, or cost they may incur due to their participation in the Program.</p>
                         <p><strong>No Insurance.</strong> Resident understands that the Company does not assume any responsibility for or obligation to provide financial assistance or other assistance, including but not to medical, health, or disability insurance, in the event of injury or illness. Resident understands that they are not covered by any medical, health, accident, or life insurance provided by the Company and is responsible for providing their own insurance.</p>
                         <p><strong>Acknowledgment.</strong> Resident acknowledges that they have read this Agreement in its entirety and understands its content. Resident is aware that this is a release of liability and a contract of indemnity, and they sign it of their own free will.</p>

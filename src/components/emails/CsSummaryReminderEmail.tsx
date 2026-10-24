@@ -50,7 +50,7 @@ export function CsSummaryReminderEmail({
           <strong>What you need to do:</strong>
         </p>
         <ol style={{ color: '#4b5563', lineHeight: '1.6', paddingLeft: '20px' }}>
-          <li>Click the "Continue Application" button below</li>
+          <li>Click the &quot;Continue Application&quot; button below</li>
           <li>Sign in or create an account with this invited email address</li>
           <li>Enter Application ID, member&apos;s last name, and date of birth to verify access</li>
           <li>Continue the CS Summary form and upload required documents through the portal</li>

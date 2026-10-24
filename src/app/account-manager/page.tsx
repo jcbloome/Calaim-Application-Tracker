@@ -7,10 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Trash2, UserPlus, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Trash2, RotateCcw, AlertTriangle } from 'lucide-react';
 
 export default function AccountManagerPage() {
-  const [email, setEmail] = useState('jcbloome@gmail.com');
+  const [email] = useState('jcbloome@gmail.com');
   const [newPassword, setNewPassword] = useState('newpassword123');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<{type: 'success' | 'error', message: string} | null>(null);
@@ -110,7 +110,7 @@ export default function AccountManagerPage() {
                         placeholder="Enter a simple password"
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        Use something simple like "newpassword123" for testing
+                        Use something simple like &quot;newpassword123&quot; for testing
                       </p>
                     </div>
                     <Button 

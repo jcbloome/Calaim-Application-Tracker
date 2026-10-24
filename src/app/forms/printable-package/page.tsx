@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Header } from '@/components/Header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Printer, FileText, Info, FileQuestion, UploadCloud, FileSymlink, Package, AlertCircle, Send, Loader2 } from 'lucide-react';
+import { FileText, Info, FileQuestion, UploadCloud, AlertCircle, Loader2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -133,7 +133,7 @@ export default function PrintablePackagePage() {
         setUploadProgress(0);
 
         try {
-            const uploadPromises = Array.from(files).map((file, index) => {
+            const uploadPromises = Array.from(files).map((file, _index) => {
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
                 // Storage rules allow user uploads only under `user_uploads/{uid}/...`
                 const safeDocType = sanitizePathSegment(documentType);
@@ -390,7 +390,7 @@ export default function PrintablePackagePage() {
                                     </div>
                                 </div>
                                 <div>
-                                    <Label htmlFor="member-name">Member's Full Name</Label>
+                                    <Label htmlFor="member-name">Member&apos;s Full Name</Label>
                                     <Input
                                         id="member-name"
                                         required

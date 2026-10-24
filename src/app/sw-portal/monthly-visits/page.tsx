@@ -11,9 +11,9 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
-import { Loader2, Download, Printer, CheckCircle, AlertTriangle, Target, CalendarDays, Sparkles } from 'lucide-react';
+import { Loader2, Download, Printer, AlertTriangle, Target, CalendarDays, Sparkles } from 'lucide-react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { format, endOfMonth } from 'date-fns';
+import { endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
 
@@ -68,7 +68,7 @@ export default function SWMonthlyVisitsPage() {
   const { toast } = useToast();
 
   const [month, setMonth] = useState<string>(() => monthKey(new Date()));
-  const [isLoading, setIsLoading] = useState(false);
+  const [, setIsLoading] = useState(false);
   const [rows, setRows] = useState<MonthlyRow[]>([]);
   const [duplicates, setDuplicates] = useState<DuplicateInfo[]>([]);
   const [claims, setClaims] = useState<ClaimSubmission[]>([]);

@@ -9,18 +9,17 @@ import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useFirestore, useUser } from '@/firebase';
 import { doc, setDoc, onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore';
-import { 
-  Bell, 
-  Mail, 
-  FileText, 
-  Upload, 
+import {
+  Bell,
+  FileText,
+  Upload,
   Users,
   Settings,
   Send,
   CheckCircle2,
   AlertTriangle,
   Clock,
-  Loader2
+  Loader2,
 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { format } from 'date-fns';
@@ -126,7 +125,7 @@ export function NotificationManager() {
         description: 'Email notification settings have been updated',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
-    } catch (error: any) {
+    } catch  {
       toast({
         variant: 'destructive',
         title: 'Save Failed',
@@ -143,7 +142,7 @@ export function NotificationManager() {
       const functions = getFunctions();
       const sendTest = httpsCallable(functions, 'sendManualNotification');
       
-      const result = await sendTest({
+      await sendTest({
         type: 'document_upload',
         applicationId: 'test-application',
         recipients: [settings.emailAddress]

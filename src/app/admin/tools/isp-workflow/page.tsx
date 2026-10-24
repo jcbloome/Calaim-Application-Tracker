@@ -17,7 +17,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable, deleteObject } from 'firebase/storage';
-import { AlertTriangle, ArrowDownAZ, ArrowUp, ArrowUpAZ, Ban, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Trash2, Upload, User } from 'lucide-react';
+import { AlertTriangle, ArrowDownAZ, ArrowUp, ArrowUpAZ, Ban, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Trash2, Upload } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';

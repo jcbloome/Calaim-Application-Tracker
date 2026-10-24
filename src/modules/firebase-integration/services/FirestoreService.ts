@@ -1,24 +1,23 @@
 // Firestore Service - Handles all Firestore operations
 // Document and collection management with caching and real-time subscriptions
 
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc, 
-  collection, 
-  getDocs, 
-  query, 
-  where, 
-  orderBy, 
-  limit, 
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  getDocs,
+  query,
+  where,
+  orderBy,
+  limit,
   onSnapshot,
   writeBatch,
   serverTimestamp,
-  Timestamp,
   type Query,
-  type DocumentData
+  type DocumentData,
 } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { FirebaseErrorHandler } from '../utils/errorHandler';
@@ -41,7 +40,7 @@ export class FirestoreService {
   async getDocument<T>(
     collectionName: string, 
     documentId: string, 
-    options?: DocumentOptions
+    _options?: DocumentOptions
   ): Promise<FirestoreDocument<T> | null> {
     try {
       const docRef = doc(this.firestore, collectionName, documentId);
@@ -130,7 +129,7 @@ export class FirestoreService {
     options?: QueryOptions
   ): Promise<FirestoreCollection<T>> {
     try {
-      let q = collection(this.firestore, collectionName);
+      const q = collection(this.firestore, collectionName);
       let queryRef: any = q;
 
       // Apply query constraints
@@ -190,7 +189,7 @@ export class FirestoreService {
     callback: (docs: FirestoreDocument<T>[]) => void
   ): () => void {
     try {
-      let q = collection(this.firestore, collectionName);
+      const q = collection(this.firestore, collectionName);
       let queryRef: any = q;
 
       // Apply query constraints
@@ -242,7 +241,7 @@ export class FirestoreService {
     collectionName: string, 
     documentId: string,
     callback: (doc: FirestoreDocument<T> | null) => void,
-    options?: DocumentOptions
+    _options?: DocumentOptions
   ): () => void {
     try {
       const docRef = doc(this.firestore, collectionName, documentId);

@@ -52,7 +52,7 @@ export default function MemberNotesModal({
   clientName 
 }: MemberNotesModalProps) {
   const [notes, setNotes] = useState<ClientNote[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');

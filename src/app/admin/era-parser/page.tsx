@@ -65,21 +65,6 @@ type EraCacheHistoryItem = {
   updatedAt?: { _seconds?: number; seconds?: number } | string | null;
 };
 
-type EraHistoryLookupBatch = {
-  cacheKey: string;
-  fileName: string;
-  sourceMode: string;
-  parserProfile?: EraParserProfile;
-  payer: string;
-  totalRows: number;
-  updatedAt?: { _seconds?: number; seconds?: number } | string | null;
-  matchedRows: number;
-  matchedMembers: number;
-  totalPaid: number;
-  sampleRows: EraRow[];
-  matchedRowsPreview?: EraRow[];
-};
-
 type EraClaimMatchSummary = {
   totalClaims: number;
   matchedClaims: number;
@@ -152,38 +137,6 @@ const normalizeNameForLookup = (value: unknown) =>
     .replace(/[^a-z0-9,\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-
-const rowMatchesHistoryLookup = (row: EraRow, rawQuery: string) => {
-  const qText = String(rawQuery || '').trim().toLowerCase();
-  if (!qText) return false;
-  const qToken = normalizeLookupToken(qText);
-  const qName = normalizeNameForLookup(qText);
-  const qNameTokens = qName
-    .split(/[,\s]+/)
-    .map((x) => x.trim())
-    .filter(Boolean);
-
-  const member = String(row.member_name || '').toLowerCase().trim();
-  const memberNormalized = normalizeNameForLookup(member);
-  const memberToken = normalizeLookupToken(member);
-  const acnt = String(row.acnt || '').toLowerCase().trim();
-  const acntToken = normalizeLookupToken(acnt);
-  const icn = String(row.icn || '').toLowerCase().trim();
-  const icnToken = normalizeLookupToken(icn);
-  const hic = String(row.hic || '').toLowerCase().trim();
-  const hicToken = normalizeLookupToken(hic);
-
-  const nameMatchDirect = member.includes(qText) || (qName ? memberNormalized.includes(qName) : false);
-  const nameMatchByTokens =
-    qNameTokens.length > 0 &&
-    qNameTokens.every((tok) => memberNormalized.includes(tok) || memberToken.includes(normalizeLookupToken(tok)));
-  const idTextMatch = hic.includes(qText) || acnt.includes(qText) || icn.includes(qText);
-  const idTokenMatch = qToken
-    ? hicToken.includes(qToken) || acntToken.includes(qToken) || icnToken.includes(qToken)
-    : false;
-
-  return nameMatchDirect || nameMatchByTokens || idTextMatch || idTokenMatch;
-};
 
 let _pdfJsPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -1021,10 +974,6 @@ export default function EraParserPage() {
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'zero' | 'negative'>('all');
   const [procFilter, setProcFilter] = useState<string>('all');
   const [batchLookupQuery, setBatchLookupQuery] = useState('');
-  const [historyLookupQuery, setHistoryLookupQuery] = useState('');
-  const [historyLookupLoading, setHistoryLookupLoading] = useState(false);
-  const [historyLookupResults, setHistoryLookupResults] = useState<EraHistoryLookupBatch[]>([]);
-  const [historyLookupSearchedBatches, setHistoryLookupSearchedBatches] = useState(0);
   const [claimMatchLoading, setClaimMatchLoading] = useState(false);
   const [claimMatchFilter, setClaimMatchFilter] = useState('');
   const [claimMatchSummary, setClaimMatchSummary] = useState<EraClaimMatchSummary | null>(null);
@@ -1045,8 +994,8 @@ export default function EraParserPage() {
   const [openProgress, setOpenProgress] = useState<OpenProgress | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [lastExtracted, setLastExtracted] = useState<ExtractedPagesResult | null>(null);
-  const [cacheHistory, setCacheHistory] = useState<EraCacheHistoryItem[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [, setCacheHistory] = useState<EraCacheHistoryItem[]>([]);
+  const [, setHistoryLoading] = useState(false);
   const [activeCacheKey, setActiveCacheKey] = useState<string | null>(null);
   const [activeTotalsVerified, setActiveTotalsVerified] = useState(false);
   const [activeTotalsVerifiedAt, setActiveTotalsVerifiedAt] = useState<EraCacheHistoryItem['totalsVerifiedAt']>(null);
@@ -1269,13 +1218,6 @@ export default function EraParserPage() {
       hasPositivePayment,
     };
   }, [batchLookupQuery, rows]);
-
-  const historyLookupPaidAnywhere = useMemo(() => {
-    if (!historyLookupQuery.trim()) return null;
-    if (historyLookupLoading) return null;
-    if (historyLookupResults.length === 0) return false;
-    return historyLookupResults.some((b) => Number(b.totalPaid || 0) > 0);
-  }, [historyLookupLoading, historyLookupQuery, historyLookupResults]);
 
   const pushReadyClaimMatches = useMemo(() => {
     const targetTable =
@@ -1827,12 +1769,6 @@ export default function EraParserPage() {
     return `file:${String(f.name || '').toLowerCase()}|${Number(f.size || 0)}|${Number(f.lastModified || 0)}|profile:${profile}|v:${ERA_PARSER_CACHE_VERSION}`;
   };
 
-  const toCacheKeyFromPath = (p: string, profile: EraParserProfile) => {
-    const v = String(p || '').trim().toLowerCase();
-    if (!v) return null;
-    return `path:${v}|profile:${profile}|v:${ERA_PARSER_CACHE_VERSION}`;
-  };
-
   const fetchCacheHistory = useCallback(async () => {
     if (!auth?.currentUser) return;
     setHistoryLoading(true);
@@ -2195,96 +2131,6 @@ export default function EraParserPage() {
     setPreviewMessage(null);
     setPreviewProgress(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const loadFromHistory = async (cacheKey: string) => {
-    if (uploading) return;
-    setUploading(true);
-    setError(null);
-    setErrorDetails(null);
-    setPhase('parsing');
-    try {
-      const loaded = await tryLoadFromCache(cacheKey);
-      if (!loaded) throw new Error('Could not load cached ERA parse.');
-      setPhase('done');
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load cached ERA parse.');
-      setPhase('idle');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const runHistoryLookup = async () => {
-    const q = String(historyLookupQuery || '').trim();
-    if (!q || !auth?.currentUser) {
-      setHistoryLookupResults([]);
-      setHistoryLookupSearchedBatches(0);
-      return;
-    }
-    setHistoryLookupLoading(true);
-    setError(null);
-    setErrorDetails(null);
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch(`/api/admin/era/parse?lookup=${encodeURIComponent(q)}&limit=50`, {
-        method: 'GET',
-        headers: { authorization: `Bearer ${idToken}` },
-      });
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `Lookup failed (HTTP ${res.status})`);
-      }
-      const apiBatches = Array.isArray(data?.batches) ? (data.batches as EraHistoryLookupBatch[]) : [];
-      const apiSearched = Number(data?.searchedBatches || 0);
-      if (apiSearched > 0 || cacheHistory.length === 0) {
-        setHistoryLookupResults(apiBatches);
-        setHistoryLookupSearchedBatches(apiSearched);
-        return;
-      }
-
-      // Fallback: search currently listed parsed ERA caches directly by cacheKey.
-      const fallbackMatches: EraHistoryLookupBatch[] = [];
-      for (const item of cacheHistory.slice(0, 50)) {
-        const batchRes = await fetch(`/api/admin/era/parse?cacheKey=${encodeURIComponent(item.cacheKey)}`, {
-          method: 'GET',
-          headers: { authorization: `Bearer ${idToken}` },
-        });
-        const batchData = (await batchRes.json().catch(() => ({}))) as any;
-        if (!batchRes.ok || !batchData?.success) continue;
-        const batchRows = Array.isArray(batchData?.rows) ? (batchData.rows as EraRow[]) : [];
-        const matchedRows = batchRows.filter((row) => rowMatchesHistoryLookup(row, q));
-        if (!matchedRows.length) continue;
-        const memberKeys = new Set<string>();
-        let totalPaid = 0;
-        for (const row of matchedRows) {
-          const key = String(row.acnt || '').trim() || String(row.member_name || '').trim();
-          if (key) memberKeys.add(key);
-          if (typeof row.paid === 'number' && Number.isFinite(row.paid)) totalPaid += row.paid;
-        }
-        fallbackMatches.push({
-          cacheKey: item.cacheKey,
-          fileName: String(batchData?.fileName || item.fileName || 'ERA PDF'),
-          sourceMode: String(batchData?.sourceMode || item.sourceMode || 'unknown'),
-          payer: String(batchData?.payer || item.payer || 'Health Net'),
-          totalRows: Number(batchData?.rows?.length || item.totalRows || 0),
-          updatedAt: batchData?.updatedAt || item.updatedAt || null,
-          matchedRows: matchedRows.length,
-          matchedMembers: memberKeys.size,
-          totalPaid: Number(totalPaid.toFixed(2)),
-          sampleRows: matchedRows.slice(0, 5),
-          matchedRowsPreview: matchedRows.slice(0, 50),
-        });
-      }
-      setHistoryLookupResults(fallbackMatches);
-      setHistoryLookupSearchedBatches(Math.min(cacheHistory.length, 50));
-    } catch (e: any) {
-      setHistoryLookupResults([]);
-      setHistoryLookupSearchedBatches(0);
-      setError(e?.message || 'Failed to search saved ERA batches.');
-    } finally {
-      setHistoryLookupLoading(false);
-    }
   };
 
   const runSubmittedClaimMatch = async () => {
@@ -3122,7 +2968,7 @@ export default function EraParserPage() {
                         </table>
                       </div>
                     ) : (
-                      <div className="text-xs text-muted-foreground">Choose a claim row below via "Set test" to preview field mapping.</div>
+                      <div className="text-xs text-muted-foreground">Choose a claim row below via &quot;Set test&quot; to preview field mapping.</div>
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground">
@@ -3203,7 +3049,7 @@ export default function EraParserPage() {
                   ))}
                   {filteredClaimMatchResults.length > 80 ? (
                     <div className="text-xs text-muted-foreground">
-                      Showing first 80 of {filteredClaimMatchResults.length} claim(s) for filter "{claimResultViewFilter}".
+                      Showing first 80 of {filteredClaimMatchResults.length} claim(s) for filter &quot;{claimResultViewFilter}&quot;.
                     </div>
                   ) : null}
                 </div>

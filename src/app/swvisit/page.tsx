@@ -264,7 +264,7 @@ export default function SocialWorkerPortal() {
                 <Link href="/sw-visit-verification">
                   <Button variant="outline" className="w-full justify-start">
                     <Calendar className="h-4 w-4 mr-3" />
-                    Today's Schedule
+                    Today&apos;s Schedule
                     <Badge variant="secondary" className="ml-auto">9 RCFEs</Badge>
                   </Button>
                 </Link>

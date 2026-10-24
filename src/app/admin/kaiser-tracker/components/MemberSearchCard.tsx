@@ -3,7 +3,7 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
 import type { KaiserMember } from './shared';
@@ -104,7 +104,7 @@ export function MemberSearchCard({ members, searchTerm, onSearchTermChange }: Me
                   ))}
                 {members.filter((member) => matchesSearch(member, searchTerm)).length === 0 && (
                   <div className="text-center py-4 text-gray-500">
-                    <p className="text-sm">No members found for "{searchTerm}"</p>
+                    <p className="text-sm">No members found for &quot;{searchTerm}&quot;</p>
                   </div>
                 )}
               </div>

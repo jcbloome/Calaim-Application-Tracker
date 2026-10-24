@@ -517,15 +517,15 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
       <PrintableFormSection title="Section 11: Individual Service Plan (ISP)">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
           <p>
-            An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's
+            An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan&apos;s
             (MCP) clinical team to determine the member’s care needs and to approve them for the program. The ISP
-            assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually
-            (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care
-            (the amount the MCP will pay for the "assisted living" portion). For Health Net, the tiered level is
+            assessment is a critical step for getting the MCP&apos;s authorization. The ISP is either done virtually
+            (Health Net) or in-person (Kaiser) by a Connections&apos; MSW/RN to administer a tool to determine level of care
+            (the amount the MCP will pay for the &quot;assisted living&quot; portion). For Health Net, the tiered level is
             determined by Connections. For Kaiser, the tiered level is determined by Kaiser.
           </p>
           <p>
-            Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician's
+            Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician&apos;s
             report (602), and other clinical notes. Who is the best person to contact for the ISP? Please note this
             is not the primary care doctor but could be a SNF social worker, etc.
           </p>
@@ -685,29 +685,29 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
       <PrintableFormSection title="Section 10: Room & Board Payments" className="print:break-before-page">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
           <p>
-            The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible
-            for paying the RCFE the "assisted living" portion.
+            The MCP member is responsible for paying the RCFE the &quot;room and board&quot; portion and the MCP is responsible
+            for paying the RCFE the &quot;assisted living&quot; portion.
           </p>
           <p>
             For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is
             bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives
-            the $1,444.07 balance as payment for "room and board". Any income above $1,444.07 is not paid as "room and
-            board" unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees
+            the $1,444.07 balance as payment for &quot;room and board&quot;. Any income above $1,444.07 is not paid as &quot;room and
+            board&quot; unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees
             to a higher amount for a private room (since the program does not mandate private rooms).
           </p>
           <p>
-            Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be
+            Members not eligible for the NMOHC will still have a &quot;room and board&quot; obligation but the amount could be
             flexible depending on the RCFE and the assessed tiered level.
           </p>
           <p>
             Members who cannot pay any room and board portion usually are not eligible for the CS since program
-            requirements mandate a "room and board" payment from the member (or their family).
+            requirements mandate a &quot;room and board&quot; payment from the member (or their family).
           </p>
           <p>
             Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not
             participate in CalAIM. Families looking to place members in expensive real estate areas should have the
             realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting
-            CalAIM members, RCFEs will need to know the "room and board" payment.
+            CalAIM members, RCFEs will need to know the &quot;room and board&quot; payment.
           </p>
         </div>
       </PrintableFormSection>

@@ -110,67 +110,6 @@ function Dot({ selected }: { selected: boolean }) {
   );
 }
 
-// ─── Read-only field renderer ──────────────────────────────────────────────────
-
-function ReadField({ q, value }: { q: Question; value: AnswerValue | undefined }) {
-  const text = asText(value);
-  const isEmpty = !text;
-
-  if (q.type === 'radio' || q.type === 'select') {
-    return (
-      <div className="flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
-        {(q.options ?? []).map((opt) => {
-          const selected = text === opt.value;
-          return (
-            <label key={opt.value} className={`flex items-center gap-1.5 text-sm ${selected ? 'font-medium text-zinc-900' : 'text-zinc-400'}`}>
-              <span className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border ${selected ? 'border-zinc-800 bg-zinc-800' : 'border-zinc-300 bg-white'}`}>
-                {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-              </span>
-              {opt.label}
-            </label>
-          );
-        })}
-        {isEmpty && <span className="text-xs text-zinc-400 italic">—</span>}
-      </div>
-    );
-  }
-
-  if (q.type === 'checkboxGroup') {
-    const selected = new Set(Array.isArray(value) ? value : []);
-    return (
-      <div className="flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
-        {(q.options ?? []).map((opt) => {
-          const checked = selected.has(opt.value);
-          return (
-            <label key={opt.value} className={`flex items-center gap-1.5 text-sm ${checked ? 'font-medium text-zinc-900' : 'text-zinc-400'}`}>
-              <span className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm border ${checked ? 'border-zinc-800 bg-zinc-800' : 'border-zinc-300 bg-white'}`}>
-                {checked && <span className="text-white text-[8px] leading-none">✓</span>}
-              </span>
-              {opt.label}
-            </label>
-          );
-        })}
-        {isEmpty && <span className="text-xs text-zinc-400 italic">—</span>}
-      </div>
-    );
-  }
-
-  // text / textarea
-  if (q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary')) {
-    return (
-      <div className="min-h-[2.5rem] whitespace-pre-wrap rounded border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-sm text-zinc-800">
-        {isEmpty ? <span className="italic text-zinc-400">—</span> : text}
-      </div>
-    );
-  }
-
-  return (
-    <p className={`text-sm ${isEmpty ? 'italic text-zinc-400' : 'font-medium text-zinc-900'}`}>
-      {isEmpty ? '—' : text}
-    </p>
-  );
-}
-
 // ─── Signature summary block ───────────────────────────────────────────────────
 
 function SignatureSummary({ intake }: { intake: any }) {

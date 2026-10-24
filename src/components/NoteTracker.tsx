@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,26 +10,19 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  MessageSquare, 
-  Send, 
-  Reply, 
-  Bell,
+import {
+  MessageSquare,
+  Send,
+  Reply,
   User,
   Clock,
-  AlertCircle,
-  CheckCircle2,
   Eye,
   EyeOff,
-  Plus,
-  Filter,
   Search,
   Loader2,
   Pin,
-  Archive,
-  Star
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { useUser } from '@/firebase';
 import { useGlobalNotifications } from '@/components/NotificationProvider';
 import { normalizePriorityLabel } from '@/lib/notification-utils';
@@ -87,9 +80,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   const [notes, setNotes] = useState<Note[]>([]);
   const [filteredNotes, setFilteredNotes] = useState<Note[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [showNewNoteForm, setShowNewNoteForm] = useState(false);
-  const [staffMembers, setStaffMembers] = useState<Array<{ id: string; name: string; role: string; email: string }>>([]);
+  const [, setStaffMembers] = useState<Array<{ id: string; name: string; role: string; email: string }>>([]);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   // Category filtering removed
@@ -99,15 +90,6 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   const { toast } = useToast();
   const { showNotification } = useGlobalNotifications();
   const notesEndRef = useRef<HTMLDivElement>(null);
-
-  // New note form state
-  const [newNote, setNewNote] = useState({
-    content: '',
-    priority: 'General' as Note['priority'],
-    isPrivate: false,
-    recipientIds: [] as string[],
-    sendNotification: true
-  });
 
   // Reply form state
   const [replyContent, setReplyContent] = useState('');
@@ -199,114 +181,6 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
     }
   };
 
-  // Save new note
-  const saveNote = async () => {
-    if (!newNote.content.trim()) {
-      toast({
-        variant: 'destructive',
-        title: 'Validation Error',
-        description: 'Note content is required',
-      });
-      return;
-    }
-
-    if (!user) {
-      toast({
-        variant: 'destructive',
-        title: 'Authentication Error',
-        description: 'You must be logged in to create notes',
-      });
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const noteData = {
-        clientId2: memberId,
-        memberName,
-        noteText: newNote.content,
-        // category removed
-        priority: newNote.priority,
-        isPrivate: newNote.isPrivate,
-        recipientIds: newNote.recipientIds,
-        sendNotification: newNote.sendNotification,
-        authorId: user.uid,
-        authorName: user.displayName || user.email || 'Unknown User'
-      };
-      
-      const response = await fetch('/api/member-notes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(noteData),
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        const createdNote: Note = {
-          id: data.note.id || `note-${Date.now()}`,
-          memberId,
-          memberName,
-          content: newNote.content,
-          // category removed
-          priority: newNote.priority,
-          isPrivate: newNote.isPrivate,
-          isPinned: false,
-          isArchived: false,
-          authorId: user.uid,
-          authorName: user.displayName || user.email || 'Unknown User',
-          authorRole: 'Admin', // Default role
-          recipientIds: newNote.recipientIds,
-          recipientNames: [], // Would be populated from staff lookup
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          readBy: [],
-          replies: []
-        };
-        
-        setNotes(prev => [createdNote, ...prev]);
-        setShowNewNoteForm(false);
-        setNewNote({
-          content: '',
-          priority: 'General',
-          isPrivate: false,
-          recipientIds: [],
-          sendNotification: true
-        });
-        
-        toast({
-          title: 'Note Created',
-          description: newNote.sendNotification ? 'Notifications sent to selected staff' : 'Note saved successfully',
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-
-        // Show Windows-style notification
-        showNotification({
-          type: 'success',
-          title: 'Note Created Successfully! 🎯',
-          message: `Your note for ${memberName} has been posted${newNote.sendNotification ? ' and notifications sent to staff' : ''}.`,
-          author: user.displayName || user.email || 'You',
-          memberName,
-          priority: newNote.priority as Parameters<typeof showNotification>[0]['priority'],
-          duration: 4000,
-          sound: true,
-          soundType: 'arrow-target',
-          animation: 'bounce'
-        });
-      }
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Save Failed',
-        description: error.message || 'Could not create note',
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   // Save reply
   const saveReply = async (noteId: string) => {
     if (!replyContent.trim() || !user) return;
@@ -375,7 +249,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
         description: isPinned ? 'Note removed from pinned' : 'Note pinned to top',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
-    } catch (error: any) {
+    } catch  {
       toast({
         variant: 'destructive',
         title: 'Update Failed',
@@ -570,9 +444,6 @@ function NoteCard({
   onTogglePin 
 }: NoteCardProps) {
   const isUnread = currentUserId && !note.readBy.some(read => read.userId === currentUserId);
-  const hasUnreadReplies = currentUserId && note.replies.some(reply => 
-    !reply.readBy.some(read => read.userId === currentUserId)
-  );
 
   return (
     <Card className={`${isUnread ? 'border-blue-200 bg-blue-50' : ''} ${note.isPinned ? 'border-yellow-200 bg-yellow-50' : ''}`}>

@@ -9,20 +9,16 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { 
-  MapPin, 
-  Users, 
-  CheckCircle, 
-  Clock, 
+import {
+  MapPin,
+  Users,
+  CheckCircle,
   FileText,
   PenTool,
-  Calendar,
   Home,
-  User,
-  AlertCircle,
   Save,
   RefreshCw,
-  Loader2
+  Loader2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useUser } from '@/firebase';
@@ -47,28 +43,13 @@ interface VisitMember {
   visited: boolean;
 }
 
-interface VisitVerification {
-  id: string;
-  socialWorkerEmail: string;
-  socialWorkerName: string;
-  rcfeId: string;
-  rcfeName: string;
-  visitDate: string;
-  visitTime: string;
-  members: VisitMember[];
-  generalNotes: string;
-  signature: string;
-  signatureDate: string;
-  status: 'Draft' | 'Completed' | 'Submitted';
-}
-
 export default function SWVisitVerificationPage() {
   const [rcfeFacilities, setRCFEFacilities] = useState<RCFEFacility[]>([]);
   const [selectedRCFE, setSelectedRCFE] = useState<string>('');
   const [visitMembers, setVisitMembers] = useState<VisitMember[]>([]);
   const [loading, setLoading] = useState(false);
   const [generalNotes, setGeneralNotes] = useState('');
-  const [signature, setSignature] = useState('');
+  const [, setSignature] = useState('');
   const [visitDate, setVisitDate] = useState(new Date().toISOString().split('T')[0]);
   const [visitTime, setVisitTime] = useState(new Date().toTimeString().slice(0, 5));
   
@@ -578,7 +559,7 @@ export default function SWVisitVerificationPage() {
             <MapPin className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="text-lg font-semibold mb-2">No RCFE Assignments</h3>
             <p className="text-muted-foreground mb-4">
-              Click "Refresh Assignments" to load your RCFE facility assignments.
+              Click &quot;Refresh Assignments&quot; to load your RCFE facility assignments.
             </p>
             <Button onClick={loadRCFEFacilities} disabled={loading}>
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />

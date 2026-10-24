@@ -69,7 +69,7 @@ export function resolveMifDateFromFileNames(fileNames: Array<string | undefined 
   mifDateLabel: string;
   mifDateSourceFile: string;
 } {
-  let mifDateLabel = '';
+  const mifDateLabel = '';
   let mifDateSourceFile = '';
   for (const candidate of fileNames) {
     const name = String(candidate || '').trim();
@@ -651,7 +651,6 @@ export async function uploadMifServiceDeliveryForm(params: {
     identity: params.identity,
     extraFileNames: params.extraFileNames,
   });
-  const safeFileName = displayFileName.replace(/[<>:"/\\|?*]/g, '_');
   const storagePath = `documents/applications/${params.applicationId}/${MIF_SERVICE_DELIVERY_FORM_NAME}/${Date.now()}_mif-service-delivery.pdf`;
   const storageRef = ref(params.storage, storagePath);
   const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });

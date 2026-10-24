@@ -87,14 +87,6 @@ type ClaimRow = {
   updatedAtMs?: number;
 };
 
-const todayLocalKey = () => {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-
 const normalize = (v: unknown) =>
   String(v ?? '')
     .trim()
@@ -123,7 +115,7 @@ export default function SWQueuePage() {
   const [statusMonth, setStatusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
   const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
-  const [monthRows, setMonthRows] = useState<MonthExportRow[]>([]);
+  const [, setMonthRows] = useState<MonthExportRow[]>([]);
 
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [draftsToday, setDraftsToday] = useState<DraftVisit[]>([]);
@@ -229,7 +221,7 @@ export default function SWQueuePage() {
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load drafts (HTTP ${res.status})`);
       setDraftsToday(Array.isArray(data?.visits) ? (data.visits as DraftVisit[]) : []);
-    } catch (e: any) {
+    } catch  {
       setDraftsToday([]);
     } finally {
       setLoadingDrafts(false);

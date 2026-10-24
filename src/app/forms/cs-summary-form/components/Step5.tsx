@@ -287,7 +287,7 @@ export default function Step5({
             <FormItem>
               <FormLabel>ISP Contact Email</FormLabel>
               <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
-              <FormDescription>If no email, enter "N/A".</FormDescription>
+              <FormDescription>If no email, enter &quot;N/A&quot;.</FormDescription>
               <FormMessage />
             </FormItem>
           )} />
@@ -333,7 +333,7 @@ export default function Step5({
               <FormItem>
                 <FormLabel>Secondary ISP Contact Email</FormLabel>
                 <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={Boolean(ispSecondaryContactSameAsPrimary)} /></FormControl>
-                <FormDescription>If no email, enter "N/A".</FormDescription>
+                <FormDescription>If no email, enter &quot;N/A&quot;.</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
@@ -522,7 +522,7 @@ export default function Step5({
           <div className="p-4 border rounded-md space-y-4">
             <h3 className="font-medium">Preferred Facility Details</h3>
             <p className="text-sm text-muted-foreground">
-              If a facility has not been chosen, you can leave these fields blank. If "Yes" is selected above, facility/admin
+              If a facility has not been chosen, you can leave these fields blank. If &quot;Yes&quot; is selected above, facility/admin
               details can be completed as available. Administrator first/last name, phone, and email are optional.
             </p>
             <FormField
@@ -579,7 +579,7 @@ export default function Step5({
                 <FormItem>
                   <FormLabel>Administrator Email</FormLabel>
                   <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
-                  <FormDescription>Optional. If no email is available, enter "N/A" or leave blank.</FormDescription>
+                  <FormDescription>Optional. If no email is available, enter &quot;N/A&quot; or leave blank.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )} />

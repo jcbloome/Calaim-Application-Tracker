@@ -23,7 +23,7 @@ const infoSections = [
    {
     title: 'CalAIM Turnaround Time',
     content: [
-      <div>
+      <div key="health-net">
         <strong>For Health Net (5-7 business days):</strong>
         <ol className="list-decimal pl-5 mt-2 space-y-1">
           <li>We compile all the required documents, have a RN do a virtual ISP visit with appropriate party.</li>
@@ -32,7 +32,7 @@ const infoSections = [
           <li>We submit the authorization request and receive the determination (approval or denial) within 5-7 business days.</li>
         </ol>
       </div>,
-      <div className="mt-4">
+      <div key="kaiser" className="mt-4">
         <strong>For Kaiser (4-8 weeks):</strong>
         <ol className="list-decimal pl-5 mt-2 space-y-1">
             <li>Compile required documents &amp; Request Authorization.</li>

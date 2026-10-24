@@ -93,7 +93,7 @@ export function PrintableProgramInfoFormSpanish({
                 Contacte a Servicios para Miembros de Health Net directamente para solicitar una transferencia expedita de Molina a Health Net.
               </p>
               <p className="text-sm print:text-xs text-gray-700 print:text-black">
-                <strong>Qué decir:</strong> "El miembro fue asignado aleatoriamente a Molina a pesar de solicitar Health Net. Este error está impidiendo el acceso a los servicios de transición SNF-a-comunidad de CalAIM, manteniendo efectivamente al miembro institucionalizado más tiempo del necesario."
+                <strong>Qué decir:</strong> &quot;El miembro fue asignado aleatoriamente a Molina a pesar de solicitar Health Net. Este error está impidiendo el acceso a los servicios de transición SNF-a-comunidad de CalAIM, manteniendo efectivamente al miembro institucionalizado más tiempo del necesario.&quot;
               </p>
             </div>
             <div className="p-3 print:p-4 border print:border-black">
@@ -148,7 +148,7 @@ export function PrintableProgramInfoFormSpanish({
             Plan de Servicio Individual (ISP)
           </h3>
           <p className="text-sm print:text-xs text-gray-700 print:text-black">
-            Un Plan de Servicio Individual (ISP) es una evaluación integral realizada por el equipo clínico del Plan de Atención Administrada (MCP) para determinar las necesidades de atención del miembro y aprobarlos para el programa. La evaluación ISP es un paso crítico para obtener la autorización del MCP. El ISP se realiza virtualmente (Health Net) o en persona (Kaiser) por un MSW/RN de Connections para administrar una herramienta para determinar el nivel de atención (la cantidad que el MCP pagará por la porción de 'vida asistida'). Para Health Net, el nivel escalonado es determinado por Connections. Para Kaiser, el nivel escalonado es determinado por Kaiser.
+            Un Plan de Servicio Individual (ISP) es una evaluación integral realizada por el equipo clínico del Plan de Atención Administrada (MCP) para determinar las necesidades de atención del miembro y aprobarlos para el programa. La evaluación ISP es un paso crítico para obtener la autorización del MCP. El ISP se realiza virtualmente (Health Net) o en persona (Kaiser) por un MSW/RN de Connections para administrar una herramienta para determinar el nivel de atención (la cantidad que el MCP pagará por la porción de &apos;vida asistida&apos;). Para Health Net, el nivel escalonado es determinado por Connections. Para Kaiser, el nivel escalonado es determinado por Kaiser.
           </p>
         </div>
 
@@ -178,7 +178,7 @@ export function PrintableProgramInfoFormSpanish({
             </p>
             <p><strong>1. Confirmar elegibilidad financiera (prueba de documentación)</strong></p>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Ingresos: para 2026, el ingreso mensual "contable" total debe ser menor a $1,626.07.</li>
+              <li>Ingresos: para 2026, el ingreso mensual &quot;contable&quot; total debe ser menor a $1,626.07.</li>
               <li>Activos: desde el 1 de enero de 2026, una persona debe tener menos de $2,000 en recursos contables ($3,000 para pareja).</li>
               <li>Nota: normalmente, un auto y la vivienda principal están excluidos de este límite.</li>
             </ul>
@@ -194,21 +194,21 @@ export function PrintableProgramInfoFormSpanish({
         {/* Room and Board / Assisted Living Payments */}
         <div className="p-4 print:p-6 bg-yellow-50 print:bg-white border print:border-black">
           <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
-            Pagos de "Alojamiento y Comida" y "Vida Asistida"
+            Pagos de &quot;Alojamiento y Comida&quot; y &quot;Vida Asistida&quot;
           </h3>
           <div className="space-y-4 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
-              El miembro del MCP es responsable de pagar al RCFE la porción de 'alojamiento y comida' y el MCP es 
-              responsable de pagar al RCFE la porción de 'vida asistida'.
+              El miembro del MCP es responsable de pagar al RCFE la porción de &apos;alojamiento y comida&apos; y el MCP es 
+              responsable de pagar al RCFE la porción de &apos;vida asistida&apos;.
             </p>
             <p>
-              Para miembros elegibles para SSI/SSP y el pago de Atención No Médica Fuera del Hogar 2026 (NMOHC), SSI/SSP se aumenta a $1,626.07. El miembro generalmente retiene $182 para gastos de necesidades personales y el RCFE recibe el saldo de $1,444.07 como pago por "alojamiento y comida". Además, los miembros elegibles para el NMOHC pagarán al menos $1,447.00 al RCFE. Los miembros que reciben más de esta cantidad pueden pagar más por 'alojamiento y comida' para una habitación privada o para abrir RCFEs en áreas más caras.
+              Para miembros elegibles para SSI/SSP y el pago de Atención No Médica Fuera del Hogar 2026 (NMOHC), SSI/SSP se aumenta a $1,626.07. El miembro generalmente retiene $182 para gastos de necesidades personales y el RCFE recibe el saldo de $1,444.07 como pago por &quot;alojamiento y comida&quot;. Además, los miembros elegibles para el NMOHC pagarán al menos $1,447.00 al RCFE. Los miembros que reciben más de esta cantidad pueden pagar más por &apos;alojamiento y comida&apos; para una habitación privada o para abrir RCFEs en áreas más caras.
             </p>
             <p>
-              Los miembros no elegibles para el NMOHC aún tendrán una obligación de 'alojamiento y comida' pero la cantidad podría ser flexible dependiendo del RCFE y el nivel escalonado evaluado.
+              Los miembros no elegibles para el NMOHC aún tendrán una obligación de &apos;alojamiento y comida&apos; pero la cantidad podría ser flexible dependiendo del RCFE y el nivel escalonado evaluado.
             </p>
             <p>
-              Los miembros que no pueden pagar ninguna porción de alojamiento y comida generalmente no son elegibles para el CS ya que los requisitos del programa exigen un pago de 'alojamiento y comida' del miembro (o su familia).
+              Los miembros que no pueden pagar ninguna porción de alojamiento y comida generalmente no son elegibles para el CS ya que los requisitos del programa exigen un pago de &apos;alojamiento y comida&apos; del miembro (o su familia).
             </p>
             <p>
               Trabajar con CalAIM está a discreción de los RCFEs. Muchos RCFEs, especialmente en áreas más caras, muy probablemente no participarán en CalAIM. Las familias que buscan colocar miembros en áreas de bienes raíces caros deben tener la expectativa realista de que los RCFEs de CalAIM podrían estar ubicados solo en áreas más asequibles.
@@ -257,7 +257,7 @@ export function PrintableProgramInfoFormSpanish({
               <h4 className="font-semibold text-gray-900 print:text-black">Estrategias adicionales para reducir SOC</h4>
               <div className="mt-2 space-y-3">
                 <div>
-                  <p className="font-semibold">1. Ajuste por "ingreso excedente" en alojamiento y comida</p>
+                  <p className="font-semibold">1. Ajuste por &quot;ingreso excedente&quot; en alojamiento y comida</p>
                   <ul className="list-disc pl-5 space-y-1">
                     <li><strong>Límite SSI:</strong> para residentes con SSI, alojamiento y comida está limitado (aprox. $1,444.07 en 2026).</li>
                     <li><strong>Excepción no-SSI:</strong> si hay ingresos distintos a SSI, el RCFE puede cobrar monto base más cargos contractuales.</li>

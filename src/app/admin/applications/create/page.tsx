@@ -7,17 +7,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Bell, Database, FileText, Loader2, RotateCcw, Search, Trash2, Upload, Users } from 'lucide-react';
+import { ArrowLeft, Database, FileText, Loader2, RotateCcw, Search, Trash2, Upload, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
-import { addDoc, collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, collectionGroup, doc, getDoc, getDocs, limit, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { getDownloadURL, getStorage, ref, uploadBytesResumable } from 'firebase/storage';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ToastAction } from '@/components/ui/toast';
-import { findCountyByCity, findCountyByCityAndZip, findCountyByZip } from '@/lib/california-cities';
+import { findCountyByCity, findCountyByCityAndZip } from '@/lib/california-cities';
 import { LIC_602A_FORM_URL } from '@/lib/form-links';
 import { withNormalizedBestContactEmail } from '@/lib/application-contact-email';
 import { extractIdentitySignals, identityTokenLookupKeys } from '@/lib/member-identity';
@@ -26,7 +26,6 @@ import {
   annotateIdentityRowsAgainstMasterMembers,
   buildIlsMifDedupeKey,
   findIlsMifMasterMemberMatch,
-  ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_DECLINED_COLLECTION,
   ILS_MIF_MASTER_COLLECTION,
@@ -949,8 +948,6 @@ const parseAddressPartsFromLines = (rawParts: string[]) => {
     county: inferCountyFromCityZip({ city, zip }),
   };
 };
-
-const inferCountyFromZip = (zipRaw: unknown) => findCountyByZip(zipRaw) || '';
 
 const inferStateFromZip = (zipRaw: unknown) => {
   const zip = String(zipRaw || '').match(/\d{5}/)?.[0] || '';
@@ -1921,9 +1918,6 @@ type IlsDuplicateMatch = {
   matchedAuthorization: string;
 };
 
-const CASPIO_CLIENT_ID_CONFLICT_WARNING =
-  'This application already has Client_ID2. Delete the existing record in Caspio Clients Table and CalAIM Members tables before pushing again.';
-
 const normalizeSheetHeader = (value: unknown) =>
   String(value || '')
     .toLowerCase()
@@ -2116,10 +2110,10 @@ export default function CreateApplicationPage() {
   /** After Option 2: choose Single Auth PDF vs Pull from MIF consolidator. */
   const [kaiserIlsPath, setKaiserIlsPath] = useState<'single_auth' | 'pull_from_mif' | ''>('');
   const [kaiserStaffList, setKaiserStaffList] = useState<Array<{ uid: string; displayName: string; email: string }>>([]);
-  const [isLoadingKaiserStaff, setIsLoadingKaiserStaff] = useState(false);
+  const [, setIsLoadingKaiserStaff] = useState(false);
   const [selectedAssignedStaffId, setSelectedAssignedStaffId] = useState('');
   const [selectedAssignedStaffName, setSelectedAssignedStaffName] = useState('');
-  const [selectedStaffActionItemCount, setSelectedStaffActionItemCount] = useState(0);
+  const [, setSelectedStaffActionItemCount] = useState(0);
   const [eligibilityScreenshotFiles, setEligibilityScreenshotFiles] = useState<File[]>([]);
   const [serviceRequestFile, setServiceRequestFile] = useState<File | null>(null);
   const [serviceRequestFiles, setServiceRequestFiles] = useState<File[]>([]);
@@ -2127,8 +2121,8 @@ export default function CreateApplicationPage() {
   const [serviceRequestParsedFields, setServiceRequestParsedFields] = useState<string[]>([]);
   const [serviceRequestWarnings, setServiceRequestWarnings] = useState<string[]>([]);
   const [, setServiceRequestParseMode] = useState<'none' | 'text' | 'vision'>('none');
-  const [serviceRequestTextPreview, setServiceRequestTextPreview] = useState('');
-  const [ilsRowEligibilityFiles, setIlsRowEligibilityFiles] = useState<Record<string, File[]>>({});
+  const [, setServiceRequestTextPreview] = useState('');
+  const [, setIlsRowEligibilityFiles] = useState<Record<string, File[]>>({});
   const [singleAuthContactPreview, setSingleAuthContactPreview] = useState<{
     memberPhone: string;
     cellPhone: string;
@@ -2188,11 +2182,8 @@ export default function CreateApplicationPage() {
     mrnNameConflictIds?: string[];
   } | null>(null);
   const [singleAuthIlsDecisionLog, setSingleAuthIlsDecisionLog] = useState<IlsDecisionLogState | null>(null);
-  const [checkingRowDuplicates, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
-  const [ilsRowDuplicateMatches, setIlsRowDuplicateMatches] = useState<Record<string, IlsDuplicateMatch[]>>({});
-  const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
-  const [isDeletingCreatedIlsRecords, setIsDeletingCreatedIlsRecords] = useState(false);
-  const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
+  const [, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
+  const [, setIlsRowDuplicateMatches] = useState<Record<string, IlsDuplicateMatch[]>>({});
   const [sendingIlsDecisionRowId, setSendingIlsDecisionRowId] = useState('');
   const [ilsDecisionLogByRowId, setIlsDecisionLogByRowId] = useState<Record<string, IlsDecisionLogState>>({});
   const [pendingIlsDecisionDraft, setPendingIlsDecisionDraft] = useState<IlsDecisionPreviewDraft | null>(null);
@@ -2400,33 +2391,6 @@ export default function CreateApplicationPage() {
   const uploadEligibilityFiles = async (applicationId: string) => {
     if (!storage || eligibilityScreenshotFiles.length === 0) return [];
     const uploads = eligibilityScreenshotFiles.map((file) => {
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const storagePath = `applications/${applicationId}/eligibility-screenshots/${Date.now()}-${safeName}`;
-      const storageRef = ref(storage, storagePath);
-      const uploadTask = uploadBytesResumable(storageRef, file);
-      return new Promise<{ fileName: string; filePath: string; downloadURL: string }>((resolve, reject) => {
-        uploadTask.on(
-          'state_changed',
-          undefined,
-          reject,
-          async () => {
-            try {
-              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve({ fileName: file.name, filePath: storagePath, downloadURL });
-            } catch (error) {
-              reject(error);
-            }
-          }
-        );
-      });
-    });
-    return Promise.all(uploads);
-  };
-
-  const uploadIlsRowEligibilityFiles = async (applicationId: string, rowId: string) => {
-    const files = Array.isArray(ilsRowEligibilityFiles[rowId]) ? ilsRowEligibilityFiles[rowId] : [];
-    if (!storage || files.length === 0) return [];
-    const uploads = files.map((file) => {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const storagePath = `applications/${applicationId}/eligibility-screenshots/${Date.now()}-${safeName}`;
       const storageRef = ref(storage, storagePath);
@@ -2805,7 +2769,7 @@ export default function CreateApplicationPage() {
     }
     if (!runId && consolidatorRuns[0]?.id) runId = consolidatorRuns[0].id;
 
-    let members: Array<Partial<IlsMifMasterRow>> = [];
+    const members: Array<Partial<IlsMifMasterRow>> = [];
     let runLabel = runId;
     if (runId) {
       const [runSnap, memberSnap] = await Promise.all([
@@ -4903,498 +4867,6 @@ export default function CreateApplicationPage() {
     populateMemberDataFromIlsRow(targetRow);
   };
 
-  const createIlsSkeletonApplications = async () => {
-    if (!firestore) return;
-    if (!selectedIlsRows.length) {
-      toast({ title: 'No selected rows', description: 'Select one or more imported rows first.' });
-      return;
-    }
-    const rowsMissingMediCal = selectedIlsRows.filter(
-      (row) => !normalizeMediCalNumber(String(row.memberMediCalNum || '').trim())
-    );
-    if (rowsMissingMediCal.length > 0) {
-      toast({
-        title: 'Medical Number (CIN) required',
-        description: `${rowsMissingMediCal.length} selected row(s) are missing Medi-Cal/CIN. Re-parse or fix spreadsheet headers before creating skeletons.`,
-        variant: 'destructive',
-      });
-      return;
-    }
-    const rowsWithDuplicateAuthorization = selectedIlsRows.filter((row) => (ilsRowDuplicateMatches[row.rowId] || []).length > 0);
-    if (rowsWithDuplicateAuthorization.length > 0) {
-      toast({
-        title: 'Remove duplicate authorizations first',
-        description: `${rowsWithDuplicateAuthorization.length} selected row(s) match an existing authorization for this MRN.`,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Live Caspio annotate before skeleton writes (flag only — still allow create with confirm).
-    let rowsReadyForCreate = selectedIlsRows.filter((row) => !isIlsRowLockedForSkeletonCreate(row));
-    try {
-      const annotated = await annotateRowsWithCaspioExists(rowsReadyForCreate);
-      setIlsImportRows((prev) =>
-        prev.map((row) => {
-          const hit = annotated.find((a) => a.rowId === row.rowId);
-          return hit
-            ? {
-                ...row,
-                caspioExists: hit.caspioExists,
-                caspioMatchLabel: hit.caspioMatchLabel,
-                caspioMatchedClientId2: hit.caspioMatchedClientId2,
-                caspioMatchedBy: hit.caspioMatchedBy,
-                caspioCalAIMStatus: hit.caspioCalAIMStatus,
-                needsAuthorizedUpdate: hit.needsAuthorizedUpdate,
-                statusNote: hit.statusNote || row.statusNote,
-              }
-            : row;
-        })
-      );
-      const caspioInSelection = annotated.filter((row) => row.caspioExists);
-      const pendingInSelection = annotated.filter((row) => row.needsAuthorizedUpdate);
-      if (caspioInSelection.length) {
-        const proceed = await appConfirm(
-          `${caspioInSelection.length} selected member(s) already exist in Caspio` +
-            (pendingInSelection.length
-              ? ` (${pendingInSelection.length} with CalAIM Pending — new auth may need a Caspio update)`
-              : '') +
-            `.\n\nCreate skeleton application(s) anyway?`
-        );
-        if (!proceed) {
-          toast({
-            title: 'Skeleton create cancelled',
-            description: 'No skeletons were created for the Caspio-matched selection.',
-          });
-          return;
-        }
-      }
-      rowsReadyForCreate = annotated;
-    } catch (liveCaspioError) {
-      console.warn('Batch live Caspio check failed:', liveCaspioError);
-    }
-
-    const alreadyInAppRows: Array<{ row: KaiserIlsImportRow; appIds: string[] }> = [];
-    for (const row of rowsReadyForCreate) {
-      try {
-        const matches = await findExistingApplicationsForMember(firestore, {
-          memberMrn: row.memberMrn,
-          memberMediCalNum: row.memberMediCalNum,
-        });
-        if (matches.length) {
-          alreadyInAppRows.push({ row, appIds: matches.map((m) => m.applicationId) });
-        }
-      } catch (existingAppError) {
-        console.warn('Batch existing-app check failed:', existingAppError);
-      }
-    }
-    if (alreadyInAppRows.length) {
-      const blockedIds = new Set(alreadyInAppRows.map((item) => item.row.rowId));
-      toast({
-        variant: 'destructive',
-        title: 'Already in Applications',
-        description: `${alreadyInAppRows.length} selected row(s) already have an application (e.g. ${
-          alreadyInAppRows[0]?.appIds[0] || '—'
-        }). Skeleton create is blocked for those members.`,
-      });
-      rowsReadyForCreate = rowsReadyForCreate.filter((row) => !blockedIds.has(row.rowId));
-    }
-
-    if (!rowsReadyForCreate.length) {
-      toast({
-        title: 'No rows eligible to create',
-        description: 'All selected rows already have an application or are locked.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const consolidatorRunIdForBatch = String(
-      selectedConsolidatorRunId || searchParams.get('consolidatorRunId') || ''
-    ).trim();
-
-    setIsCreatingIlsRecords(true);
-    try {
-      const authReceivedForms = [
-        { name: 'CS Member Summary', status: 'Pending', type: 'online-form', href: '/admin/forms/edit' },
-        { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/admin/forms/waivers' },
-        { name: 'Eligibility Screenshot', status: 'Pending', type: 'Upload', href: '#' },
-        { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
-        { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: LIC_602A_FORM_URL },
-        { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
-        { name: 'Room and Board/Tier Level Agreement', status: 'Pending', type: 'Upload', href: '/forms/room-board-obligation/printable' },
-      ];
-
-      for (const row of rowsReadyForCreate) {
-        try {
-          const applicationId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-          const applicationRef = doc(firestore, 'applications', applicationId);
-          const formsForRow = authReceivedForms.map((form) => ({ ...form }));
-          let serviceDeliveryFormUrl = '';
-          let serviceDeliveryFormFileName = '';
-          let serviceDeliveryFormFilePath = '';
-          const sourceFile =
-            row.sourceType === 'single_auth_pdf'
-              ? parsedSingleAuthFilesRef.current[row.rowId]
-              : row.sourceType === 'spreadsheet'
-                ? ilsSpreadsheetSourceFileRef.current
-                : null;
-          if (sourceFile && storage) {
-            try {
-              const sourceForm = await uploadIntakeSourceFile({
-                applicationId,
-                file: sourceFile,
-                sourceLabel:
-                  row.sourceType === 'spreadsheet'
-                    ? 'Kaiser ILS Spreadsheet Upload'
-                    : 'ILS Authorization Sheet PDF',
-                sourceTag: row.sourceType,
-              });
-              if (sourceForm) {
-                formsForRow.unshift(sourceForm);
-              }
-            } catch (uploadError) {
-              console.warn('Failed to upload original intake source file:', uploadError);
-            }
-          }
-          if (row.sourceType === 'spreadsheet' && storage) {
-            try {
-              const placeholderForm = await createSpreadsheetServiceDeliveryPlaceholder({
-                applicationId,
-                row,
-              });
-              if (placeholderForm) {
-                serviceDeliveryFormUrl = String(placeholderForm.downloadURL || '').trim();
-                serviceDeliveryFormFileName = String(placeholderForm.fileName || '').trim();
-                serviceDeliveryFormFilePath = String(placeholderForm.filePath || '').trim();
-                formsForRow.unshift(placeholderForm);
-              }
-            } catch (placeholderError) {
-              console.warn('Failed to create Service Delivery placeholder file:', placeholderError);
-            }
-          }
-          const rowEligibilityUploads = await uploadIlsRowEligibilityFiles(applicationId, row.rowId);
-          if (rowEligibilityUploads.length > 0) {
-            const completedEligibilityForm = {
-              name: 'Eligibility Screenshot',
-              status: 'Completed',
-              type: 'Upload',
-              href: '#',
-              fileName: rowEligibilityUploads[0].fileName,
-              filePath: rowEligibilityUploads[0].filePath,
-              downloadURL: rowEligibilityUploads[0].downloadURL,
-              uploadedFiles: rowEligibilityUploads,
-              dateCompleted: new Date().toISOString(),
-              source: 'batch_row_eligibility_upload',
-            };
-            const eligibilityIndex = formsForRow.findIndex((form) => String(form?.name || '').trim() === 'Eligibility Screenshot');
-            if (eligibilityIndex >= 0) {
-              formsForRow[eligibilityIndex] = completedEligibilityForm as any;
-            } else {
-              formsForRow.push(completedEligibilityForm as any);
-            }
-          }
-          await setDoc(applicationRef, {
-            memberFirstName: row.memberFirstName,
-            memberLastName: row.memberLastName,
-            memberMrn: row.memberMrn || '',
-            confirmMemberMrn: row.memberMrn || '',
-            memberMediCalNum: row.memberMediCalNum || '',
-            confirmMemberMediCalNum: row.memberMediCalNum || '',
-            sex: row.memberSex || '',
-            memberSex: row.memberSex || '',
-            memberDob: row.memberDob || '',
-            memberPhone: row.memberPhone || '',
-            memberEmail: row.memberEmail || '',
-            contactPhone: '',
-            contactEmail: '',
-            careManagerName: '',
-            careManagerPhone: '',
-            careManagerEmail: '',
-            Authorization_Number_T038: row.authorizationNumberT2038 || '',
-            Authorization_Start_T2038: row.authorizationStartT2038 || '',
-            Authorization_End_T2038: row.authorizationEndT2038 || '',
-            CPT_Code: row.cptCode || '',
-            Diagnostic_Code: row.diagnosticCode || '',
-            customaryAddress: toNameCase(row.memberAddress || ''),
-            customaryCity: toNameCase(row.memberCity || ''),
-            customaryState: String(
-              inferStateFromCityZip({
-                city: row.memberCity,
-                zip: row.memberZip || parseAddressParts(row.memberAddress || '').zip || '',
-              }) || row.memberState || ''
-            )
-              .trim()
-              .toUpperCase(),
-            customaryZip: normalizeUsZip(row.memberZip || parseAddressParts(row.memberAddress || '').zip || ''),
-            customaryCounty: toNameCase(
-              inferCountyFromCityZip({
-                city: row.memberCity,
-                zip: row.memberZip || parseAddressParts(row.memberAddress || '').zip || '',
-              }) || row.memberCounty || ''
-            ),
-            // Keep legacy keys for older readers / Caspio sync helpers.
-            memberCustomaryAddress: toNameCase(row.memberAddress || ''),
-            memberCustomaryCity: toNameCase(row.memberCity || ''),
-            memberCustomaryState: String(
-              inferStateFromCityZip({
-                city: row.memberCity,
-                zip: row.memberZip || parseAddressParts(row.memberAddress || '').zip || '',
-              }) || row.memberState || ''
-            )
-              .trim()
-              .toUpperCase(),
-            memberCustomaryZip: normalizeUsZip(row.memberZip || parseAddressParts(row.memberAddress || '').zip || ''),
-            memberCustomaryCounty: toNameCase(
-              inferCountyFromCityZip({
-                city: row.memberCity,
-                zip: row.memberZip || parseAddressParts(row.memberAddress || '').zip || '',
-              }) || row.memberCounty || ''
-            ),
-            calaimTrackingStatus: normalizeEligibilityStatus(row.eligibilityCheckStatus),
-            intakeType: 'kaiser_auth_received_via_ils',
-            intakeSource: 'ils_spreadsheet_batch',
-            kaiserAuthReceivedViaIls: true,
-            ilsMifSourceFileName: String(row.sourceFileName || '').trim(),
-            kaiserAuthReceivedDate: serverTimestamp(),
-            createdAt: serverTimestamp(),
-            createdByAdmin: true,
-            status: 'draft',
-            currentStep: 1,
-            isComplete: false,
-            healthPlan: 'Kaiser',
-            pathway: '',
-            kaiserStatus: '',
-            Kaiser_Status: '',
-            kaiserPrePushStatusPickedAt: '',
-            kaiserStatusSyncSource: '',
-            caspioCalAIMStatus: 'Authorized',
-            allowDraftCaspioPush: true,
-            consolidatorRunId: consolidatorRunIdForBatch || null,
-            ilsMifDedupeKey: resolveIlsMifDedupeKey(row, buildIlsMifDedupeKey(row)) || null,
-            adminNotes: buildIlsRowAdminNotes(row),
-            forms: formsForRow,
-            ...(serviceDeliveryFormUrl
-              ? {
-                  serviceDeliveryForm: {
-                    fileName: serviceDeliveryFormFileName,
-                    filePath: serviceDeliveryFormFilePath,
-                    downloadURL: serviceDeliveryFormUrl,
-                    generatedAtIso: new Date().toISOString(),
-                    source: 'spreadsheet_service_delivery_placeholder',
-                    layoutVersion: MIF_SERVICE_DELIVERY_LAYOUT_VERSION,
-                  },
-                }
-              : {}),
-            assignedStaffId: row.assignedStaffId || '',
-            assignedStaffName: row.assignedStaffName || '',
-            assignedDate: row.assignedStaffId ? new Date().toISOString() : '',
-          });
-          if (row.assignedStaffId) {
-            try {
-              const memberName = `${row.memberFirstName || ''} ${row.memberLastName || ''}`.trim() || 'Member';
-              const assignedByName = String(user?.displayName || user?.email || 'Manager').trim();
-              const dueDate = new Date();
-              dueDate.setHours(17, 0, 0, 0);
-              await addDoc(collection(firestore, 'staff_notifications'), {
-                userId: row.assignedStaffId,
-                title: `Kaiser assignment: ${memberName}`,
-                message:
-                  `You were assigned ${memberName} from Kaiser ILS spreadsheet intake.\n` +
-                  `MRN: ${row.memberMrn || '—'} • DOB: ${row.memberDob || '—'} • County: ${row.memberCounty || '—'}\n` +
-                  `Kaiser Status: ${String(row.kaiserStatus || '').trim() || 'Not specified'}\n` +
-                  (serviceDeliveryFormUrl ? `${MIF_SERVICE_DELIVERY_FORM_NAME} PDF: ${serviceDeliveryFormUrl}\n` : '') +
-                  `Next steps: (1) Confirm Caspio record created, (2) Create Google Drive member folder, (3) ${MIF_SERVICE_DELIVERY_FORM_NAME} PDF was auto-created in files for Drive handoff, (4) Upload eligibility evidence, (5) After first member/POA contact, use Application Portal in app to schedule auto-emails.`,
-                memberName,
-                memberMrn: row.memberMrn || null,
-                memberDob: row.memberDob || null,
-                county: row.memberCounty || null,
-                mcpName: 'Kaiser',
-                pathway: 'SNF Transition',
-                healthPlan: 'Kaiser',
-                type: 'assignment',
-                priority: 'Priority',
-                status: 'Open',
-                isRead: false,
-                requiresStaffAction: true,
-                followUpRequired: true,
-                followUpDate: dueDate.toISOString(),
-                senderName: assignedByName,
-                assignedByUid: String(user?.uid || '').trim() || null,
-                assignedByName,
-                actionUrl: `/admin/applications/${applicationId}`,
-                applicationId,
-                source: 'kaiser-ils-spreadsheet',
-                timestamp: serverTimestamp(),
-              });
-              await sendStaffAssignmentWorkflowEmail({
-                applicationId,
-                appUserId: '',
-                staffId: row.assignedStaffId,
-                staffName: row.assignedStaffName || 'Kaiser Staff',
-                memberName,
-                memberMrn: row.memberMrn || '',
-                memberCounty: row.memberCounty || '',
-                serviceDeliveryFormUrl,
-                serviceDeliveryFormFileName,
-                serviceDeliveryFormFilePath,
-                kaiserStatus: String(row.kaiserStatus || '').trim(),
-                assignedBy: assignedByName,
-                alreadyPushedToCaspio: Boolean(row.caspioExists),
-              });
-            } catch (notifyError) {
-              console.warn('Failed to create staff notification for spreadsheet row:', notifyError);
-            }
-          }
-          setIlsImportRows((prev) => prev.filter((r) => r.rowId !== row.rowId));
-          try {
-            await markIlsMifMemberSkeletonCreated(firestore, {
-              memberFirstName: row.memberFirstName,
-              memberLastName: row.memberLastName,
-              memberMrn: row.memberMrn,
-              memberMediCalNum: row.memberMediCalNum,
-              memberDob: row.memberDob,
-              consolidatorRunId: consolidatorRunIdForBatch,
-              ilsMifDedupeKey: resolveIlsMifDedupeKey(row, buildIlsMifDedupeKey(row)),
-              applicationId,
-              actor: user?.email || user?.uid || '',
-            });
-          } catch (skeletonSyncError) {
-            console.warn('Batch skeleton consolidator sync failed:', skeletonSyncError);
-          }
-        } catch (err: any) {
-          setIlsImportRows((prev) =>
-            prev.map((r) =>
-              r.rowId === row.rowId ? { ...r, createStatus: 'failed', statusNote: String(err?.message || 'Create failed') } : r
-            )
-          );
-        }
-      }
-      toast({ title: 'Batch create finished', description: `Processed ${rowsReadyForCreate.length} selected row(s).` });
-      if (consolidatorRunIdForBatch) {
-        void loadNewMembersFromMifMasterList(consolidatorRunIdForBatch, { silent: true });
-      }
-      setIlsImportSelected((prev) => {
-        const next = { ...prev };
-        rowsReadyForCreate.forEach((row) => {
-          next[row.rowId] = false;
-        });
-        return next;
-      });
-      setIlsRowEligibilityFiles((prev) => {
-        const next = { ...prev };
-        rowsReadyForCreate.forEach((row) => {
-          delete next[row.rowId];
-        });
-        return next;
-      });
-      setIlsRowDuplicateMatches((prev) => {
-        const next = { ...prev };
-        rowsReadyForCreate.forEach((row) => {
-          delete next[row.rowId];
-        });
-        return next;
-      });
-    } finally {
-      setIsCreatingIlsRecords(false);
-    }
-  };
-
-  const deleteCreatedIlsRecords = async () => {
-    if (!firestore) return;
-    if (!selectedCreatedIlsRows.length) {
-      toast({
-        title: 'No created records selected',
-        description: 'Select one or more rows that already created application records.',
-      });
-      return;
-    }
-    setIsDeletingCreatedIlsRecords(true);
-    let deletedCount = 0;
-    try {
-      for (const row of selectedCreatedIlsRows) {
-        const applicationId = String(row.applicationId || '').trim();
-        if (!applicationId) continue;
-        try {
-          await deleteDoc(doc(firestore, 'applications', applicationId));
-          const notifSnap = await getDocs(
-            query(collection(firestore, 'staff_notifications'), where('applicationId', '==', applicationId))
-          );
-          if (!notifSnap.empty) {
-            const batch = writeBatch(firestore);
-            notifSnap.docs.forEach((d) => batch.delete(d.ref));
-            await batch.commit();
-          }
-          deletedCount += 1;
-          setIlsImportRows((prev) =>
-            prev.map((r) =>
-              r.rowId === row.rowId
-                ? {
-                    ...r,
-                    createStatus: 'idle',
-                    applicationId: '',
-                    statusNote: 'Created application deleted (ready to recreate)',
-                  }
-                : r
-            )
-          );
-        } catch (err: any) {
-          setIlsImportRows((prev) =>
-            prev.map((r) =>
-              r.rowId === row.rowId
-                ? { ...r, statusNote: `Delete created app failed: ${String(err?.message || 'Unknown error')}` }
-                : r
-            )
-          );
-        }
-      }
-      toast({
-        title: 'Delete created records complete',
-        description: `Deleted ${deletedCount} of ${selectedCreatedIlsRows.length} selected created application record(s).`,
-      });
-    } finally {
-      setIsDeletingCreatedIlsRecords(false);
-    }
-  };
-
-  const pushSelectedIlsRowsToCaspio = async () => {
-    if (!selectedIlsRows.length) {
-      toast({ title: 'No selected rows', description: 'Select one or more imported rows first.' });
-      return;
-    }
-    const createdRows = selectedIlsRows.filter((row) => Boolean(String(row.applicationId || '').trim()));
-    if (createdRows.length === 0) {
-      toast({
-        title: 'Create records first',
-        description: 'Create selected application records first, then open one from the main application page to push to Caspio.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    if (createdRows.length > 1) {
-      toast({
-        title: 'Select one record',
-        description: 'Push must happen from the main application page. Select one created record at a time.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    setIsPushingIlsRows(true);
-    try {
-      const target = createdRows[0];
-      setIlsImportRows((prev) =>
-        prev.map((r) =>
-          r.rowId === target.rowId
-            ? { ...r, statusNote: 'Open main application page and use Push to Caspio there.' }
-            : r
-        )
-      );
-      navigateWithHardFallback(`/admin/applications/${target.applicationId}`);
-    } finally {
-      setIsPushingIlsRows(false);
-    }
-  };
-
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formattedPhone = formatPhoneDashed(e.currentTarget.value || '');
     setMemberData((prev) => ({ ...prev, contactPhone: formattedPhone }));
@@ -5674,279 +5146,6 @@ export default function CreateApplicationPage() {
     } finally {
       setIsParsingServiceRequest(false);
       parseAbortControllerRef.current = null;
-    }
-  };
-
-  const parseSingleAuthPdfToIlsRows = async (files: File[]) => {
-    const pdfFiles = files.filter((file) => file && /\.pdf$/i.test(file.name));
-    if (pdfFiles.length === 0) {
-      toast({
-        title: 'No PDF files selected',
-        description: 'Choose one or more single-auth PDF files to parse.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const rowsToAppend: KaiserIlsImportRow[] = [];
-    const warnings: string[] = [];
-    setIsParsingServiceRequest(true);
-    parseAbortControllerRef.current = new AbortController();
-
-    try {
-      for (const file of pdfFiles) {
-        if (parseAbortControllerRef.current?.signal.aborted) break;
-        try {
-          const pdfjs = await loadPdfJs();
-          const bytes = await file.arrayBuffer();
-          const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true });
-          const pdf = await loadingTask.promise;
-          const lines: string[] = [];
-          const maxPagesForText = Math.min(pdf.numPages, 8);
-
-          for (let pageNum = 1; pageNum <= maxPagesForText; pageNum++) {
-            const page = await pdf.getPage(pageNum);
-            const tc = await page.getTextContent();
-            const items = (tc.items || []) as Array<any>;
-            const pageRows: Array<{ str: string; x: number; y: number }> = [];
-            for (const it of items) {
-              const str = String(it?.str || '').trim();
-              if (!str) continue;
-              const tr = it?.transform || [];
-              const x = Number(tr?.[4] ?? 0);
-              const y = Number(tr?.[5] ?? 0);
-              pageRows.push({ str, x, y });
-            }
-
-            const byY = new Map<number, Array<{ str: string; x: number }>>();
-            for (const row of pageRows) {
-              const yk = Math.round(row.y);
-              const arr = byY.get(yk) || [];
-              arr.push({ str: row.str, x: row.x });
-              byY.set(yk, arr);
-            }
-            const yKeys = Array.from(byY.keys()).sort((a, b) => b - a);
-            for (const yk of yKeys) {
-              const parts = (byY.get(yk) || []).sort((a, b) => a.x - b.x).map((p) => p.str);
-              const line = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
-              if (line) lines.push(line);
-            }
-          }
-
-          const text = lines.join('\n').trim();
-          if (!text) {
-            warnings.push(`${file.name}: no text layer found`);
-            continue;
-          }
-          const parsed = extractServiceRequestFields({ text, fileName: file.name });
-          const normalizedPatch = withInferredCountyFromAddress(
-            withoutCurrentAddressPrefill(normalizeMemberPatch((parsed?.updates || {}) as Record<string, unknown>))
-          );
-          const parsedName = sanitizeParsedName({
-            firstName: toNameCase(normalizedPatch.memberFirstName || ''),
-            lastName: toNameCase(normalizedPatch.memberLastName || ''),
-          });
-          if (!parsedName.firstName || !parsedName.lastName) {
-            warnings.push(`${file.name}: missing member first/last name`);
-            continue;
-          }
-
-          const rowId = `ils-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          parsedSingleAuthFilesRef.current[rowId] = file;
-          rowsToAppend.push({
-            rowId,
-            sourceType: 'single_auth_pdf',
-            sourceFileName: file.name,
-            memberFirstName: parsedName.firstName,
-            memberLastName: parsedName.lastName,
-            memberMrn: String(normalizedPatch.memberMrn || '').trim(),
-            memberMediCalNum: normalizeMediCalNumber(String(normalizedPatch.memberMediCalNum || '').trim()),
-            memberSex: normalizeMemberSex(String((normalizedPatch as any).memberSex || '').trim()),
-            clientId2: '',
-            memberAddress: toNameCase(String(normalizedPatch.memberCustomaryAddress || '').trim()),
-            memberCity: toNameCase(String(normalizedPatch.memberCustomaryCity || '').trim()),
-            memberZip: normalizeUsZip(String(normalizedPatch.memberCustomaryZip || '').trim()),
-            memberState: String(
-              String(normalizedPatch.memberCustomaryState || '').trim().toUpperCase() ||
-                inferStateFromCityZip({
-                  city: normalizedPatch.memberCustomaryCity,
-                  zip: normalizedPatch.memberCustomaryZip,
-                })
-            )
-              .trim()
-              .toUpperCase(),
-            memberCounty: toNameCase(
-              String(normalizedPatch.memberCustomaryCounty || '').trim() ||
-                inferCountyFromCityZip({
-                  city: normalizedPatch.memberCustomaryCity,
-                  zip: normalizedPatch.memberCustomaryZip,
-                }) ||
-                ''
-            ),
-            memberDob: toMmDdYyyy(normalizedPatch.memberDob || ''),
-            memberPhone: String(normalizedPatch.memberPhone || '').trim(),
-            memberEmail: String(normalizedPatch.memberEmail || '').trim().toLowerCase(),
-            contactPhone: String(normalizedPatch.contactPhone || '').trim(),
-            contactEmail: '',
-            referringOrganization: '',
-            emergencyContactName: '',
-            emergencyContactRelationship: '',
-            emergencyContactPhone: '',
-            emergencyContactEmail: '',
-            careManagerName: String(normalizedPatch.careManagerName || '').trim(),
-            careManagerPhone: String(normalizedPatch.careManagerPhone || '').trim(),
-            careManagerEmail: String(normalizedPatch.careManagerEmail || '').trim().toLowerCase(),
-            eligibilityCheckStatus: normalizeEligibilityStatus((memberData as any)?.eligibilityCheckStatus),
-            authorizationNumberT2038: String(normalizedPatch.Authorization_Number_T038 || '').trim(),
-            authorizationStartT2038: toMmDdYyyy(normalizedPatch.Authorization_Start_T2038 || ''),
-            authorizationEndT2038: toMmDdYyyy(normalizedPatch.Authorization_End_T2038 || ''),
-            kaiserStatus: '',
-            dateReceivedRequestForAuthorization: '',
-            dateOfReferralAuthorizationDecision: '',
-            cptCode: '',
-            diagnosticCode: String(normalizedPatch.Diagnostic_Code || '').trim(),
-            assignedStaffId: '',
-            assignedStaffName: '',
-            createStatus: 'idle',
-            pushStatus: 'idle',
-            deleteStatus: 'idle',
-            statusNote: '',
-            applicationId: '',
-            pushedClientId2: '',
-            caspioExists: false,
-            caspioMatchLabel: '',
-            caspioMatchedClientId2: '',
-            caspioMatchedBy: '',
-            mifMasterExists: false,
-            mifMasterMatchLabel: '',
-            mifMasterMatchedBy: '',
-            extraAdminNotes: String(normalizedPatch.notes || '').trim(),
-          });
-        } catch (error: any) {
-          warnings.push(`${file.name}: ${String(error?.message || 'Parse failed')}`);
-        }
-      }
-
-      if (rowsToAppend.length === 0) {
-        toast({
-          title: 'No usable PDF rows found',
-          description: warnings[0] || 'Could not parse member fields from selected PDFs.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const annotatedRows = await annotateRowsWithCaspioAndMifMaster(rowsToAppend);
-      let enrichedRows = annotatedRows;
-      try {
-        const { members } = await loadLatestIlsMifMasterMembers();
-        enrichedRows = annotatedRows.map((row) => {
-          if (!row.mifMasterExists) return row;
-          const hit = findIlsMifMasterMemberMatch(row, members);
-          if (!hit?.member) return row;
-          const master = hit.member;
-          const auth = resolveIlsMifAuthorizationFields(master as IlsMifMasterRow);
-          return {
-            ...row,
-            memberFirstName: preferMifValue(master.memberFirstName, row.memberFirstName),
-            memberLastName: preferMifValue(master.memberLastName, row.memberLastName),
-            memberMrn: preferMifValue(master.memberMrn, row.memberMrn),
-            memberMediCalNum: preferMifValue(master.memberMediCalNum, row.memberMediCalNum),
-            memberSex: preferMifValue(master.memberSex, row.memberSex),
-            memberDob: preferMifValue(master.memberDob, row.memberDob),
-            memberPhone: preferMifValue(master.memberPhone, row.memberPhone),
-            memberEmail: preferMifValue(master.memberEmail, row.memberEmail),
-            memberAddress: preferMifValue(
-              master.memberResidentialAddress || master.memberAddress,
-              row.memberAddress
-            ),
-            memberCity: preferMifValue(
-              master.memberResidentialCity || master.memberCity || master.memberMailingCity,
-              row.memberCity
-            ),
-            memberZip: preferMifValue(
-              master.memberResidentialZip || master.memberZip || master.memberMailingZip,
-              row.memberZip
-            ),
-            memberCounty: preferMifValue(master.memberCounty, row.memberCounty),
-            careManagerName: preferMifValue(master.careManagerName, row.careManagerName),
-            careManagerPhone: preferMifValue(master.careManagerPhone, row.careManagerPhone),
-            careManagerEmail: preferMifValue(master.careManagerEmail, row.careManagerEmail),
-            emergencyContactName: preferMifValue(master.emergencyContactName, row.emergencyContactName),
-            emergencyContactPhone: preferMifValue(master.emergencyContactPhone, row.emergencyContactPhone),
-            emergencyContactEmail: preferMifValue(master.emergencyContactEmail, row.emergencyContactEmail),
-            emergencyContactRelationship: preferMifValue(
-              master.emergencyContactRelationship,
-              row.emergencyContactRelationship
-            ),
-            authorizationNumberT2038: preferMifValue(
-              auth.authorizationNumberT2038,
-              row.authorizationNumberT2038
-            ),
-            authorizationStartT2038: preferMifValue(
-              auth.authorizationStartT2038,
-              row.authorizationStartT2038
-            ),
-            authorizationEndT2038: preferMifValue(auth.authorizationEndT2038, row.authorizationEndT2038),
-            mifMasterMatchLabel: hit.matchLabel || row.mifMasterMatchLabel,
-            mifMasterMatchedBy: hit.matchedBy || row.mifMasterMatchedBy,
-            extraAdminNotes: preferMifValue(
-              [
-                row.extraAdminNotes,
-                `Prioritized from consolidated MIF master (${hit.matchedBy || 'match'})`,
-              ]
-                .filter(Boolean)
-                .join('\n'),
-              row.extraAdminNotes
-            ),
-          };
-        });
-      } catch (enrichError) {
-        console.warn('Failed to prioritize MIF master fields on single-auth rows:', enrichError);
-      }
-      setIlsImportRows((prev) => [...enrichedRows, ...prev]);
-      setIlsImportSelected((prev) => {
-        const next = { ...prev };
-        enrichedRows.forEach((row) => {
-          next[row.rowId] = false;
-        });
-        return next;
-      });
-      setPickedIlsRowId('');
-      void Promise.all(enrichedRows.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
-      setServiceRequestWarnings(warnings.slice(0, 10));
-      const existingCount = enrichedRows.filter((row) => row.caspioExists).length;
-      const mifMasterCount = enrichedRows.filter((row) => row.mifMasterExists).length;
-      const first = enrichedRows[0];
-      if (first) {
-        void checkParsedIdentityAgainstMifAndCaspio({
-          memberFirstName: first.memberFirstName,
-          memberLastName: first.memberLastName,
-          memberMrn: first.memberMrn,
-          memberMediCalNum: first.memberMediCalNum,
-          clientId2: first.clientId2,
-        });
-      }
-      toast({
-        title: 'Single-auth PDFs parsed',
-        description: `Added ${enrichedRows.length} row(s) (${existingCount} already in Caspio, ${mifMasterCount} on latest MIF master${
-          mifMasterCount ? ' — MIF fields prioritized' : ''
-        }). Duplicate matches are flagged before skeleton create.`,
-      });
-    } finally {
-      setIsParsingServiceRequest(false);
-      parseAbortControllerRef.current = null;
-    }
-  };
-
-  const cancelParsing = () => {
-    if (parseAbortControllerRef.current) {
-      parseAbortControllerRef.current.abort();
-      toast({
-        title: 'Cancelling...',
-        description: 'Stopping PDF parsing.',
-        variant: 'default',
-      });
     }
   };
 

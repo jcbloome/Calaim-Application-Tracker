@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import * as admin from 'firebase-admin';
-import { getStorage } from 'firebase-admin/storage';
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {

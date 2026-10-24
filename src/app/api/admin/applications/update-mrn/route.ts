@@ -6,8 +6,6 @@ import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
-
 export async function POST(req: NextRequest) {
   try {
     if (isCaspioWriteReadOnly()) {

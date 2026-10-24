@@ -22,12 +22,6 @@ type MemberHoldRow = {
   needsUpdate: boolean;
 };
 
-const isAlreadyHoldValue = (value: unknown) => {
-  const v = clean(value).toLowerCase();
-  if (!v) return false;
-  return v.includes('hold');
-};
-
 const resolveHoldFields = async (baseUrl: string, token: string) => {
   const resolved: string[] = [];
   for (const candidate of HOLD_FIELD_CANDIDATES) {

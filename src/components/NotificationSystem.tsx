@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Bell, X, MessageSquare, Calendar, User, CheckCircle } from 'lucide-react';
+import { Bell, X, MessageSquare, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -39,22 +39,19 @@ const normalizePriorityLevel = (value: string) => {
   return normalized === 'urgent' ? 'urgent' : normalized === 'priority' ? 'priority' : 'general';
 };
 
-export default function NotificationSystem({ userId, className = '' }: NotificationSystemProps) {
-  if (WEB_NOTIFICATIONS_MOTHBALLED || isRealDesktop()) {
-    // Electron is the single notification system. Also, web notifications are mothballed.
-    return null;
-  }
+export default function NotificationSystem(props: NotificationSystemProps) {
+  // Electron is the single notification system. Also, web notifications are mothballed.
+  if (WEB_NOTIFICATIONS_MOTHBALLED || isRealDesktop() || !props.userId) return null;
+  return <NotificationSystemContent {...props} />;
+}
+
+function NotificationSystemContent({ userId, className = '' }: NotificationSystemProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Don't render if no userId provided
-  if (!userId) {
-    return null;
-  }
 
   // Fetch notifications
   const fetchNotifications = async (includeRead = false) => {

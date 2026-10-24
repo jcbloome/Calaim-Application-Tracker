@@ -10,22 +10,18 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
-  Upload, 
-  Mail, 
-  User, 
-  Calendar,
+import {
+  CheckCircle,
+  XCircle,
+  Clock,
+  Mail,
+  User,
   FileText,
   Building,
   Search,
-  Filter,
-  Download,
   Eye,
   Send,
-  ExternalLink
+  ExternalLink,
 } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
@@ -807,7 +803,7 @@ export default function EligibilityChecksPage() {
                           }}
                         />
                         <p className="text-xs text-gray-600 mt-1">
-                          Upload a screenshot of the eligibility verification from the health plan's system
+                          Upload a screenshot of the eligibility verification from the health plan&apos;s system
                         </p>
                         <div className="mt-2 flex flex-col gap-1 text-sm">
                           {[

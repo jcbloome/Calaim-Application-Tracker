@@ -103,7 +103,7 @@ export function PrintableProgramInfoForm({
           Medicare vs. Medi-Cal
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's
+          Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California&apos;s
           Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit.
         </p>
       </div>
@@ -174,7 +174,7 @@ export function PrintableProgramInfoForm({
           <div className="p-3 print:p-4 border print:border-black">
             <h3 className="font-semibold text-gray-900 print:text-black mb-2">2. Contact the Medi-Cal Managed Care Ombudsman</h3>
             <p className="text-sm print:text-xs text-gray-700 print:text-black mb-2">
-              If HCO says they cannot speed up the process, the Medi-Cal Managed Care Ombudsman is the "escalation" office.
+              If HCO says they cannot speed up the process, the Medi-Cal Managed Care Ombudsman is the &quot;escalation&quot; office.
               They have the authority to investigate enrollment errors and can sometimes manually override an assignment if
               it is preventing a member from receiving necessary care or a safe discharge.
             </p>
@@ -185,7 +185,7 @@ export function PrintableProgramInfoForm({
               <strong>Email:</strong> MMCDOmbudsmanOffice@dhcs.ca.gov
             </p>
             <p className="text-sm print:text-xs text-gray-700 print:text-black">
-              <strong>What to say:</strong> "The member was randomly assigned to Molina despite requesting Health Net. This error is preventing access to CalAIM SNF-to-community transition services, effectively keeping the member institutionalized longer than necessary."
+              <strong>What to say:</strong> &quot;The member was randomly assigned to Molina despite requesting Health Net. This error is preventing access to CalAIM SNF-to-community transition services, effectively keeping the member institutionalized longer than necessary.&quot;
             </p>
           </div>
         </div>
@@ -216,27 +216,27 @@ export function PrintableProgramInfoForm({
         </h2>
         <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
           <p>
-            NMOHC is a payment supplement that boosts a person's monthly SSI check because they live in a
+            NMOHC is a payment supplement that boosts a person&apos;s monthly SSI check because they live in a
             licensed assisted living home rather than an apartment or house.
           </p>
           <p>
             In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state
             recognizes that costs are much higher than someone living independently. To help cover this, the person
-            moves from the "Independent Living" rate to the "NMOHC" rate.
+            moves from the &quot;Independent Living&quot; rate to the &quot;NMOHC&quot; rate.
           </p>
           <p>
-            <strong>1. Confirm Financial Eligibility (The "Paper" Test)</strong>
+            <strong>1. Confirm Financial Eligibility (The &quot;Paper&quot; Test)</strong>
           </p>
           <p>
             Since NMOHC is part of the SSI program, you can verify the financial requirements now.
           </p>
           <ul className="list-disc pl-5 space-y-1">
-            <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
+            <li>Income: For 2026, total &quot;countable&quot; monthly income must be less than $1,626.07.</li>
             <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
             <li>Note: One car and the primary home are usually excluded from this limit.</li>
           </ul>
           <p>
-            <strong>2. Verification with Social Security (The "Pre-Move" Call)</strong>
+            <strong>2. Verification with Social Security (The &quot;Pre-Move&quot; Call)</strong>
           </p>
           <p>
             Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC
@@ -286,28 +286,28 @@ export function PrintableProgramInfoForm({
       {/* Room and Board / Assisted Living Payments */}
       <div className="col-span-full mb-8 p-4 print:p-6 bg-yellow-50 print:bg-white border print:border-black">
         <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
-          "Room and Board" and "Assisted Living" Payments
+          &quot;Room and Board&quot; and &quot;Assisted Living&quot; Payments
         </h2>
         <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
           <p>
-            The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is
-            responsible for paying the RCFE the 'assisted living' portion.
+            The MCP member is responsible for paying the RCFE the &apos;room and board&apos; portion and the MCP is
+            responsible for paying the RCFE the &apos;assisted living&apos; portion.
           </p>
           <p>
-            For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for 'room and board' for a private room or to open up RCFEs in more expensive areas.
+            For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for &quot;room and board&quot;. Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for &apos;room and board&apos; for a private room or to open up RCFEs in more expensive areas.
           </p>
           <p>
-            Members not eligible for the NMOHC will still have a 'room and board' obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.
+            Members not eligible for the NMOHC will still have a &apos;room and board&apos; obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.
           </p>
           <p>
-            Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a 'room and board' payment from the member (or their family).
+            Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a &apos;room and board&apos; payment from the member (or their family).
           </p>
           <p>
             Working with CalAIM is at the discretion of the RCFEs. Many RCFEs, especially in more expensive areas, most likely will not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas.
           </p>
           <p>
-            The "assisted living" payment paid by the MCP is a fixed rate based on level of care but may not
-            align with market rate in certain counties or for all RCFEs. Supplementing the "room and board" to
+            The &quot;assisted living&quot; payment paid by the MCP is a fixed rate based on level of care but may not
+            align with market rate in certain counties or for all RCFEs. Supplementing the &quot;room and board&quot; to
             arrive at market rate is at the discretion of the families.
           </p>
         </div>
@@ -356,7 +356,7 @@ export function PrintableProgramInfoForm({
             <h4 className="mt-3 font-semibold text-gray-900 print:text-black">How the 250% Working Disabled Program Works</h4>
             <ul className="mt-2 list-disc pl-5 space-y-1">
               <li><strong>Higher income allowed:</strong> up to <strong>$3,260</strong> per month with a <strong>$0 monthly premium</strong> and <strong>$0 Share of Cost</strong>.</li>
-              <li><strong>Broad definition of "work":</strong> no traditional full-time job required. "Working" can include part-time tasks like pet sitting, consulting for a neighbor, or even recycling. No minimum hours required.</li>
+              <li><strong>Broad definition of &quot;work&quot;:</strong> no traditional full-time job required. &quot;Working&quot; can include part-time tasks like pet sitting, consulting for a neighbor, or even recycling. No minimum hours required.</li>
               <li><strong>Income protection:</strong> most disability-related income (like SSDI or private disability) is not counted toward the limit. Even if SSDI converted to Social Security Retirement, it may still be exempt.</li>
               <li><strong>CalAIM ready:</strong> once Share of Cost is $0, you can qualify for CalAIM services, including Enhanced Care Management and Community Supports for care home placement.</li>
             </ul>
@@ -364,7 +364,7 @@ export function PrintableProgramInfoForm({
             <h4 className="mt-4 font-semibold text-gray-900 print:text-black">Additional SOC Reduction Strategies (County Eligibility Process)</h4>
             <div className="mt-2 space-y-3">
               <div>
-                <p className="font-semibold text-gray-900 print:text-black">1. The "Excess Income" Room and Board Adjustment</p>
+                <p className="font-semibold text-gray-900 print:text-black">1. The &quot;Excess Income&quot; Room and Board Adjustment</p>
                 <p>Under California law (and often reflected in RCFE admission agreements), there is a distinction between what an SSI recipient pays and what a private-pay or high-income resident pays.</p>
                 <ul className="mt-1 list-disc pl-5 space-y-1">
                   <li><strong>The SSI Rate Cap:</strong> for residents on SSI, room and board is strictly capped (around $1,444.07 for 2026).</li>
@@ -406,7 +406,7 @@ export function PrintableProgramInfoForm({
             <div className="mt-2 space-y-2">
               <p><strong>1. HICAP (Health Insurance Counseling &amp; Advocacy Program)</strong><br />Free, unbiased counseling on Medicare and Medi-Cal. Experts at the Working Disabled Program.<br /><strong>Phone:</strong> 1-800-434-0222<br /><strong>Website:</strong> aging.ca.gov/hicap</p>
               <p><strong>2. Health Consumer Alliance (HCA)</strong><br />Free legal assistance for Californians struggling with Medi-Cal eligibility or high Share of Cost.<br /><strong>Phone:</strong> 1-888-804-3536<br /><strong>Website:</strong> healthconsumer.org</p>
-              <p><strong>3. Your Local County Social Services (DPSS)</strong><br />Contact your local county eligibility worker and ask for an <strong>"evaluation for the 250% Working Disabled Program."</strong><br /><strong>Online Portal:</strong> BenefitsCal.com</p>
+              <p><strong>3. Your Local County Social Services (DPSS)</strong><br />Contact your local county eligibility worker and ask for an <strong>&quot;evaluation for the 250% Working Disabled Program.&quot;</strong><br /><strong>Online Portal:</strong> BenefitsCal.com</p>
             </div>
           </div>
         </div>
@@ -418,11 +418,11 @@ export function PrintableProgramInfoForm({
           Individual Service Plan (ISP)
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's 
-          (MCP) clinical team to determine the member's care needs and to approve them for the program. The 
-          ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done 
-          virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to 
-          determine level of care (the amount the MCP will pay for the 'assisted living' portion). For 
+          An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan&apos;s 
+          (MCP) clinical team to determine the member&apos;s care needs and to approve them for the program. The 
+          ISP assessment is a critical step for getting the MCP&apos;s authorization. The ISP is either done 
+          virtually (Health Net) or in-person (Kaiser) by a Connections&apos; MSW/RN to administer a tool to 
+          determine level of care (the amount the MCP will pay for the &apos;assisted living&apos; portion). For 
           Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is 
           determined by Kaiser.
         </p>

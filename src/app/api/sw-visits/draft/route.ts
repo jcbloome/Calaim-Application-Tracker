@@ -3,13 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
-
-const safeDocId = (value: string) =>
-  clean(value, 240)
-    .replace(/[^\w.\-]+/g, '_')
-    .slice(0, 240);
-
 function isHoldValue(value: unknown): boolean {
   const v = String(value ?? '').trim().toLowerCase();
   if (!v) return false;

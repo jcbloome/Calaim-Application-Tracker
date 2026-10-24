@@ -5,11 +5,11 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
-import { collection, Timestamp, getDocs, collectionGroup, Query, query, orderBy, setDoc, doc } from 'firebase/firestore';
+import { collection, Timestamp, getDocs, collectionGroup, setDoc, doc } from 'firebase/firestore';
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown, Filter, ArrowUpDown, Circle, AlertCircle, Star, Printer } from 'lucide-react';
+import { Loader2, User, Calendar as CalendarIcon, ArrowUpDown, Circle, AlertCircle, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -516,25 +516,6 @@ export default function ManagerialOverviewPage() {
 
   }, [applications, trackers, staffMap, memberFilter, staffFilter, sortConfig]);
 
-  const kaiserPipelineStats = useMemo(() => {
-    const kaiserApps = applications.filter(app => app.healthPlan === 'Kaiser');
-    const pipelineCounts = new Map<string, number>();
-
-    kaiserSteps.forEach(step => pipelineCounts.set(step, 0));
-
-    kaiserApps.forEach(app => {
-        const tracker = trackers.get(app.id);
-        if (tracker?.status) {
-            pipelineCounts.set(tracker.status, (pipelineCounts.get(tracker.status) || 0) + 1);
-        }
-    });
-    
-    return Array.from(pipelineCounts.entries())
-        .map(([name, value]) => ({ name, value }))
-        .filter(item => item.value > 0);
-
-  }, [applications, trackers]);
-
   if (isLoading || isAdminLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -555,7 +536,7 @@ export default function ManagerialOverviewPage() {
             <CardHeader>
             <CardTitle>Managerial Overview</CardTitle>
             <CardDescription>
-                A high-level overview of your team's workload and a detailed, filterable table of all applications.
+                A high-level overview of your team&apos;s workload and a detailed, filterable table of all applications.
             </CardDescription>
             </CardHeader>
         </Card>
@@ -629,7 +610,7 @@ export default function ManagerialOverviewPage() {
                 <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
                         <Star className="h-5 w-5 text-yellow-400" />
-                        Today's Priorities
+                        Today&apos;s Priorities
                     </CardTitle>
                     <CardDescription>{format(new Date(), 'eeee, MMMM do')}</CardDescription>
                 </CardHeader>

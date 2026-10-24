@@ -89,7 +89,6 @@ export default function SWSignOffPage() {
   const [loadingEligibility, setLoadingEligibility] = useState(false);
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
-  const swUid = String((user as any)?.uid || '').trim();
   const swName = String((socialWorkerData as any)?.displayName || (user as any)?.displayName || swEmail || 'Social Worker').trim();
 
   const selectedVisits = useMemo(() => visits.filter((v) => selectedVisitIds[String(v.visitId || '').trim()]), [selectedVisitIds, visits]);

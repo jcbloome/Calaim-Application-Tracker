@@ -9,10 +9,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Search, 
@@ -92,13 +90,13 @@ export function ResourceDetailModal({
   
   // Nested modal for RCFE members
   const [showRCFEMembersModal, setShowRCFEMembersModal] = useState(false);
-  const [selectedRCFEId, setSelectedRCFEId] = useState<string>('');
+  const [, setSelectedRCFEId] = useState<string>('');
   const [selectedRCFEName, setSelectedRCFEName] = useState<string>('');
   const [selectedRCFEMembers, setSelectedRCFEMembers] = useState<Member[]>([]);
 
   // Get all data based on type
   const allData = useMemo(() => {
-    let items: (StaffMember | RCFE | Member)[] = [];
+    const items: (StaffMember | RCFE | Member)[] = [];
     
     if (type === 'staff' || type === 'socialWorkers' || type === 'rns') {
       Object.values(staffData).forEach((countyData: any) => {
@@ -326,10 +324,10 @@ export function ResourceDetailModal({
                 Showing {filteredData.length} of {allData.length} results
               </span>
               {searchTerm && (
-                <Badge variant="secondary">Member: "{searchTerm}"</Badge>
+                <Badge variant="secondary">Member: &quot;{searchTerm}&quot;</Badge>
               )}
               {rcfeSearchTerm && (
-                <Badge variant="secondary">RCFE: "{rcfeSearchTerm}"</Badge>
+                <Badge variant="secondary">RCFE: &quot;{rcfeSearchTerm}&quot;</Badge>
               )}
               {selectedCounty !== 'all' && (
                 <Badge variant="secondary">County: {selectedCounty}</Badge>

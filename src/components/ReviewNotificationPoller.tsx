@@ -233,19 +233,6 @@ export function ReviewNotificationPoller() {
       if (!csIsNew && !docsIsNew && !eligIsNew && !standaloneIsNew && !alftIsNew) {
         return;
       }
-
-      const title =
-        csIsNew && !docsIsNew && !eligIsNew && !standaloneIsNew && !alftIsNew
-          ? 'CS Summary received'
-          : docsIsNew && !csIsNew && !eligIsNew && !standaloneIsNew && !alftIsNew
-            ? 'Documents received'
-            : eligIsNew && !csIsNew && !docsIsNew && !standaloneIsNew && !alftIsNew
-              ? 'Eligibility check received'
-              : standaloneIsNew && !csIsNew && !docsIsNew && !eligIsNew && !alftIsNew
-                ? 'Standalone upload received'
-                : alftIsNew && !csIsNew && !docsIsNew && !eligIsNew && !standaloneIsNew
-                  ? 'ALFT upload received'
-            : 'Review items received';
       const parts: string[] = [];
       if (allowCs && csCount > 0) {
         parts.push(`${csCount} CS Summary${csCount === 1 ? '' : 'ies'} to review`);
@@ -262,7 +249,6 @@ export function ReviewNotificationPoller() {
       if (allowAlft && alftCount > 0) {
         parts.push(`${alftCount} ALFT intake${alftCount === 1 ? '' : 's'} to triage`);
       }
-      const message = parts.length > 0 ? parts.join(' • ') : 'New items require review.';
 
       const actionUrl = csIsNew
         ? getDashboardActionHref('cs')

@@ -21,12 +21,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
-  Bell, 
-  MessageSquare, 
-  Clock, 
-  User, 
-  AlertCircle,
+import {
+  Bell,
+  MessageSquare,
   CheckCircle,
   Loader2,
   Filter,
@@ -35,7 +32,7 @@ import {
   EyeOff,
   Search,
   FileText,
-  Trash2
+  Trash2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
@@ -65,7 +62,7 @@ interface StaffNote {
 
 export default function StaffNotesPage() {
   const { toast } = useToast();
-  const { user, isAdmin } = useAdmin();
+  const { user } = useAdmin();
 
   // State management
   const [assignedNotes, setAssignedNotes] = useState<StaffNote[]>([]);

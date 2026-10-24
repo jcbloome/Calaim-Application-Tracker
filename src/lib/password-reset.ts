@@ -95,7 +95,7 @@ const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user'
           },
           { merge: true }
         );
-      } catch (err) {
+      } catch  {
         // If Firestore write fails, the in-memory token still works for single-instance runtimes,
         // but multi-instance production may fail to validate later. Surface a clear error.
         throw new Error('Password reset is temporarily unavailable (token storage failed). Please try again.');

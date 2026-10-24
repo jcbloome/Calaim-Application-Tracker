@@ -11,7 +11,7 @@ export async function GET() {
     const enabled = snap.exists ? Boolean((snap.data() as any)?.enabled ?? true) : true;
     const message = snap.exists ? String((snap.data() as any)?.message || '').trim() : '';
     return NextResponse.json({ success: true, enabled, message: message || null });
-  } catch (e: any) {
+  } catch  {
     // Fail-open if the setting can't be read.
     return NextResponse.json({ success: true, enabled: true, message: null });
   }

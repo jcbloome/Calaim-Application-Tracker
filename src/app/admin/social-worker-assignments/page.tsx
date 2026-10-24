@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter, ArrowUpDown, ChevronUp, ChevronDown, Pause, Play, MapPinned, Download, Building2, Database, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter, ArrowUpDown, ChevronUp, ChevronDown, Pause, Play, MapPinned, Download, Building2, Database, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { loadGoogleMaps } from '@/lib/google-maps-loader';
 import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';

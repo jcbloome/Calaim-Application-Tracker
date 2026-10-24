@@ -17,28 +17,6 @@ import {
   documentId
 } from 'firebase/firestore';
 
-type NotifyCardPayload = {
-  id?: string;
-  type?: 'note' | 'task' | 'urgent' | 'success' | 'warning';
-  title: string;
-  message: string;
-  author?: string;
-  recipientName?: string;
-  memberName?: string;
-  timestamp?: string;
-  tagLabel?: string;
-  pendingLabel?: string;
-  actionUrl?: string;
-  notes?: Array<{
-    message: string;
-    author?: string;
-    memberName?: string;
-    timestamp?: string;
-    replyUrl?: string;
-    tagLabel?: string;
-  }>;
-};
-
 type PillStatePayload = {
   count: number;
   mode?: 'compact' | 'panel';
@@ -178,15 +156,6 @@ export default function DesktopNotificationWindowClient() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    const openExternal = (url?: string) => {
-      try {
-        if (!url) return;
-        window.desktopNotificationPill?.open?.(url);
-      } catch {
-        // ignore
-      }
-    };
 
     const handlePillState = (payload: PillStatePayload) => {
       setPillState(payload);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext } from 'react';
 import WindowsNotification, { useWindowsNotifications } from '@/components/WindowsNotification';
 import { WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
 

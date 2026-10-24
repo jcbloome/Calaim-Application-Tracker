@@ -4,15 +4,12 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Printer, 
-  Download, 
-  Smartphone, 
-  Monitor, 
-  CheckCircle,
+import {
+  Printer,
+  Smartphone,
   Info,
   FileText,
-  Upload
+  Upload,
 } from 'lucide-react';
 
 export function PrintableFormsGuide() {

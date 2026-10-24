@@ -86,7 +86,6 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as any;
     const weekKey = String(body?.weekKey || '').trim();
     const rows = (Array.isArray(body?.rows) ? body.rows : []) as DigestRow[];
-    const totalMembers = Number(body?.totalMembers || 0);
 
     if (!weekKey) {
       return NextResponse.json({ success: false, error: 'weekKey is required' }, { status: 400 });

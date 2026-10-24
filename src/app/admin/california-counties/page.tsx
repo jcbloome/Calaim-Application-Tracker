@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, RotateCcw, MapPin, Users, Building2, Navigation, RefreshCw, Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
+import { searchCities, getCitiesInCounty } from '@/lib/california-cities';
 
 // California counties data with coordinates and basic info
 const californiaCounties = [
@@ -236,7 +236,7 @@ export default function CaliforniaCountiesPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">California Counties & Cities</h1>
           <p className="text-muted-foreground">
-            Explore California's 58 counties with population data, regional groupings, and city lookup functionality.
+            Explore California&apos;s 58 counties with population data, regional groupings, and city lookup functionality.
           </p>
         </div>
 

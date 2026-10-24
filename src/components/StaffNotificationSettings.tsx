@@ -178,7 +178,7 @@ export function StaffNotificationSettings() {
               <p>• Notifications appear as popup cards in the top-right corner</p>
               <p>• Similar to Cursor IDE notifications with smooth animations</p>
               <p>• Auto-dismiss after 8 seconds or click to dismiss manually</p>
-              <p>• Click "View" to navigate directly to the application</p>
+              <p>• Click &quot;View&quot; to navigate directly to the application</p>
             </div>
           </div>
         )}

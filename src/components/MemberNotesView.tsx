@@ -16,25 +16,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
-import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
-import { 
+import {
   ArrowLeft,
-  Calendar,
   User,
   MessageSquareText,
-  AlertTriangle,
   Info,
-  CheckCircle2,
-  Clock,
-  Mail,
   Bell,
   FileText,
   Loader2,
   RefreshCw,
   ExternalLink,
-  Trash2
+  Trash2,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
@@ -318,7 +312,7 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
           ) : (
             <ScrollArea className="h-full pr-4">
               <div className="space-y-4">
-                {notes.map((note, index) => (
+                {notes.map((note, _index) => (
                   <Card key={note.id} className={`${!note.isRead && note.source === 'notification' ? 'border-blue-200 bg-blue-50' : ''}`}>
                     <CardContent className="pt-4">
                       <div className="flex items-start justify-between mb-3">

@@ -5,12 +5,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ExternalLink, User, MapPin, Calendar, Clock, AlertTriangle, UserPlus, Mail } from 'lucide-react';
+import { ExternalLink, User, MapPin, Calendar, AlertTriangle, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import { useToast } from '@/hooks/use-toast';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { StaffAssignmentDropdown } from '@/components/StaffAssignmentDropdown';
 import { useUser } from '@/firebase';
 
@@ -52,8 +49,6 @@ export function MemberListModal({
   onMemberUpdate
 }: MemberListModalProps) {
   const [sortBy, setSortBy] = useState<'name' | 'county' | 'status' | 'due_date'>('name');
-  const [isAssigning, setIsAssigning] = useState<string | null>(null);
-  const { toast } = useToast();
   const { user } = useUser();
 
   const isOverdue = (dateString?: string) => {
@@ -62,31 +57,6 @@ export function MemberListModal({
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return dueDate < today;
-  };
-
-  const handleStaffAssignment = async (memberId: string, staffName: string) => {
-    if (!onMemberUpdate) return;
-    
-    setIsAssigning(memberId);
-    try {
-      await onMemberUpdate(memberId, 'kaiser_user_assignment', staffName);
-      
-      // Send notification to staff (you can implement this later)
-      toast({
-        title: 'Staff Assigned Successfully',
-        description: `Member assigned to ${staffName}. Notification sent to staff.`,
-      });
-      
-    } catch (error) {
-      console.error('Error assigning staff:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Assignment Failed',
-        description: 'Failed to assign staff member. Please try again.',
-      });
-    } finally {
-      setIsAssigning(null);
-    }
   };
 
   const getDaysUntilDue = (dateString?: string) => {

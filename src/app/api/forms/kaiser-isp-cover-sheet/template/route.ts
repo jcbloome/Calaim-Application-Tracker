@@ -551,24 +551,6 @@ export async function GET(req: NextRequest) {
       }
     };
 
-    /** Always check every checkbox whose name matches all tokens (initial + ongoing checklist rows). */
-    const checkAllMatchingCheckFields = (nameTokens: string[]) => {
-      const tokens = nameTokens.map((token) => token.toLowerCase());
-      let matched = 0;
-      for (const candidateField of form.getFields()) {
-        const fieldName = String(candidateField.getName() || '').toLowerCase();
-        if (!tokens.every((token) => fieldName.includes(token))) continue;
-        if (!isCheckFieldLike(candidateField)) continue;
-        try {
-          candidateField.check();
-          matched += 1;
-        } catch {
-          // ignore
-        }
-      }
-      return matched;
-    };
-
     const setFirstMatchingCheckField = (nameTokens: string[], checked: boolean) => {
       const tokens = nameTokens.map((token) => token.toLowerCase());
       for (const candidateField of form.getFields()) {

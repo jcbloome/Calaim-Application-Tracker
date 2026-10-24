@@ -767,28 +767,6 @@ async function upsertCachedClaims(claims: NormalizedClaim[]) {
   return written;
 }
 
-async function readCachedClaims(params: {
-  rcfeRegisteredId?: string;
-  rcfeName?: string;
-  syncDateFrom?: string | null;
-  syncDateTo?: string | null;
-}) {
-  const adminModule = await import('@/firebase-admin');
-  const adminDb = adminModule.adminDb;
-  let query: FirebaseFirestore.Query = adminDb.collection(CLAIMS_CACHE_COLLECTION);
-  if (params.rcfeRegisteredId) {
-    query = query.where('rcfeRegisteredId', '==', params.rcfeRegisteredId);
-  } else if (params.rcfeName) {
-    query = query.where('rcfeName', '==', params.rcfeName);
-  }
-  const snap = await query.limit(10000).get();
-  const claims = snap.docs
-    .map((doc) => doc.data() as IncomingClaim)
-    .map((row) => coerceIncomingClaim(row))
-    .filter(Boolean) as NormalizedClaim[];
-  return claims.filter((claim) => inSubmittedRange(claim, params.syncDateFrom || null, params.syncDateTo || null));
-}
-
 async function getWorkflowForClaims(claimRecordIds: string[]) {
   const unique = Array.from(new Set(claimRecordIds.map((id) => normalizeText(id)).filter(Boolean)));
   if (!unique.length) return new Map<string, Record<string, unknown>>();

@@ -7,7 +7,6 @@ export const dynamic = 'force-dynamic';
 
 async function assertAdmin(idToken: string) {
   const adminModule = await import('@/firebase-admin');
-  const admin = adminModule.default;
   const adminDb = adminModule.adminDb;
   const adminAuth = adminModule.adminAuth;
   const decoded = await adminAuth.verifyIdToken(idToken);

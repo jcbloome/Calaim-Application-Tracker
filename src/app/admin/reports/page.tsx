@@ -5,17 +5,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
-import { 
-  FileText, 
-  Users, 
-  BarChart3, 
-  Calendar,
+import {
+  FileText,
+  Users,
+  BarChart3,
   Download,
   Eye,
   TrendingUp,
   MapPin,
   Building2,
-  Stethoscope
+  Stethoscope,
 } from 'lucide-react';
 
 export default function ReportsPage() {

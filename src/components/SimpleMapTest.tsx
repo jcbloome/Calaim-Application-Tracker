@@ -266,7 +266,7 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
       if (staffResult.success && staffResult.data?.staffByCounty) {
         Object.entries(staffResult.data.staffByCounty).forEach(([county, data]: [string, any]) => {
           // Add Social Workers
-          data.socialWorkers?.forEach((sw: any, index: number) => {
+          data.socialWorkers?.forEach((sw: any, _index: number) => {
             calAIMData.push({
               type: 'SW',
               name: sw.name || `${sw.firstName || ''} ${sw.lastName || ''}`.trim() || 'Social Worker',
@@ -415,7 +415,7 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
                 <div style="margin-top:8px; padding:8px; background:#f8f9fa; border-radius:4px; max-height:150px; overflow-y:auto;">
                   <p style="font-weight:bold; margin-bottom:4px; color:#8b5cf6;">👥 Current Members (${item.memberCount}):</p>
                   <div style="font-size:11px;">
-                    ${item.membersList.map((member: any, index: number) => 
+                    ${item.membersList.map((member: any, _index: number) => 
                       `<div style="padding:2px 0; border-bottom:1px solid #e5e7eb; cursor:pointer;" 
                            onmouseover="this.style.backgroundColor='#e0e7ff'" 
                            onmouseout="this.style.backgroundColor='transparent'"

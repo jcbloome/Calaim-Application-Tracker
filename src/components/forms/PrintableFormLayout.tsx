@@ -1,10 +1,8 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { Printer, Download, FileText, Loader2 } from 'lucide-react';
+import { Printer, Download, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import Image from 'next/image';
 import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSections';
@@ -27,7 +25,6 @@ interface PrintableFormLayoutProps {
 export function PrintableFormLayout({
   title,
   subtitle,
-  formType,
   children,
   applicationData,
   showPrintButton = true,

@@ -122,7 +122,7 @@ export function PrintableWaiversFormVietnamese({
             <p className="font-semibold mb-2">1. Xac nhan tinh doc lap cua cac ben</p>
             <p>
               Nguoi ky ten (Thanh vien hoac Dai dien phap ly duoc uy quyen/POA) xac nhan Connections Care Home Consultants LLC
-              ("CONNECTIONS") la don vi tu van gioi thieu va hanh chinh. Cac co so RCFE/ARF do CONNECTIONS gioi thieu la
+              (&quot;CONNECTIONS&quot;) la don vi tu van gioi thieu va hanh chinh. Cac co so RCFE/ARF do CONNECTIONS gioi thieu la
               cac don vi kinh doanh doc lap, khong thuoc so huu, quan ly hay giam sat boi CONNECTIONS.
             </p>
           </div>
@@ -157,7 +157,7 @@ export function PrintableWaiversFormVietnamese({
             <p className="font-semibold mb-2">5. Cong bo ve danh gia RN (ISP)</p>
             <p>
               Toi hieu rang du RN cua CONNECTIONS co the thuc hien ISP de xac dinh muc CalAIM, danh gia nay khong phai la
-              "quan ly cham soc". Co so noi cu tru moi la ben chiu trach nhiem lap ke hoach cham soc rieng va dam bao an toan hang ngay.
+              &quot;quan ly cham soc&quot;. Co so noi cu tru moi la ben chiu trach nhiem lap ke hoach cham soc rieng va dam bao an toan hang ngay.
             </p>
           </div>
 

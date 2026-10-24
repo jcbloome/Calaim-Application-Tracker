@@ -6,15 +6,11 @@ import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/firebase';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getNextKaiserStatus, getKaiserStatusesInOrder, KAISER_STATUS_PROGRESSION, getKaiserStatusById, normalizeKaiserStatusName } from '@/lib/kaiser-status-progression';
+import { Card, CardContent } from '@/components/ui/card';
+import { getKaiserStatusesInOrder, normalizeKaiserStatusName } from '@/lib/kaiser-status-progression';
 import { fetchKaiserMembers, KAISER_MEMBERS_SESSION_MAX_AGE_MS } from '@/lib/fetch-kaiser-members';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey, getStatusColor } from './components/shared';
+import { getEffectiveKaiserStatus } from './components/shared';
 import type { KaiserMember } from './components/shared';
 import { KaiserSummaryCards } from './components/KaiserSummaryCards';
 import { KaiserStaffAssignments } from './components/KaiserStaffAssignments';
@@ -23,115 +19,9 @@ import { MemberListModal } from './components/MemberListModal';
 import { MemberNotesModal } from './components/MemberNotesModal';
 import { StaffMemberManagementModal } from './components/StaffMemberManagementModal';
 import { MemberSearchCard } from './components/MemberSearchCard';
-import { 
-  User, 
-  Filter, 
-  Download, 
-  RefreshCw, 
-  Search, 
-  Calendar, 
-  MapPin,
-  Phone, 
-  Mail, 
-  FileText, 
-  Clock, 
-  AlertTriangle, 
-  CheckCircle, 
-  XCircle, 
-  Pause,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  X,
-  Edit,
-  Save,
-  Plus,
-  Target,
+import {
+  RefreshCw,
 } from 'lucide-react';
-import { format } from 'date-fns';
-
-// Types
-interface StatusSummaryItem {
-  status: string;
-  count: number;
-}
-
-const getStatusIcon = (status: string) => {
-  const normalized = normalizeKaiserStatusName(status);
-  const iconMap: Record<string, React.ReactNode> = {
-    'Complete': <CheckCircle className="h-3 w-3" />,
-    'Active': <CheckCircle className="h-3 w-3" />,
-    'Pending': <Clock className="h-3 w-3" />,
-    'On-Hold': <Pause className="h-3 w-3" />,
-    'Non-active': <XCircle className="h-3 w-3" />,
-    'Case Closed': <XCircle className="h-3 w-3" />,
-    'Not interested': <XCircle className="h-3 w-3" />,
-    'Denied': <XCircle className="h-3 w-3" />,
-    'Expired': <AlertTriangle className="h-3 w-3" />,
-    'T2038 Requested': <FileText className="h-3 w-3" />,
-    'RN Visit Complete': <CheckCircle className="h-3 w-3" />,
-    'Tier Level Requested': <FileText className="h-3 w-3" />,
-    'Tier Level Received': <CheckCircle className="h-3 w-3" />,
-    'RN/MSW Scheduled': <Calendar className="h-3 w-3" />,
-    'R&B Requested': <FileText className="h-3 w-3" />,
-    'R&B Signed': <CheckCircle className="h-3 w-3" />,
-    'RN Visit Complete, Pending Signatures': <Clock className="h-3 w-3" />,
-    'T2038 received, doc collection': <FileText className="h-3 w-3" />,
-    'T2038 received, Need First Contact': <Phone className="h-3 w-3" />,
-    'Tier Level Appeal': <AlertTriangle className="h-3 w-3" />,
-    'Tier Level Request Needed': <FileText className="h-3 w-3" />,
-    'T2038_Auth_Email_Kaiser': <Mail className="h-3 w-3" />,
-    'T2038 Auth Only Email': <Mail className="h-3 w-3" />,
-    'T2038 Request Ready': <CheckCircle className="h-3 w-3" />,
-    'T2038, Not Requested, Doc Collection': <FileText className="h-3 w-3" />,
-    'RCFE Needed': <MapPin className="h-3 w-3" />,
-    'ILS Sent for Contract': <FileText className="h-3 w-3" />,
-    'R&B Needed': <FileText className="h-3 w-3" />,
-    'RN Visit Needed': <Calendar className="h-3 w-3" />,
-    'RCFE_Located': <MapPin className="h-3 w-3" />,
-    'ILS Contract Email Needed': <Mail className="h-3 w-3" />,
-    'ILS/RCFE_Member_At_RCFE_Need_Conf': <AlertTriangle className="h-3 w-3" />,
-    'ILS/RCFE_Member_At_RCFE_Confirmed': <CheckCircle className="h-3 w-3" />,
-    'Final- Member at RCFE': <CheckCircle className="h-3 w-3" />
-  };
-  
-  return iconMap[normalized] || iconMap[status] || <Clock className="h-3 w-3" />;
-};
-
-// Helper function to format dates
-const formatDate = (dateString: string): string => {
-  if (!dateString) return 'Not set';
-  try {
-    return new Date(dateString).toLocaleDateString();
-  } catch {
-    return 'Invalid date';
-  }
-};
-
-// Helper functions moved inside component to avoid module-level const declarations
-
-// Kaiser workflow configuration
-const kaiserWorkflow = {
-  'Pre-T2038, Compiling Docs': { next: 'T2038 Requested', recommendedDays: 7 },
-  'T2038 Requested': { next: 'T2038 Received', recommendedDays: 14 },
-  'T2038 Received': { next: 'T2038 received, Need First Contact', recommendedDays: 3 },
-  'T2038 received, Need First Contact': { next: 'T2038 received, doc collection', recommendedDays: 7 },
-  'T2038 received, doc collection': { next: 'RN Visit Needed', recommendedDays: 14 },
-  'RN Visit Needed': { next: 'RN/MSW Scheduled', recommendedDays: 7 },
-  'RN/MSW Scheduled': { next: 'RN Visit Complete', recommendedDays: 14 },
-  'RN Visit Complete': { next: 'RN Visit Complete, Pending Signatures', recommendedDays: 2 },
-  'RN Visit Complete, Pending Signatures': { next: 'Tier Level Request Needed', recommendedDays: 3 },
-  'Tier Level Request Needed': { next: 'Tier Level Requested', recommendedDays: 7 },
-  'Tier Level Requested': { next: 'Tier Level Received', recommendedDays: 21 },
-  'Tier Level Received': { next: 'RCFE Needed', recommendedDays: 3 },
-  'RCFE Needed': { next: 'RCFE_Located', recommendedDays: 14 },
-  'RCFE_Located': { next: 'R&B Requested', recommendedDays: 7 },
-  'R&B Requested': { next: 'R&B Signed', recommendedDays: 14 },
-  'R&B Signed': { next: 'ILS/RCFE Contract Email Needed', recommendedDays: 7 },
-  'ILS/RCFE Contract Email Needed': { next: 'ILS/RCFE Contract Email Sent', recommendedDays: 7 },
-  'ILS/RCFE Contract Email Sent': { next: 'ILS/RCFE_Member_At_RCFE_Need_Conf', recommendedDays: 7 },
-  'ILS/RCFE_Member_At_RCFE_Need_Conf': { next: 'ILS/RCFE_Member_At_RCFE_Confirmed', recommendedDays: 7 }
-};
 
 const FALLBACK_KAISER_STATUS_ORDER = getKaiserStatusesInOrder().map((status) => status.status);
 const PINNED_TOP_STATUSES = [
@@ -179,7 +69,6 @@ const CALAIM_STATUS_OPTIONS = [
   'Not interested',
   'Pending to switch'
 ];
-const CALAIM_STATUSES = CALAIM_STATUS_OPTIONS;
 
 const normalizeCalaimStatus = (value: string) =>
   String(value || '')
@@ -217,31 +106,6 @@ const isAuthorizedOrPendingCalaim = (value: unknown) => {
   return canonical === 'Authorized' || canonical === 'Pending';
 };
 
-const toDateValue = (value: any): Date | null => {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  if (typeof value?.toDate === 'function') return value.toDate();
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
-const isOverdue = (dateString: any): boolean => {
-  const dueDate = toDateValue(dateString);
-  if (!dueDate) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return dueDate < today;
-};
-
-const getDaysUntilDue = (dateString: any): number => {
-  const dueDate = toDateValue(dateString);
-  if (!dueDate) return 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffTime = dueDate.getTime() - today.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-};
-
 const COUNTIES = [
   'Los Angeles',
   'San Diego',
@@ -272,13 +136,13 @@ const sortKaiserMembersAlphabetically = (input: KaiserMember[]): KaiserMember[] 
 };
 
 function KaiserTrackerPageContent() {
-  const { isAdmin, isSuperAdmin, isKaiserManager, isLoading: isAdminLoading, user } = useAdmin();
+  const { isAdmin, isSuperAdmin, isKaiserManager, isLoading: isAdminLoading } = useAdmin();
   const { toast } = useToast();
   const auth = useAuth();
   const searchParams = useSearchParams() ?? new URLSearchParams();
 
   // State declarations
-  const [isLoading, setIsLoading] = useState(false);
+  const [, setIsLoading] = useState(false);
   const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
   const [statusListLoading, setStatusListLoading] = useState(false);
   const [kaiserStatusOptions, setKaiserStatusOptions] = useState<string[]>([...FALLBACK_KAISER_STATUS_ORDER]);
@@ -345,14 +209,12 @@ function KaiserTrackerPageContent() {
     []
   );
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortField, setSortField] = useState<string>('');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMembers, setModalMembers] = useState<KaiserMember[]>([]);
   const [modalTitle, setModalTitle] = useState('');
   const [modalDescription, setModalDescription] = useState('');
-  const [modalFilterType, setModalFilterType] = useState<'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'staff_members'>('kaiser_status');
-  const [modalFilterValue, setModalFilterValue] = useState('');
+  const [, setModalFilterType] = useState<'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'staff_members'>('kaiser_status');
+  const [, setModalFilterValue] = useState('');
   const [staffMemberModal, setStaffMemberModal] = useState<{
     isOpen: boolean;
     staffName: string;
@@ -432,21 +294,6 @@ function KaiserTrackerPageContent() {
       };
     }
   };
-  // Calculate status summary using the defined Kaiser status order
-  const statusSummary = useMemo(() => {
-    const summary: Record<string, number> = {};
-
-    members.forEach(member => {
-      const status = getEffectiveKaiserStatus(member);
-      if (!summary[status]) summary[status] = 0;
-      summary[status] += 1;
-    });
-
-    return kaiserStatusOptions.map((status) => ({
-      status,
-      count: summary[status] || 0
-    }));
-  }, [members, kaiserStatusOptions]);
 
 
   // Treat numeric-only staff values (e.g. Caspio user IDs 107, 224, 33, 48) as unassigned
@@ -1099,78 +946,6 @@ function KaiserTrackerPageContent() {
       setNotesGlobalSyncing(false);
       bumpNotesMetaRefresh();
     }
-  };
-
-  // Filter and sort results
-  const filteredMembers = useMemo(() => {
-    return members.filter((member) => {
-      if (filters.kaiserStatus !== 'all' && getEffectiveKaiserStatus(member) !== filters.kaiserStatus) return false;
-      if (filters.calaimStatus !== 'all') {
-        const normalized = normalizeCalaimStatus(member.CalAIM_Status || '');
-        if (CALAIM_STATUS_MAP[normalized] !== filters.calaimStatus) return false;
-      }
-      if (filters.county !== 'all' && member.memberCounty !== filters.county) return false;
-      if (filters.staffAssigned !== 'all' && getStaffAssignmentValue(member) !== filters.staffAssigned) return false;
-      return true;
-    });
-  }, [members, filters, normalizeCalaimStatus]);
-
-  const sortedMembers = useMemo(
-    () =>
-      [...filteredMembers].sort((a, b) => {
-        if (!sortField) return 0;
-        
-        let aValue: any = '';
-        let bValue: any = '';
-        
-        switch (sortField) {
-          case 'name':
-            aValue = `${a.memberFirstName} ${a.memberLastName}`;
-            bValue = `${b.memberFirstName} ${b.memberLastName}`;
-            break;
-          case 'county':
-            aValue = a.memberCounty;
-            bValue = b.memberCounty;
-            break;
-          case 'kaiser_status':
-            aValue = getEffectiveKaiserStatus(a);
-            bValue = getEffectiveKaiserStatus(b);
-            break;
-          case 'calaim_status':
-            aValue = a.CalAIM_Status;
-            bValue = b.CalAIM_Status;
-            break;
-          case 'staff':
-            aValue = getStaffAssignmentValue(a);
-            bValue = getStaffAssignmentValue(b);
-            break;
-          default:
-            return 0;
-        }
-          
-        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
-      }),
-    [filteredMembers, sortField, sortDirection]
-  );
-
-  // Handle sorting
-  const handleSort = (field: string) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
-
-  // Get sort icon
-  const getSortIcon = (field: string) => {
-    if (sortField !== field) return <ArrowUpDown className="h-3 w-3 ml-1" />;
-    return sortDirection === 'asc' 
-      ? <ArrowUp className="h-3 w-3 ml-1" />
-      : <ArrowDown className="h-3 w-3 ml-1" />;
   };
 
   // Handle filter changes

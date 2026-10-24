@@ -5,12 +5,10 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, FolderOpen, CheckCircle2, AlertTriangle, Upload, Database, FileText } from 'lucide-react';
+import { Loader2, FolderOpen, CheckCircle2, Database, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Progress } from '@/components/ui/progress';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { httpsCallable } from 'firebase/functions';
 import { useFunctions } from '@/firebase';
 
@@ -39,32 +37,15 @@ interface DriveFile {
   modifiedTime: string;
 }
 
-interface MigrationProgress {
-  totalFolders: number;
-  processedFolders: number;
-  totalFiles: number;
-  migratedFiles: number;
-  currentFolder?: string;
-  errors: string[];
-}
-
 export default function MigrateDrivePage() {
-  const { user, isAdmin, isSuperAdmin } = useAdmin();
+  const { isAdmin } = useAdmin();
   const router = useRouter();
   const { toast } = useToast();
   const functions = useFunctions();
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [isMigrating, setIsMigrating] = useState(false);
   const [folders, setFolders] = useState<DriveFolder[]>([]);
-  const [progress, setProgress] = useState<MigrationProgress>({
-    totalFolders: 0,
-    processedFolders: 0,
-    totalFiles: 0,
-    migratedFiles: 0,
-    errors: []
-  });
 
   useEffect(() => {
     // Temporarily allow access for testing
@@ -186,7 +167,7 @@ export default function MigrateDrivePage() {
               Scan CalAIM Folders
             </CardTitle>
             <CardDescription>
-              Explore the structure of your "CalAIM Members" folder
+              Explore the structure of your &quot;CalAIM Members&quot; folder
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -230,7 +211,7 @@ export default function MigrateDrivePage() {
             </div>
             
             <div className="text-sm text-muted-foreground text-center">
-              Start with "Test Scan" to verify Google Drive access and explore folder structure
+              Start with &quot;Test Scan&quot; to verify Google Drive access and explore folder structure
             </div>
           </CardContent>
         </Card>

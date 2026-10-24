@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useAuth, useFirestore } from '@/firebase';
+import { useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -47,12 +47,11 @@ const claimReadyToSubmit = (c: ClaimDoc) => {
 };
 
 export default function SwEndOfDayPage() {
-  const auth = useAuth();
   const firestore = useFirestore();
   const { user, isSocialWorker, isLoading: swLoading } = useSocialWorker();
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
-  const [month, setMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
+  const [month] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [claims, setClaims] = useState<ClaimDoc[]>([]);

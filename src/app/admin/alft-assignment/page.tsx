@@ -539,7 +539,7 @@ export default function AdminAlftAssignmentPage() {
                 ALFT Assignment Queue
               </CardTitle>
               <CardDescription>
-                All Caspio members with Kaiser status "RN Visit Needed" are shown here. Push members individually to ALFT Tracker, then run the full workflow there.
+                All Caspio members with Kaiser status &quot;RN Visit Needed&quot; are shown here. Push members individually to ALFT Tracker, then run the full workflow there.
               </CardDescription>
             </div>
             <Button variant="outline" asChild>
@@ -593,7 +593,7 @@ export default function AdminAlftAssignmentPage() {
 
           {hasLoadedOnce && !loading && filtered.length === 0 && (
             <div className="py-10 text-center text-muted-foreground text-sm">
-              No members found with Kaiser Status = "RN Visit Needed".
+              No members found with Kaiser Status = &quot;RN Visit Needed&quot;.
             </div>
           )}
 

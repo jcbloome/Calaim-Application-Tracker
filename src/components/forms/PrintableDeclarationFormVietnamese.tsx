@@ -11,10 +11,8 @@ interface PrintableDeclarationFormVietnameseProps {
 }
 
 export function PrintableDeclarationFormVietnamese({
-  memberName = '',
-  memberMrn = '',
   applicationId,
-  showPrintButton = true
+  showPrintButton = true,
 }: PrintableDeclarationFormVietnameseProps) {
   return (
     <PrintableFormLayout

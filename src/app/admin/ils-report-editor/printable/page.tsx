@@ -112,16 +112,6 @@ const formatYmd = (value?: string) => {
   }
 };
 
-const formatDateTime = (value?: string) => {
-  const raw = String(value || '').trim();
-  if (!raw) return '-';
-  try {
-    return format(new Date(raw), 'MMMM dd, yyyy HH:mm');
-  } catch {
-    return raw;
-  }
-};
-
 const ymdSortKey = (value?: string) => toYmd(value) || '9999-12-31';
 
 const normalizeStatus = (value: unknown) =>

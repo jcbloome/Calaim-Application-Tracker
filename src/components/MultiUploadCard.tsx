@@ -186,7 +186,7 @@ export function MultiUploadCard({
       // Clear uploaded files
       setUploadedFiles([]);
 
-    } catch (error) {
+    } catch  {
       toast({
         title: "Upload Failed",
         description: "Some files failed to upload. Please try again.",

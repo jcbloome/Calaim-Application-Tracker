@@ -119,13 +119,6 @@ function MyTasksPageContent() {
   const [isSyncingMemberNotes, setIsSyncingMemberNotes] = useState(false);
   const [isUpdatingMemberNotes, setIsUpdatingMemberNotes] = useState<Record<string, boolean>>({});
   const [showClosedMemberNotes, setShowClosedMemberNotes] = useState(false);
-  const [newNote, setNewNote] = useState({
-    noteText: '',
-    urgency: 'General' as 'General' | 'Immediate',
-    assignedTo: '',
-    assignedToName: '',
-    followUpDate: ''
-  });
 
   // Follow-up calendar state (month + day agenda)
   const [followUpMonth, setFollowUpMonth] = useState<Date>(() => new Date());
@@ -312,31 +305,6 @@ function MyTasksPageContent() {
         return date >= monthStart && date <= monthEnd && t.status !== 'completed';
       }).length
     };
-  }, [tasks]);
-
-  const actionItemCounts = useMemo(() => {
-    const isDocs = (task: MyTask) => {
-      if (task.reviewKind === 'docs') return true;
-      const title = String(task.title || '').toLowerCase();
-      return title.includes('document');
-    };
-    const isCs = (task: MyTask) => {
-      if (task.reviewKind === 'cs') return true;
-      const title = String(task.title || '').toLowerCase();
-      return title.includes('cs summary') || title.includes('cs') || title.includes('summary');
-    };
-    const isKaiser = (task: MyTask) => String(task.healthPlan || '').toLowerCase().includes('kaiser');
-    const isHealthNet = (task: MyTask) => {
-      const plan = String(task.healthPlan || '').toLowerCase();
-      return plan.includes('health net') || plan.includes('healthnet');
-    };
-
-    const review = tasks.filter((t) => t.taskType === 'review' && t.status !== 'completed');
-    const kDocs = review.filter((t) => isKaiser(t) && isDocs(t)).length;
-    const kCs = review.filter((t) => isKaiser(t) && isCs(t)).length;
-    const hDocs = review.filter((t) => isHealthNet(t) && isDocs(t)).length;
-    const hCs = review.filter((t) => isHealthNet(t) && isCs(t)).length;
-    return { kDocs, kCs, hDocs, hCs };
   }, [tasks]);
 
   const getStatusColor = (status: string) => {
@@ -708,16 +676,6 @@ function MyTasksPageContent() {
     } catch (error) {
       console.warn('Member click handler swallowed error:', error);
     }
-  };
-
-  const handleCreateNote = async () => {
-    void selectedMember;
-    void newNote;
-    void user;
-    toast({
-      title: 'Read-only notes',
-      description: 'Notes are managed in Caspio only. Use sync to pull latest history.',
-    });
   };
 
   const getPriorityColor = (priority: string) => {
@@ -2106,7 +2064,7 @@ function MyTasksPageContent() {
                   <span className="font-medium">Caspio is the single source of truth</span>
                 </div>
                 <p className="text-xs text-blue-700">
-                  This screen is read-only for notes. Click "Sync all notes" to pull full history from Caspio.
+                  This screen is read-only for notes. Click &quot;Sync all notes&quot; to pull full history from Caspio.
                 </p>
               </div>
             </div>

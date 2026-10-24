@@ -5,7 +5,7 @@ import {
   getCaspioToken,
 } from '@/lib/caspio-api-utils';
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   try {
     console.log('🚀 API ROUTE CALLED - Authorization Tracker ALL MEMBERS');
     console.log('🔍 Using MCO partitioning method for consistency and scalability...');

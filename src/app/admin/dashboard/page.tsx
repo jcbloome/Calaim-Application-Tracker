@@ -3,7 +3,7 @@
 import { useAdmin } from '@/hooks/use-admin';
 import { DailyNotificationDashboard } from '@/components/DailyNotificationDashboard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, Calendar, Bell } from 'lucide-react';
+import { Shield, Calendar } from 'lucide-react';
 import Link from 'next/link';
 
 export default function DashboardPage() {

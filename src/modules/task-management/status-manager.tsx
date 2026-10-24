@@ -16,7 +16,7 @@ import {
   Target,
   RefreshCw
 } from 'lucide-react';
-import type { StatusStyle, HealthPlan } from './types';
+import type { StatusStyle } from './types';
 
 // Centralized status color mapping (used across kaiser-tracker, my-tasks, etc.)
 export const STATUS_COLORS: Record<string, StatusStyle> = {

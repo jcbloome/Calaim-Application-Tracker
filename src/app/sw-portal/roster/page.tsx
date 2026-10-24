@@ -156,10 +156,10 @@ export default function SWRosterPage() {
 
   const [draftsToday, setDraftsToday] = useState<DraftVisit[]>([]);
   const [loadingDraftsToday, setLoadingDraftsToday] = useState(false);
-  const [rosterLastRefreshAt, setRosterLastRefreshAt] = useState<string | null>(null);
-  const [rosterLastRefreshOk, setRosterLastRefreshOk] = useState<boolean | null>(null);
-  const [draftsLastRefreshAt, setDraftsLastRefreshAt] = useState<string | null>(null);
-  const [draftsLastRefreshOk, setDraftsLastRefreshOk] = useState<boolean | null>(null);
+  const [, setRosterLastRefreshAt] = useState<string | null>(null);
+  const [, setRosterLastRefreshOk] = useState<boolean | null>(null);
+  const [, setDraftsLastRefreshAt] = useState<string | null>(null);
+  const [, setDraftsLastRefreshOk] = useState<boolean | null>(null);
   const [newAssignmentsSinceLastMonthCount, setNewAssignmentsSinceLastMonthCount] = useState(0);
   const [noAssignmentsSinceLastMonth, setNoAssignmentsSinceLastMonth] = useState(false);
   const [memberEligibilityById, setMemberEligibilityById] = useState<Record<string, MemberEligibility>>({});
@@ -667,7 +667,6 @@ export default function SWRosterPage() {
       return { expectedDone: 0, remainingDays: 0, onTrack: true };
     }
     const today = new Date();
-    const monthStart = new Date(year, monthNum - 1, 1);
     const monthEnd = new Date(year, monthNum, 0);
     const isPastMonth =
       today.getFullYear() > year || (today.getFullYear() === year && today.getMonth() + 1 > monthNum);
@@ -790,24 +789,6 @@ export default function SWRosterPage() {
       return String(statusIconsLastRefreshAt);
     }
   }, [statusIconsLastRefreshAt]);
-
-  const rosterLastRefreshLabel = useMemo(() => {
-    if (!rosterLastRefreshAt) return '';
-    try {
-      return new Date(rosterLastRefreshAt).toLocaleString();
-    } catch {
-      return String(rosterLastRefreshAt);
-    }
-  }, [rosterLastRefreshAt]);
-
-  const draftsLastRefreshLabel = useMemo(() => {
-    if (!draftsLastRefreshAt) return '';
-    try {
-      return new Date(draftsLastRefreshAt).toLocaleString();
-    } catch {
-      return String(draftsLastRefreshAt);
-    }
-  }, [draftsLastRefreshAt]);
 
   const formatDateTime = useCallback((value?: string | null) => {
     const raw = String(value || '').trim();

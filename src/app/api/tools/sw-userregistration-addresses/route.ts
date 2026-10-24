@@ -151,7 +151,7 @@ async function updateSocialWorkerRowWithFallback(
   swId: string,
   payload: Record<string, string>
 ) {
-  let attemptPayload: Record<string, string> = { ...payload };
+  const attemptPayload: Record<string, string> = { ...payload };
   let tries = 0;
 
   while (tries < 10) {

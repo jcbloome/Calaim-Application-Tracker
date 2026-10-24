@@ -1702,17 +1702,6 @@ const mapRawRowToMasterRow = (
   return withResolvedIlsMifMasterRowDate(row);
 };
 
-const extractIlsMifSheetHeaders = (ws: unknown, XLSX: typeof import('xlsx')): string[] => {
-  const sheet = ws as { '!ref'?: string };
-  if (!sheet?.['!ref']) return [];
-  const matrix = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' });
-  const headerIdx = findIlsMifHeaderRowIndex(matrix as unknown[][]);
-  const headerRow = Array.isArray(matrix?.[headerIdx]) ? matrix[headerIdx] : [];
-  return headerRow
-    .map((cell) => String(cell || '').replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-};
-
 /** Kaiser MIFs often have title rows above the real header — pick the best match in the first 30 rows. */
 function findIlsMifHeaderRowIndex(matrix: unknown[][]): number {
   const scoreRow = (row: unknown[]) => {
@@ -3629,8 +3618,6 @@ const MIF_EXPORT_HEADER_ALIASES: Partial<Record<CsMifExportHeader, string[]>> = 
   'Date Received Request for Authorization': ['Date Received Request for Authorization'],
   'Date of Referral Authorization Decision': ['Date of Referral Authorization Decision'],
 };
-
-const MIF_RESIDENTIAL_HEADER_ALIASES = MIF_EXPORT_HEADER_ALIASES;
 
 const lookupMifOriginalColumnValue = (
   fromOriginal: Record<string, string>,

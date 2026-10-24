@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -8,20 +8,18 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { 
-  Loader2, 
-  RefreshCw, 
-  CheckCircle2, 
-  AlertTriangle, 
+import {
+  Loader2,
+  RefreshCw,
+  AlertTriangle,
   Search,
   Users,
   FolderOpen,
   Brain,
   Download,
   Upload,
-  Filter,
   Eye,
-  EyeOff
+  EyeOff,
 } from 'lucide-react';
 import {
   Table,
@@ -84,7 +82,7 @@ export default function IntelligentMatchingPanel() {
   const [filterType, setFilterType] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showUnmatched, setShowUnmatched] = useState(false);
-  const [autoApplyThreshold, setAutoApplyThreshold] = useState(90);
+  const [autoApplyThreshold] = useState(90);
   const { toast } = useToast();
 
   // Fetch Google Drive folders
@@ -535,7 +533,7 @@ export default function IntelligentMatchingPanel() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredSuggestions.map((suggestion, index) => {
+                  {filteredSuggestions.map((suggestion, _index) => {
                     const originalIndex = suggestions.indexOf(suggestion);
                     return (
                       <TableRow key={originalIndex}>

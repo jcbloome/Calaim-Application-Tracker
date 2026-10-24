@@ -148,7 +148,7 @@ export default function TestNotificationsPage() {
         );
       }
 
-    } catch (error) {
+    } catch  {
       showError(
         'Test Error',
         'Failed to test Health Net notification system',
@@ -210,7 +210,7 @@ export default function TestNotificationsPage() {
           <div>
             <h1 className="text-3xl font-bold">System Tray Notification Test</h1>
             <p className="text-muted-foreground">
-              Test and preview system tray notifications similar to Cursor's notification system
+              Test and preview system tray notifications similar to Cursor&apos;s notification system
             </p>
           </div>
         </div>

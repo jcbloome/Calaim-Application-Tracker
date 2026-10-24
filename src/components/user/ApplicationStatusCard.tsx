@@ -5,15 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
-import { 
-  Clock, 
-  CheckCircle, 
-  AlertTriangle, 
-  FileText, 
-  Upload, 
+import {
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  FileText,
   Eye,
   Edit,
-  Calendar
+  Calendar,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';

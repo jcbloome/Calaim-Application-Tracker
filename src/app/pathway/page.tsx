@@ -55,7 +55,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
 import {
   SNF_RESIDENCY_NOTE,
   SNF_RESIDENCY_REQUIRED_DAYS,

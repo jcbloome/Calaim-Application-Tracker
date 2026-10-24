@@ -3,8 +3,6 @@
 import { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -22,7 +20,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
-import { Search, MessageSquare, Bell, Calendar, User, Clock, Filter, RefreshCw, Trash2, CheckCircle2, Loader2 } from 'lucide-react';
+import { Search, MessageSquare, User, Clock, Filter, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useSearchParams } from 'next/navigation';
 
@@ -85,13 +83,6 @@ function ClientNotesContent() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const { toast } = useToast();
-  const [isSavingNote, setIsSavingNote] = useState(false);
-  const [newNote, setNewNote] = useState({
-    comments: '',
-    followUpStatus: 'Open',
-    followUpDate: ''
-  });
-  const [createStatus, setCreateStatus] = useState<{ caspio: boolean; firestore: boolean } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientNote | null>(null);
 
   // Search for clients by last name
@@ -284,87 +275,6 @@ function ClientNotesContent() {
     });
   };
 
-  const handleAddNote = async () => {
-    if (!selectedClientId) {
-      toast({
-        title: "Select a Client",
-        description: "Choose an existing client before adding a note.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (!newNote.comments.trim()) {
-      toast({
-        title: "Missing Note",
-        description: "Please enter note details before saving.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setIsSavingNote(true);
-      setCreateStatus(null);
-      const response = await fetch('/api/client-notes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientId2: selectedClientId,
-          comments: newNote.comments.trim(),
-          followUpStatus: newNote.followUpStatus,
-          followUpDate: newNote.followUpDate || null,
-          actorName: user?.displayName || user?.email || 'Staff',
-          actorEmail: user?.email || ''
-        })
-      });
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.message || data.error || 'Failed to create note');
-      }
-
-      const sync = data.sync || { caspio: true, firestore: Boolean(data.data?.firestoreSaved) };
-      setCreateStatus(sync);
-
-      setNotesData(prev => {
-        if (!prev) return prev;
-        const noteId = data.data?.noteId || `local_${Date.now()}`;
-        const nextNote: ClientNote = {
-          id: noteId,
-          noteId,
-          clientId2: selectedClientId,
-          comments: newNote.comments.trim(),
-          timeStamp: new Date().toISOString(),
-          followUpDate: newNote.followUpDate || '',
-          followUpStatus: newNote.followUpStatus,
-          followUpAssignment: '',
-          userId: user?.uid,
-          userFullName: user?.displayName || user?.email || 'Current User',
-          isNew: true
-        };
-        return {
-          ...prev,
-          notes: [nextNote, ...prev.notes],
-          totalNotes: prev.totalNotes + 1
-        };
-      });
-
-      setNewNote({ comments: '', followUpStatus: 'Open', followUpDate: '' });
-      toast({
-        title: "Note Added",
-        description: "Client note saved successfully."
-      });
-    } catch (error: any) {
-      console.error('Error creating note:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create note",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSavingNote(false);
-    }
-  };
-
   // Handle client selection from search results
   const handleSelectClient = (client: Client) => {
     setSelectedClientId(client.clientId2);
@@ -372,13 +282,6 @@ function ClientNotesContent() {
     setClientSearch(client.seniorLast);
     setClientResults([]);
     fetchNotesForClient(client.clientId2, client.seniorFullName);
-  };
-
-  // Handle client search/load
-  const handleSearchClients = () => {
-    if (clientSearch.trim()) {
-      searchClientsByLastName(clientSearch.trim());
-    }
   };
 
   // Clear client selection

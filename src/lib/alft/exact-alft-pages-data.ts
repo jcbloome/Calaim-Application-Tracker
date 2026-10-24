@@ -34,14 +34,6 @@ const frequencyOptions: ExactAlftQuestionOption[] = [
   { value: 'nearly_every_day', label: 'Nearly every day' },
 ];
 
-const formatPromptLabel = (label: string) => {
-  const qMatch = label.match(/^Q(\d+)\s*:?\s*(.+)$/i);
-  if (qMatch) return `${qMatch[1]}. ${qMatch[2]}`;
-  const nMatch = label.match(/^(\d+)\.\s*(.+)$/);
-  if (nMatch) return `${nMatch[1]}. ${nMatch[2]}`;
-  return label;
-};
-
 export const EXACT_ALFT_PAGES: ExactAlftPage[] = [
   {
     id: 'page1',

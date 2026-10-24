@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { Loader2, FileText, Download, Search, FolderOpen, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -122,7 +122,7 @@ export function MemberFileLookup({ clientId: initialClientId, className = '' }: 
     }
   };
 
-  const getFileIcon = (fileType: string) => {
+  const getFileIcon = (_fileType: string) => {
     // Return appropriate icon based on file type
     return FileText;
   };

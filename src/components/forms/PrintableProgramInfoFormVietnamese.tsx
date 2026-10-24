@@ -96,8 +96,8 @@ export function PrintableProgramInfoFormVietnamese({
                 Lien he bo phan dich vu thanh vien Health Net de yeu cau chuyen nhanh tu Molina sang Health Net.
               </p>
               <p className="text-sm print:text-xs text-gray-700 print:text-black">
-                <strong>Goi y noi dung:</strong> "Thanh vien bi gan ngau nhien vao Molina du da yeu cau Health Net.
-                Sai sot nay dang ngan can tiep can dich vu chuyen tiep SNF-sang-cong-dong cua CalAIM."
+                <strong>Goi y noi dung:</strong> &quot;Thanh vien bi gan ngau nhien vao Molina du da yeu cau Health Net.
+                Sai sot nay dang ngan can tiep can dich vu chuyen tiep SNF-sang-cong-dong cua CalAIM.&quot;
               </p>
             </div>
             <div className="p-3 print:p-4 border print:border-black">
@@ -172,10 +172,10 @@ export function PrintableProgramInfoFormVietnamese({
           </h3>
           <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
             <p>NMOHC la khoan bo sung giup tang muc SSI hang thang khi thanh vien song tai co so song ho tro co giay phep thay vi nha rieng/can ho.</p>
-            <p>Neu song tai RCFE, tieu bang cong nhan chi phi sinh hoat cao hon va dieu chinh muc chi tra tu muc "doc lap" sang muc NMOHC.</p>
+            <p>Neu song tai RCFE, tieu bang cong nhan chi phi sinh hoat cao hon va dieu chinh muc chi tra tu muc &quot;doc lap&quot; sang muc NMOHC.</p>
             <p><strong>1. Xac nhan dieu kien tai chinh (kiem tra giay to)</strong></p>
             <ul className="list-disc pl-5 space-y-1">
-              <li>Thu nhap: nam 2026, tong thu nhap "tinh vao" phai duoi $1,626.07/thang.</li>
+              <li>Thu nhap: nam 2026, tong thu nhap &quot;tinh vao&quot; phai duoi $1,626.07/thang.</li>
               <li>Tai san: tu 01/01/2026, tai san tinh vao phai duoi $2,000 (ca nhan) hoac $3,000 (vo/chong).</li>
               <li>Luu y: thuong 1 xe hoi va nha chinh duoc loai tru khoi gioi han tai san.</li>
             </ul>
@@ -190,10 +190,10 @@ export function PrintableProgramInfoFormVietnamese({
 
         <div className="p-4 print:p-6 bg-yellow-50 print:bg-white border print:border-black">
           <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
-            Thanh toan "an o" va "song ho tro"
+            Thanh toan &quot;an o&quot; va &quot;song ho tro&quot;
           </h3>
           <div className="space-y-4 text-sm print:text-xs text-gray-700 print:text-black">
-            <p>Thanh vien MCP chiu trach nhiem chi tra phan "an o" cho RCFE, con MCP chi tra phan "song ho tro".</p>
+            <p>Thanh vien MCP chiu trach nhiem chi tra phan &quot;an o&quot; cho RCFE, con MCP chi tra phan &quot;song ho tro&quot;.</p>
             <p>Neu du dieu kien SSI/SSP va NMOHC 2026, muc chi tra SSI/SSP tang len $1,626.07; thanh vien thuong giu lai $182 cho chi phi ca nhan va RCFE nhan $1,444.07 cho phan an o.</p>
             <p>Neu khong du dieu kien NMOHC, thanh vien van co nghia vu dong gop an o, nhung muc co the linh hoat tuy RCFE va muc danh gia cham soc.</p>
             <p>Thanh vien khong co kha nang dong bat ky phan an o nao thuong se khong du dieu kien CS theo yeu cau chuong trinh.</p>
@@ -237,7 +237,7 @@ export function PrintableProgramInfoFormVietnamese({
               <h4 className="font-semibold text-gray-900 print:text-black">Cac chien luoc bo sung giam SOC</h4>
               <div className="mt-2 space-y-3">
                 <div>
-                  <p className="font-semibold">1. Dieu chinh "thu nhap vuot muc" cho an o</p>
+                  <p className="font-semibold">1. Dieu chinh &quot;thu nhap vuot muc&quot; cho an o</p>
                   <ul className="list-disc pl-5 space-y-1">
                     <li><strong>Tran SSI:</strong> nguoi nhan SSI co muc an o bi gioi han (khoang $1,444.07 nam 2026).</li>
                     <li><strong>Ngoai le khong-SSI:</strong> neu co thu nhap khac SSI, RCFE co the tinh muc co ban cong phi hop dong.</li>
@@ -253,7 +253,7 @@ export function PrintableProgramInfoFormVietnamese({
                   </ul>
                 </div>
                 <div>
-                  <p className="font-semibold">3. Ap dung bao ve "spousal impoverishment" (HCBS)</p>
+                  <p className="font-semibold">3. Ap dung bao ve &quot;spousal impoverishment&quot; (HCBS)</p>
                   <ul className="list-disc pl-5 space-y-1">
                     <li><strong>Loai tru thu nhap vo/chong song trong cong dong:</strong> SOC dua tren thu nhap tinh vao cua nguoi nop don.</li>
                     <li><strong>MMMNA:</strong> neu thu nhap vo/chong trong cong dong thap hon <strong>$4,066.50</strong> (MMMNA 2026), co the phan bo thu nhap de dat muc nay.</li>

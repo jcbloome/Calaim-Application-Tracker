@@ -2,7 +2,7 @@
 'use client';
 
 import { useFormContext } from 'react-hook-form';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -431,7 +431,7 @@ export default function Step1({
       />
 
       <div className="p-4 border rounded-md space-y-4">
-        <h3 className="font-medium">Representative's Contact Info</h3>
+        <h3 className="font-medium">Representative&apos;s Contact Info</h3>
         <p className="text-sm text-muted-foreground">If the member does not have a legal representative, you can leave these fields blank.</p>
         {hasLegalRep === 'no_capacity_has_rep' ? (
           <FormItem className="flex flex-row items-start space-x-3 space-y-0">
@@ -486,7 +486,7 @@ export default function Step1({
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={isRepAutoFilled} /></FormControl>
-              <FormDescription>If no email, enter "N/A".</FormDescription>
+              <FormDescription>If no email, enter &quot;N/A&quot;.</FormDescription>
               <FormMessage />
             </FormItem>
           )} />
@@ -534,10 +534,10 @@ export default function Step1({
         </CardHeader>
         <CardContent>
           <p className="text-sm text-blue-800 leading-relaxed">
-            California Advancing and Innovating Medi-Cal (CalAIM) is California's long-term initiative to 
+            California Advancing and Innovating Medi-Cal (CalAIM) is California&apos;s long-term initiative to 
             transform the Medi-Cal program by improving quality outcomes, reducing health disparities, and 
             creating a more seamless and consistent system. It aims to achieve this through a focus on 
-            "whole person care," which includes addressing social determinants of health, integrating physical, 
+            &quot;whole person care,&quot; which includes addressing social determinants of health, integrating physical, 
             mental, and social services, and launching new programs like Enhanced Care Management (ECM) and 
             Community Supports. CS and ECM are administered through managed care plans (MCPs).
             <br /><br />
@@ -676,7 +676,7 @@ export default function Step1({
                   <FormControl>
                     <Input type="text" inputMode="email" {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription>Optional. If no email, leave blank or enter "N/A".</FormDescription>
+                  <FormDescription>Optional. If no email, leave blank or enter &quot;N/A&quot;.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -704,7 +704,7 @@ export default function Step1({
                       }}
                     />
                         </FormControl>
-                        <FormDescription>This is a 9 character number starting with a '9' and ending with a letter.</FormDescription>
+                        <FormDescription>This is a 9 character number starting with a &apos;9&apos; and ending with a letter.</FormDescription>
                         <FormMessage />
                         </FormItem>
                     )}
@@ -966,7 +966,7 @@ export default function Step1({
                     <FormControl>
                       <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
                     </FormControl>
-                     <FormDescription>e.g., Bob's Referral Agency, Hospital Name, etc. If not applicable, leave blank.</FormDescription>
+                     <FormDescription>e.g., Bob&apos;s Referral Agency, Hospital Name, etc. If not applicable, leave blank.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1120,7 +1120,7 @@ export default function Step1({
                       <FormItem>
                         <FormLabel>Email {!isPrimaryContactAutoFilled && <span className="text-destructive">*</span>}</FormLabel>
                         <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={isPrimaryContactAutoFilled} /></FormControl>
-                        <FormDescription>If no email, enter "N/A".</FormDescription>
+                        <FormDescription>If no email, enter &quot;N/A&quot;.</FormDescription>
                         <FormMessage />
                       </FormItem>
                   )} />
@@ -1163,7 +1163,7 @@ export default function Step1({
                        <FormItem>
                           <FormLabel>Email</FormLabel>
                           <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
-                           <FormDescription>If no email, enter "N/A".</FormDescription>
+                           <FormDescription>If no email, enter &quot;N/A&quot;.</FormDescription>
                           <FormMessage />
                         </FormItem>
                     )} />

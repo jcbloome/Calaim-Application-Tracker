@@ -119,7 +119,7 @@ export function PrintableCsSummaryFormContent() {
                             <CheckboxField label="Member does not have capacity and requires legal representative" />
                         </div>
                     </div>
-                    <h3 className="text-sm font-medium text-gray-800 mt-4">Representative's Contact Info</h3>
+                    <h3 className="text-sm font-medium text-gray-800 mt-4">Representative&apos;s Contact Info</h3>
                     <p className="text-xs text-gray-500 pt-1">If the member does not have a legal representative, you can leave these fields blank.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="First Name" />
@@ -142,7 +142,7 @@ export function PrintableCsSummaryFormContent() {
                 <div>
                 <SectionTitle>Location Information</SectionTitle>
                 <div className="space-y-2">
-                    <p className="text-xs font-medium text-gray-700">Member's Current Location</p>
+                    <p className="text-xs font-medium text-gray-700">Member&apos;s Current Location</p>
                 </div>
                 <h3 className="text-sm font-medium text-gray-800 mt-4">Current Address</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
@@ -242,10 +242,10 @@ export function PrintableCsSummaryFormContent() {
                 <SectionTitle>Section 11: Individual Service Plan (ISP)</SectionTitle>
                     <h3 className="text-sm font-medium text-gray-800 mt-4">Individual Service Plan (ISP) Contact</h3>
                     <p className="text-xs text-gray-600 my-2">
-                      An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the "assisted living" portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.
+                      An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan&apos;s (MCP) clinical team to determine the member&apos;s care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP&apos;s authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections&apos; MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the &quot;assisted living&quot; portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.
                     </p>
                     <p className="text-xs text-gray-600 my-2">
-                      Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician's report (602), and other clinical notes. Who is the best person to contact for the ISP? Please note this is not the primary care doctor but could be a SNF social worker, etc.
+                      Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician&apos;s report (602), and other clinical notes. Who is the best person to contact for the ISP? Please note this is not the primary care doctor but could be a SNF social worker, etc.
                     </p>
                     <div className="mt-2">
                       <CheckboxField label="Only ISP contact is the member" />
@@ -324,19 +324,19 @@ export function PrintableCsSummaryFormContent() {
                     <SectionTitle>Section 10: Room & Board Payments</SectionTitle>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-2 p-4 border rounded-lg bg-gray-50 text-xs mb-4">
                         <p><strong>Non-Medical Out-of-Home Care (NMOHC)</strong> is a payment supplement that boosts a person’s monthly SSI because they live in a licensed assisted living home (RCFE).</p>
-                        <p>In California, if a person lives in an RCFE, the state recognizes higher costs and moves the person from the "Independent Living" rate to the "NMOHC" rate.</p>
-                        <p><strong>1. Confirm Financial Eligibility (The "Paper" Test)</strong></p>
+                        <p>In California, if a person lives in an RCFE, the state recognizes higher costs and moves the person from the &quot;Independent Living&quot; rate to the &quot;NMOHC&quot; rate.</p>
+                        <p><strong>1. Confirm Financial Eligibility (The &quot;Paper&quot; Test)</strong></p>
                         <ul className="list-disc pl-5 space-y-1">
-                            <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
+                            <li>Income: For 2026, total &quot;countable&quot; monthly income must be less than $1,626.07.</li>
                             <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
                             <li>Note: One car and the primary home are usually excluded.</li>
                         </ul>
-                        <p><strong>2. Get a Medical Assessment (The "Care" Test)</strong></p>
+                        <p><strong>2. Get a Medical Assessment (The &quot;Care&quot; Test)</strong></p>
                         <ul className="list-disc pl-5 space-y-1">
                             <li>SSP 22 Form: Authorization for Non-Medical Out-of-Home Care.</li>
                             <li>Physician/Social Worker Signature: Confirms assistance needs or protective supervision.</li>
                         </ul>
-                        <p><strong>3. Verification with Social Security (The "Pre-Move" Call)</strong></p>
+                        <p><strong>3. Verification with Social Security (The &quot;Pre-Move&quot; Call)</strong></p>
                         <ul className="list-disc pl-5 space-y-1">
                             <li>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</li>
                             <li>Tell them the person plans to move into a licensed RCFE.</li>
@@ -344,12 +344,12 @@ export function PrintableCsSummaryFormContent() {
                         </ul>
                     </div>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-3 p-4 border rounded-lg bg-gray-50 text-xs">
-                        <p>The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible for paying the RCFE the "assisted living" portion.</p>
-                        <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Any income above $1,444.07 is not paid as "room and board" unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a higher amount for a private room (since the program does not mandate private rooms).</p>
-                        <p>For example, Mr. Johnson is eligible for NMOHC and receives $500/month. The NMOHC will bump up the payment to the RCFE to $1,444.07 for "room and board" and he will retain $182 for personal needs expenses.</p>
-                        <p>Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
-                        <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board" payment from the member (or their family).</p>
-                        <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
+                        <p>The MCP member is responsible for paying the RCFE the &quot;room and board&quot; portion and the MCP is responsible for paying the RCFE the &quot;assisted living&quot; portion.</p>
+                        <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for &quot;room and board&quot;. Any income above $1,444.07 is not paid as &quot;room and board&quot; unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a higher amount for a private room (since the program does not mandate private rooms).</p>
+                        <p>For example, Mr. Johnson is eligible for NMOHC and receives $500/month. The NMOHC will bump up the payment to the RCFE to $1,444.07 for &quot;room and board&quot; and he will retain $182 for personal needs expenses.</p>
+                        <p>Members not eligible for the NMOHC will still have a &quot;room and board&quot; obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
+                        <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a &quot;room and board&quot; payment from the member (or their family).</p>
+                        <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the &quot;room and board&quot; payment.</p>
                     </div>
                     <div className="p-3 border border-gray-300 text-xs text-gray-700 mb-2">
                         Proof of income (annual award letter or 3 months of bank statements showing Social Security income) is required by some managed care plans. If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information: https://connectcalaim.com/info/eligibility

@@ -14,12 +14,6 @@ const normalizeText = (value: unknown) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-function getBearerToken(req: NextRequest): string {
-  const authHeader = req.headers.get('authorization') || '';
-  const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-  return tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
-}
-
 export async function GET(req: NextRequest) {
   try {
     const adminCheck = await requireAdminApiAuth(req, { requireTwoFactor: true });

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { sendAlftWorkflowStartEmail } from '@/app/actions/send-email';
-import { getRcfeLocationSnapshot } from '@/lib/isp-visit-location';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 
 export const runtime = 'nodejs';
@@ -120,7 +119,7 @@ async function fetchCaspioMemberByClientId(params: {
   credentials: { baseUrl: string; clientId: string; clientSecret: string };
   fieldNames: string[];
 }) {
-  const { memberId, credentials, fieldNames } = params;
+  const { memberId, credentials } = params;
   const accessToken = await getCaspioToken(credentials);
   const escapedMemberId = String(memberId || '').replace(/'/g, "''");
   const whereCandidates = [`Client_ID2='${escapedMemberId}'`, `client_ID2='${escapedMemberId}'`];
@@ -148,7 +147,7 @@ async function fetchCaspioMemberByClientId(params: {
 function resolveMappedCaspioPrefill(
   mappingRows: Record<string, { primary?: string; fallbacks?: string[] }>,
   sourceRecord: Record<string, unknown>,
-  fallbackFromMember: Record<string, string>
+  _fallbackFromMember: Record<string, string>
 ) {
   const source = sourceRecord || {};
   const sourceRaw = (((sourceRecord as any) || {}).caspioRaw || {}) as Record<string, unknown>;

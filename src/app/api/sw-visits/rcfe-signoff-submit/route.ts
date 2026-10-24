@@ -221,7 +221,6 @@ export async function POST(req: NextRequest) {
     const totalMemberVisitFees = visits.length * visitFeeRate;
     const totalAmount = totalMemberVisitFees + gasAmount;
     const nowIso = new Date().toISOString();
-    const nowTs = admin.firestore.Timestamp.now();
 
     const completedVisits = visits.map((v) => ({
       visitId: String(v?.visitId || v?.id || '').trim(),

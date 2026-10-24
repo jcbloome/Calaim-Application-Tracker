@@ -7,21 +7,19 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { 
-  Loader2, 
-  RefreshCw, 
+import {
+  Loader2,
+  RefreshCw,
   Search,
   Users,
   FolderOpen,
   Download,
-  Filter,
   FileText,
   Folder,
   ExternalLink,
-  Calendar,
   User,
   Hash,
-  Archive
+  Archive,
 } from 'lucide-react';
 import {
   Table,
@@ -436,7 +434,7 @@ export default function LegacyMemberSearch() {
               <span>Showing {filteredMembers.length} of {members.length} members</span>
               {searchTerm && (
                 <Badge variant="secondary">
-                  Search: "{searchTerm}"
+                  Search: &quot;{searchTerm}&quot;
                 </Badge>
               )}
               {filterBy !== 'all' && (
@@ -568,7 +566,7 @@ export default function LegacyMemberSearch() {
               <div>
                 <h3 className="text-lg font-medium">No Legacy Members Imported</h3>
                 <p className="text-muted-foreground">
-                  Click "Import Legacy Members" to scan Google Drive and import all CalAIM member folders
+                  Click &quot;Import Legacy Members&quot; to scan Google Drive and import all CalAIM member folders
                 </p>
               </div>
             </div>

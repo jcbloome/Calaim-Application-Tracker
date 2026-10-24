@@ -39,7 +39,6 @@ export async function POST(request: NextRequest) {
     }
 
     const adminModule = await import('@/firebase-admin');
-    const admin = adminModule.default;
     const adminAuth = adminModule.adminAuth;
     const adminDb = adminModule.adminDb;
 

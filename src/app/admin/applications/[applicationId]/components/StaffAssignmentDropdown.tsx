@@ -22,7 +22,6 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
-import { format } from 'date-fns';
 import { buildMemberActionLogEntry, MEMBER_ACTION_KEYS, type MemberActionLogEntry } from '@/lib/member-action-log';
 import { buildFirstContactAckResetFields, isNeedFirstContactKaiserStatus } from '@/lib/first-contact-ack';
 
@@ -61,8 +60,6 @@ export function StaffAssignmentDropdown({
     const [staffFilterLabel, setStaffFilterLabel] = useState<string>('Showing all staff');
     const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
     const { isActiveByUid } = useDesktopPresenceMap(staffUids);
-    const isKaiserPlan = String(application.healthPlan || '').toLowerCase().includes('kaiser');
-
     useEffect(() => {
         // Filter staff list based on the application's health plan.
         let staff: StaffCandidate[] = [];
@@ -423,20 +420,6 @@ export function StaffAssignmentDropdown({
 
     const currentAssignedStaffId = String((application as any)?.assignedStaffId || '').trim();
     const currentAssignedStaffName = String((application as any)?.assignedStaffName || '').trim();
-
-    const caspioSentDate = (application as any)?.caspioSentDate;
-    const caspioSentLabel = caspioSentDate
-        ? format(
-            typeof caspioSentDate?.toDate === 'function' ? caspioSentDate.toDate() : new Date(caspioSentDate),
-            'MMM d, yyyy h:mm a'
-        )
-        : 'Date unavailable';
-    const caspioSentByLabel = String(
-      (application as any)?.caspioSentByName ||
-      (application as any)?.caspioSentBy ||
-      (application as any)?.caspioSentByEmail ||
-      ''
-    ).trim();
 
     return (
       <div className="space-y-2">

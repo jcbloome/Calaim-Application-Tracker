@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { PrintableFormLayout } from './PrintableFormLayout';
-import { PrintableField, PrintableFormSection, PrintableSignatureBlock } from './PrintableFormFields';
+import { PrintableField, PrintableFormSection } from './PrintableFormFields';
 
 interface PrintableWaiversFormProps {
   memberName?: string;
@@ -170,7 +170,7 @@ export function PrintableWaiversForm({
             <p className="font-semibold mb-2">1. Acknowledgment of Independent Entities</p>
             <p>
               The undersigned (Member or Power of Attorney/Legal Authorized Representative) acknowledges that 
-              Connections Care Home Consultants LLC ("CONNECTIONS") is a referral and administrative consultant. 
+              Connections Care Home Consultants LLC (&quot;CONNECTIONS&quot;) is a referral and administrative consultant. 
               I understand that the Residential Care Facilities for the Elderly (RCFE) or Adult Residential 
               Facilities (ARF) referred by CONNECTIONS are independent businesses. They are not owned, operated, 
               managed, or supervised by CONNECTIONS.
@@ -182,7 +182,7 @@ export function PrintableWaiversForm({
             <p>
               I understand that placement in a care facility involves inherent risks, including but not limited 
               to medical emergencies, physical injuries, falls, or complications from care. I voluntarily assume 
-              all risks associated with the Member's residency and care at any facility selected, whether or not 
+              all risks associated with the Member&apos;s residency and care at any facility selected, whether or not 
               referred by CONNECTIONS.
             </p>
           </div>
@@ -193,7 +193,7 @@ export function PrintableWaiversForm({
               To the maximum extent permitted by law, I, on behalf of myself, the Member, and our heirs or estate, 
               hereby release, forever discharge, and hold harmless Connections Care Home Consultants LLC, its officers, 
               employees, and agents from any and all liability, claims, and demands of whatever kind or nature, either 
-              in law or in equity, which arise or may hereafter arise from the Member's placement at a facility. This 
+              in law or in equity, which arise or may hereafter arise from the Member&apos;s placement at a facility. This 
               includes, but is not limited to, liability for: Physical Injury or Death, Clinical Care, Safety Issues, 
               or Infections/Illness.
             </p>
@@ -213,8 +213,8 @@ export function PrintableWaiversForm({
             <p className="font-semibold mb-2">5. RN Assessment (ISP) Disclosure</p>
             <p>
               I understand that while a CONNECTIONS RN may perform an Individual Service Plan (ISP) for the purpose 
-              of CalAIM tier-level determination, this assessment does not constitute the "management of care." The 
-              facility is solely responsible for creating its own care plan and ensuring the Member's daily needs 
+              of CalAIM tier-level determination, this assessment does not constitute the &quot;management of care.&quot; The 
+              facility is solely responsible for creating its own care plan and ensuring the Member&apos;s daily needs 
               and safety are met.
             </p>
           </div>
@@ -281,7 +281,7 @@ export function PrintableWaiversForm({
             I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the
             Managed Care Plan pays the assisted living service portion.
           </p>
-          <p>I understand Room and Board payment depends on the member's monthly income.</p>
+          <p>I understand Room and Board payment depends on the member&apos;s monthly income.</p>
           <p>
             I acknowledge that inability to pay any room and board portion may impact eligibility for this community
             support program.

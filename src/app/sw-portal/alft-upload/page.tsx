@@ -79,7 +79,6 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   FileText,
@@ -676,12 +675,6 @@ async function fetchCloudDraftBundle(idToken: string, memberId: string): Promise
   };
 }
 
-/** @deprecated use fetchCloudDraftBundle — kept for any residual call sites */
-async function fetchCloudDraft(idToken: string, memberId: string) {
-  const bundle = await fetchCloudDraftBundle(idToken, memberId);
-  return bundle.draft;
-}
-
 async function saveCloudDraft(
   idToken: string,
   memberId: string,
@@ -883,10 +876,10 @@ export default function SwKaiserAlftPage() {
   const [swRecommendedTier, setSwRecommendedTier] = useState('');
   const draftAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextAutosaveRef = useRef(false);
-  const [templatePdfUrl, setTemplatePdfUrl] = useState('');
-  const [templatePdfLoading, setTemplatePdfLoading] = useState(false);
-  const [templatePdfError, setTemplatePdfError] = useState('');
-  const [templatePdfMode, setTemplatePdfMode] = useState('');
+  const [, setTemplatePdfUrl] = useState('');
+  const [, setTemplatePdfLoading] = useState(false);
+  const [, setTemplatePdfError] = useState('');
+  const [, setTemplatePdfMode] = useState('');
   const [supportPreviewOpen, setSupportPreviewOpen] = useState(false);
   const [supportPreview, setSupportPreview] = useState<{ url: string; name: string } | null>(null);
   const facilityNameFromMember = (member: KaiserMember | null | undefined) =>

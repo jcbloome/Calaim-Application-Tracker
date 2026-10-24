@@ -6,15 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { 
-  Bell, 
-  X, 
-  Target, 
-  MessageSquare, 
-  CheckCircle2, 
+import {
+  X,
+  Target,
+  MessageSquare,
+  CheckCircle2,
   AlertTriangle,
   Clock,
-  Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -94,15 +92,7 @@ const TYPE_CONFIGS = {
   }
 };
 
-const PRIORITY_COLORS = {
-  'Low': 'bg-gray-100 text-gray-800',
-  'Medium': 'bg-blue-100 text-blue-800',
-  'High': 'bg-orange-100 text-orange-800',
-  'Urgent': 'bg-red-100 text-red-800'
-};
-
 export default function WindowsNotification({
-  id,
   type,
   title,
   message,
@@ -111,7 +101,6 @@ export default function WindowsNotification({
   recipientName,
   memberName,
   timestamp,
-  priority,
   duration = 5000,
   minimizeAfter = 7000,
   pendingLabel = 'Pending note',
@@ -126,7 +115,7 @@ export default function WindowsNotification({
   startMinimized = false,
   onFollowUpSave,
   onClose,
-  onClick
+  onClick,
 }: WindowsNotificationProps) {
   const [noteIndex, setNoteIndex] = useState(0);
   const activeNote = notes && notes.length > 0

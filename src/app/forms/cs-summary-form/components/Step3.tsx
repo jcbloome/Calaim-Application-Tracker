@@ -6,7 +6,6 @@ import { useFormContext } from 'react-hook-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import type { FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -16,8 +15,8 @@ import { GlossaryDialog } from '@/components/GlossaryDialog';
 export default function Step3() {
   const { control, watch, setValue, getValues } = useFormContext<FormValues>();
   const pathway = watch('pathway');
-  const healthPlan = watch('healthPlan');
-  const switchingHealthPlan = watch('switchingHealthPlan');
+  watch('healthPlan');
+  watch('switchingHealthPlan');
 
   useEffect(() => {
     if (!String(pathway || '').trim()) return;
@@ -34,7 +33,7 @@ export default function Step3() {
        <Card className="border-l-4 border-accent">
         <CardHeader>
           <CardTitle>Section 7: Health Plan & Pathway Information</CardTitle>
-          <CardDescription>Select the member's Managed Care Plan (MCP).</CardDescription>
+          <CardDescription>Select the member&apos;s Managed Care Plan (MCP).</CardDescription>
         </CardHeader>
         <CardContent>
            <p className="text-sm text-muted-foreground pb-4">
@@ -102,7 +101,7 @@ export default function Step3() {
       <Card className="border-l-4 border-accent">
         <CardHeader>
           <CardTitle>Section 7 (continued): Pathway & Eligibility</CardTitle>
-          <CardDescription>Choose the pathway that best describes the member's situation.</CardDescription>
+          <CardDescription>Choose the pathway that best describes the member&apos;s situation.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
             <div className="space-y-6">

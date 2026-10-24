@@ -11,24 +11,19 @@ import { useToast } from '@/hooks/use-toast';
 import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
 import { useFirestore } from '@/firebase';
 import { collection, getDocs, limit as limitDocs, orderBy, query } from 'firebase/firestore';
-import { 
-  Loader2, 
-  RefreshCw, 
-  Search, 
+import {
+  Loader2,
+  RefreshCw,
+  Search,
   MessageSquareText,
   Calendar,
   User,
   AlertTriangle,
-  CheckCircle2,
-  Clock,
   Download,
-  Filter,
-  FileText,
   Bell,
-  Trash2
+  Trash2,
 } from 'lucide-react';
 import { format, isToday, isThisWeek, isThisMonth } from 'date-fns';
-import Link from 'next/link';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface Note {
@@ -85,7 +80,7 @@ export default function SuperAdminNoteLog() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [staffFilter, setStaffFilter] = useState<string>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [typeFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'timestamp' | 'priority' | 'staff'>('timestamp');
@@ -254,7 +249,7 @@ export default function SuperAdminNoteLog() {
   };
 
   const filteredAndSortedNotes = useMemo(() => {
-    let filtered = notes.filter(note => {
+    const filtered = notes.filter(note => {
       // Search filter
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
@@ -390,13 +385,6 @@ export default function SuperAdminNoteLog() {
 
   const getNoteContent = (note: Note) => {
     return note.noteContent || note.Note_Content || note.Note_Text || note.message || note.title || 'No content available';
-  };
-
-  const getNoteLink = (note: Note) => {
-    if (note.actionUrl) return note.actionUrl;
-    if (note.applicationId) return `/admin/applications/${note.applicationId}`;
-    if (note.clientId2) return `/admin/applications/${note.clientId2}`;
-    return null;
   };
 
   const exportToCSV = () => {

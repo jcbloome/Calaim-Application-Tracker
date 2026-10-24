@@ -177,8 +177,6 @@ export default function WrapUpPage() {
     () => draftClaims.filter((c) => !claimAllVisitsSigned(c)),
     [draftClaims]
   );
-
-  const allSignedOff = notYetSigned.length === 0;
   const canSubmit = Boolean(canSubmitClaims) && readyToSubmit.length > 0;
 
   // ── Submit claims ─────────────────────────────────────────────────────────────
@@ -268,7 +266,7 @@ export default function WrapUpPage() {
             <div className="flex items-start gap-3">
               <StepBadge step={1} done={pendingVisits === 0 && completedVisits > 0} />
               <div className="flex-1">
-                <h2 className="font-semibold">Review today's visits</h2>
+                <h2 className="font-semibold">Review today&apos;s visits</h2>
                 <p className="mt-0.5 text-sm text-muted-foreground">
                   {completedVisits} visit{completedVisits !== 1 ? 's' : ''} recorded this month
                   {pendingVisits > 0 ? `, ${pendingVisits} still need sign-off.` : '.'}
@@ -385,7 +383,7 @@ export default function WrapUpPage() {
           <div className="flex flex-wrap gap-2 pt-2">
             <Button asChild variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground">
               <Link href="/sw-portal/home">
-                <ClipboardList className="h-3.5 w-3.5" /> Back to Today's List
+                <ClipboardList className="h-3.5 w-3.5" /> Back to Today&apos;s List
               </Link>
             </Button>
             <Button asChild variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground">

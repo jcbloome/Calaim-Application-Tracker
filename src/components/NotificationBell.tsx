@@ -120,11 +120,10 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
     };
   }, []);
 
-  if (!webAppEnabled || suppressWeb) {
-    return null;
-  }
+  const webAlertsActive = webAppEnabled && !suppressWeb;
 
   useEffect(() => {
+    if (!webAlertsActive) return;
     if (!firestore || !user?.uid) {
       setIsLoading(false);
       return;
@@ -205,7 +204,7 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
       console.error('Error setting up notification listener:', error);
       setIsLoading(false);
     }
-  }, [firestore, user?.uid]);
+  }, [firestore, user?.uid, webAlertsActive]);
 
   const unreadCount = notifications.length;
 
@@ -219,6 +218,10 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
     if (label === 'Priority') return 'text-orange-600';
     return 'text-blue-600';
   };
+
+  if (!webAlertsActive) {
+    return null;
+  }
 
   return (
     <DropdownMenu>

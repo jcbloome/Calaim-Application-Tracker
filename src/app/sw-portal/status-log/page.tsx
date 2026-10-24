@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -53,7 +52,7 @@ export default function SWStatusLogPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   const [statusMonth, setStatusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
-  const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
+  const [, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
   const [monthRows, setMonthRows] = useState<MonthExportRow[]>([]);
 
   const [showAll, setShowAll] = useState(false);

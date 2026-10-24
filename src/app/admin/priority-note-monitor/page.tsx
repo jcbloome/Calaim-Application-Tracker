@@ -53,7 +53,7 @@ export default function PriorityNoteMonitorPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />
-                  <span>Filters for notes marked as "priority" or "urgent" only</span>
+                  <span>Filters for notes marked as &quot;priority&quot; or &quot;urgent&quot; only</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />

@@ -11,15 +11,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
-import { 
-  collection, 
-  query, 
-  orderBy, 
-  getDocs, 
-  doc, 
-  setDoc, 
+import {
+  collection,
+  query,
+  orderBy,
+  getDocs,
+  doc,
   serverTimestamp,
-  writeBatch
+  writeBatch,
 } from 'firebase/firestore';
 import { 
   Users,

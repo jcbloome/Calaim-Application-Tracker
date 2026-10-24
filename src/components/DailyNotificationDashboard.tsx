@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
-import { collection, collectionGroup, onSnapshot, Timestamp } from 'firebase/firestore';
+import { collection, collectionGroup, onSnapshot } from 'firebase/firestore';
 import { 
   FileText, 
   Upload, 
@@ -15,7 +15,7 @@ import {
   TrendingUp,
   Loader2
 } from 'lucide-react';
-import { format, startOfDay, endOfDay, isToday, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isThisWeek, isThisMonth, getDay, addDays, isSameDay, isWeekend } from 'date-fns';
+import { format, startOfDay, endOfDay, isToday, startOfWeek, endOfWeek, startOfMonth, isThisWeek, isThisMonth, addDays, isSameDay, isWeekend } from 'date-fns';
 
 interface DailyStats {
   newDocuments: number;
@@ -26,10 +26,6 @@ interface DailyStats {
 
 interface WeeklyStats {
   [key: string]: DailyStats;
-}
-
-interface MonthlyStats {
-  [key: string]: WeeklyStats;
 }
 
 interface CsUploadLog {
@@ -50,7 +46,6 @@ export function DailyNotificationDashboard() {
     pendingReview: 0
   });
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStats>({});
-  const [monthlyStats, setMonthlyStats] = useState<MonthlyStats>({});
   const [csUploadLogs, setCsUploadLogs] = useState<CsUploadLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
@@ -97,7 +92,6 @@ export function DailyNotificationDashboard() {
       
       let todayActivityCount = 0;
       const weeklyData: WeeklyStats = {};
-      const monthlyData: MonthlyStats = {};
       const csLogs: CsUploadLog[] = [];
 
       // Initialize weekly stats for the current week

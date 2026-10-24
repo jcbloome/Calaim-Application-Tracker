@@ -5,15 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  UserCheck, 
-  LogOut, 
-  Shield, 
-  User, 
+import {
+  UserCheck,
+  LogOut,
+  Shield,
+  User,
   AlertTriangle,
   Info,
   Phone,
-  Monitor
 } from 'lucide-react';
 import { useSessionIsolation } from '@/hooks/use-session-isolation';
 import { useAdmin } from '@/hooks/use-admin';
@@ -110,7 +109,7 @@ export function AdminAssistMode({ onStartAssisting, isAssisting, assistingMember
                 <Alert>
                   <Info className="h-4 w-4" />
                   <AlertDescription>
-                    You'll be switched to user mode to help fill out the CS Summary Form. 
+                    You&apos;ll be switched to user mode to help fill out the CS Summary Form. 
                     Your admin session will be safely terminated.
                   </AlertDescription>
                 </Alert>
@@ -178,7 +177,7 @@ export function AdminAssistMode({ onStartAssisting, isAssisting, assistingMember
           <ul className="list-disc list-inside space-y-1 text-muted-foreground">
             <li>Always verify member identity before starting assistance</li>
             <li>Explain each step of the form as you fill it out together</li>
-            <li>Let the member provide all information - don't assume details</li>
+            <li>Let the member provide all information - don&apos;t assume details</li>
             <li>Save progress frequently in case of technical issues</li>
             <li>Review all information with the member before submitting</li>
           </ul>

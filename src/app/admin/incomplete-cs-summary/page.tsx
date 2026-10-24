@@ -8,8 +8,7 @@
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
  import { Input } from '@/components/ui/input';
  import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
- import { Badge } from '@/components/ui/badge';
- import { useToast } from '@/hooks/use-toast';
+  import { useToast } from '@/hooks/use-toast';
  import { useAdmin } from '@/hooks/use-admin';
  import { useFirestore } from '@/firebase';
  import type { Application } from '@/lib/definitions';

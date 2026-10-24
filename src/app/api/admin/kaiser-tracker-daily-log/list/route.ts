@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     const authz = await requireLogReader(idToken);
     if (!authz.ok) return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
 
-    let query: any = authz.adminDb.collection(LOG_COLLECTION).where('dateKey', '==', dateKey).limit(limit);
+    const query: any = authz.adminDb.collection(LOG_COLLECTION).where('dateKey', '==', dateKey).limit(limit);
     const snap = await query.get();
     let rows = snap.docs.map((docSnap: any) => ({ id: docSnap.id, ...(docSnap.data() as any) }));
 

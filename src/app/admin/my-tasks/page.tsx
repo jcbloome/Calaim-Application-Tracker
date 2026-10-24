@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
-import { useUser } from '@/firebase';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -60,7 +59,6 @@ const nextActions: Record<string, string> = {
 
 export default function MyTasksPage() {
   const { isAdmin, user: currentUser } = useAdmin();
-  const { user } = useUser();
   const { toast } = useToast();
   const [tasks, setTasks] = useState<MyKaiserTask[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -73,30 +71,6 @@ export default function MyTasksPage() {
     today.setHours(0, 0, 0, 0);
     const diffTime = dueDate.getTime() - today.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
-
-  const formatDate = (dateString: string): string => {
-    if (!dateString) return 'No date set';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
-  };
-
-  const getUrgencyColor = (daysUntilDue: number, isOverdue: boolean): string => {
-    if (isOverdue) return 'bg-red-100 text-red-800 border-red-200';
-    if (daysUntilDue <= 0) return 'bg-red-100 text-red-800 border-red-200';
-    if (daysUntilDue <= 1) return 'bg-orange-100 text-orange-800 border-orange-200';
-    if (daysUntilDue <= 3) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    return 'bg-green-100 text-green-800 border-green-200';
-  };
-
-  const getUrgencyIcon = (daysUntilDue: number, isOverdue: boolean) => {
-    if (isOverdue || daysUntilDue <= 0) return <AlertTriangle className="h-3 w-3" />;
-    if (daysUntilDue <= 3) return <Clock className="h-3 w-3" />;
-    return <CheckCircle className="h-3 w-3" />;
   };
 
   // Fetch my Kaiser tasks
@@ -310,14 +284,6 @@ export default function MyTasksPage() {
 }
 
 function TaskTable({ tasks }: { tasks: MyKaiserTask[] }) {
-  const getDaysUntilDue = (dateString: string): number => {
-    if (!dateString) return 999;
-    const dueDate = new Date(dateString);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diffTime = dueDate.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
 
   const formatDate = (dateString: string): string => {
     if (!dateString) return 'No date set';

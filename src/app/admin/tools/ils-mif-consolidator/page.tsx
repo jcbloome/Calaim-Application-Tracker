@@ -2245,7 +2245,6 @@ export default function IlsMifConsolidatorPage() {
     let combinedForCheck: IlsMifMasterRow[] | null = null;
     let warningLines: string[] = [];
     let names: string[] = [];
-    let uploadNetAdded = 0;
     let uploadFileNames: string[] = [];
     let parsedByFileForHistory: Map<string, IlsMifMasterRow[]> | null = null;
     let uploadCompanionSheets: IlsMifCompanionSheet[] = [];
@@ -2389,7 +2388,6 @@ export default function IlsMifConsolidatorPage() {
             ? 'bg-green-100 text-green-900 border-green-200'
             : 'bg-amber-100 text-amber-950 border-amber-200',
       });
-      uploadNetAdded = netAddedToMaster;
       uploadFileNames = names;
       const identityStats = summarizeIlsMifUploadIdentityStats(parsedBatches);
       setSpreadsheetDuplicateLines(identityStats.repeatLines);
@@ -2587,7 +2585,7 @@ export default function IlsMifConsolidatorPage() {
           markKaiserInactive?: boolean;
         }
       >();
-      let existingMonthly: Record<string, number> = {};
+      const existingMonthly: Record<string, number> = {};
       existingMasterSnap.forEach((docSnap) => {
         if (docSnap.id === '_meta') {
           const meta = docSnap.data() || {};

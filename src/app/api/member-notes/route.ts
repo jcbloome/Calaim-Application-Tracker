@@ -1,22 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
-import { CaspioService } from '@/modules/caspio-integration/services/CaspioService';
+import { adminDb as firebaseAdminDb } from '@/firebase-admin';
+import { Timestamp as FirestoreTimestamp, FieldValue as FirestoreFieldValue } from 'firebase-admin/firestore';
 
-// Try to import Firebase Admin, but handle gracefully if not available
-let adminDb: any = null;
-let Timestamp: any = null;
-let FieldValue: any = null;
-
-try {
-  const firebaseAdmin = require('@/firebase-admin');
-  adminDb = firebaseAdmin.adminDb;
-  const { Timestamp: FirestoreTimestamp, FieldValue: FirestoreFieldValue } = require('firebase-admin/firestore');
-  Timestamp = FirestoreTimestamp;
-  FieldValue = FirestoreFieldValue;
-  console.log('✅ Firebase Admin SDK loaded successfully');
-} catch (error: any) {
-  console.warn('⚠️ Firebase Admin SDK not available, using cache-only mode:', error.message);
-}
+const adminDb: any = firebaseAdminDb ?? null;
+const Timestamp: any = FirestoreTimestamp;
+const FieldValue: any = FirestoreFieldValue;
 
 interface CaspioNote {
   PK_ID?: number;
@@ -172,31 +161,6 @@ interface MemberNote {
 function getCaspioConfig() {
   const credentials = getCaspioCredentialsFromEnv();
   return { credentials, baseUrl: credentials.baseUrl };
-}
-
-// Handle full-text search using new Caspio module
-async function handleGlobalNoteSearchWithModule(searchQuery: string) {
-  try {
-    const caspioService = CaspioService.getInstance() as CaspioService & {
-      searchNotes?: (query: string) => Promise<unknown[]>;
-    };
-    const notes = await caspioService.searchNotes!(searchQuery);
-
-    return NextResponse.json({
-      success: true,
-      notes: notes,
-      count: notes.length,
-      searchQuery,
-      source: 'caspio-module-search',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error: any) {
-    console.error('❌ Global note search failed:', error);
-    return NextResponse.json(
-      { success: false, error: 'Search failed', details: error.message },
-      { status: 500 }
-    );
-  }
 }
 
 // Legacy global note search function (kept for backward compatibility)
@@ -699,8 +663,8 @@ async function commitBatchWithBackoff(batch: any, context: string): Promise<void
 }
 
 // Temporary in-memory storage as fallback
-let memberNotesCache: { [clientId2: string]: MemberNote[] } = {};
-let syncStatusCache: { [clientId2: string]: any } = {};
+const memberNotesCache: { [clientId2: string]: MemberNote[] } = {};
+const syncStatusCache: { [clientId2: string]: any } = {};
 
 // Firestore collection names
 const MEMBER_NOTES_COLLECTION = 'member-notes';
@@ -962,7 +926,6 @@ function noteMatchesAssignedStaff(
 // Health monitoring configuration
 const SYNC_HEALTH_COLLECTION = 'sync-health-status';
 const MAX_FAILED_SYNCS = 3;
-const HEALTH_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 interface SyncHealth {
   lastSuccessfulSync: string;
@@ -1561,116 +1524,6 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
   });
 }
 
-const toCaspioDate = (value?: string): string | null => {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return null;
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yyyy = String(d.getFullYear());
-  return `${mm}/${dd}/${yyyy}`;
-};
-
-async function resolveCaspioUserIdForMember(params: {
-  baseUrl: string;
-  token: string;
-  clientId2: string;
-  preferredUserId: number;
-}): Promise<number> {
-  const { baseUrl, token, clientId2, preferredUserId } = params;
-  if (Number.isFinite(preferredUserId) && preferredUserId > 0) return preferredUserId;
-  const envFallback = Number.parseInt(String(process.env.CASPIO_NOTES_DEFAULT_USER_ID || '').trim(), 10);
-  if (Number.isFinite(envFallback) && envFallback > 0) return envFallback;
-  try {
-    const whereClause = `Client_ID2='${clientId2}'`;
-    const url =
-      `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records` +
-      `?q.where=${encodeURIComponent(whereClause)}` +
-      `&q.orderBy=${encodeURIComponent('Time_Stamp DESC')}` +
-      `&q.limit=1` +
-      `&q.select=${encodeURIComponent('User_ID')}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    if (res.ok) {
-      const data = await res.json().catch(() => ({}));
-      const latest = Array.isArray(data?.Result) ? data.Result[0] : null;
-      const latestUserId = Number.parseInt(String(latest?.User_ID || '').trim(), 10);
-      if (Number.isFinite(latestUserId) && latestUserId > 0) return latestUserId;
-    }
-  } catch {
-    // ignore and use hard fallback
-  }
-  // Last-resort value to avoid null writes; may still fail if Caspio rejects it.
-  return 1;
-}
-
-async function syncNoteToCaspio(note: MemberNote): Promise<{ success: boolean; error?: string }> {
-  try {
-    console.log(`📤 Syncing new note to connect_tbl_clientnotes: ${note.id}`);
-    
-    const { credentials, baseUrl } = getCaspioConfig();
-    const token = await getCaspioToken(credentials);
-    
-    const parsedUserId = Number.parseInt(String(note.createdBy || '').trim(), 10);
-    const safeUserId = await resolveCaspioUserIdForMember({
-      baseUrl,
-      token,
-      clientId2: String(note.clientId2 || '').trim(),
-      preferredUserId: Number.isFinite(parsedUserId) ? parsedUserId : 0,
-    });
-
-    // Create new record in connect_tbl_clientnotes
-    const caspioData = {
-      Client_ID2: parseInt(note.clientId2),
-      Comments: note.noteText,
-      User_ID: safeUserId,
-      Time_Stamp: note.createdAt,
-      Follow_Up_Date: toCaspioDate(note.followUpDate),
-      Note_Status: note.status || 'Open',
-      Follow_Up_Status: note.priority === 'Urgent' ? '🔴 Urgent' : note.priority === 'Priority' ? '🟡 Priority' : '🟢Open',
-      User_Full_Name: note.createdByName,
-      Follow_Up_Assignment: note.assignedTo || null,
-      Assigned_First: note.assignedToName || null
-    };
-
-    const apiUrl = `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records`;
-    
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(caspioData),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to create note in Caspio: ${response.status} ${errorText}`);
-    }
-
-    // Handle empty 201 response
-    let result = null;
-    const responseText = await response.text();
-    if (responseText.trim()) {
-      result = JSON.parse(responseText);
-    }
-    
-    console.log(`✅ Note synced to Caspio connect_tbl_clientnotes: ${note.id}`);
-    return { success: true };
-
-  } catch (error: any) {
-    console.error('❌ Error syncing note to Caspio:', error);
-    return { success: false, error: error?.message || 'Unknown Caspio sync error' };
-  }
-}
-
 async function syncExistingNoteStatusToCaspio(params: {
   noteId: string;
   status: MemberNote['status'];
@@ -1722,96 +1575,6 @@ async function syncExistingNoteStatusToCaspio(params: {
   } catch (error: any) {
     return { success: false, error: error?.message || 'Failed to sync note status to Caspio' };
   }
-}
-
-
-async function sendNoteNotification(note: MemberNote): Promise<void> {
-  try {
-    if (!note.assignedTo || !note.assignedToName) return;
-    const noteText = String(note.noteText ?? '').trim();
-
-    console.log(`🔔 Sending notification to ${note.assignedToName} for note: ${note.id}`);
-    
-    if (!adminDb || !Timestamp) {
-      console.log(`⚠️ Firestore not available, notification not saved for note: ${note.id}`);
-      return;
-    }
-    
-    // Create a notification record in Firestore for real-time notifications
-    const notification = {
-      userId: note.assignedTo,
-      title: `Priority Note: ${note.memberName}`,
-      message: noteText.substring(0, 200) + (noteText.length > 200 ? '...' : ''),
-      memberName: note.memberName,
-      priority: note.priority,
-      type: 'note_assignment',
-      isRead: false,
-      status: note.status || 'Open',
-      requiresStaffAction: note.priority === 'Priority' || note.priority === 'Urgent',
-      timestamp: Timestamp.now(),
-      noteId: note.id,
-      clientId2: note.clientId2,
-      senderName: note.createdByName,
-      createdBy: note.createdBy,
-      createdByName: note.createdByName,
-      actionUrl: `/admin/member-notes?clientId2=${note.clientId2}`,
-      metadata: {
-        noteId: note.id,
-        clientId2: note.clientId2,
-        assignedBy: note.createdByName,
-        noteType: note.noteType
-      }
-    };
-
-    // Save to Firestore staff_notifications collection for real-time updates
-    await adminDb.collection('staff_notifications').add(notification);
-    
-    console.log(`🔔 Real-time notification created for ${note.assignedToName} (Priority: ${note.priority})`);
-    console.log(`✅ Notification saved to Firestore for ${note.assignedToName}`);
-
-  } catch (error) {
-    console.error('Error sending note notification:', error);
-  }
-}
-
-function getStaffEmail(staffId: string): string | null {
-  // Staff email mapping (in production, this would be a database lookup)
-  const staffEmailMap: { [key: string]: string } = {
-    'nick-staff': 'nick@carehomefinders.com',
-    'john-staff': 'john@carehomefinders.com',
-    'jessie-staff': 'jessie@carehomefinders.com',
-    'jason-admin': 'jason@carehomefinders.com',
-    'monica-staff': 'monica@carehomefinders.com',
-    'leidy-staff': 'leidy@carehomefinders.com'
-  };
-  
-  return staffEmailMap[staffId] || null;
-}
-
-function getUserDisplayName(userId: string): string {
-  // In production, this would lookup user details from the database
-  const userMap: { [key: string]: string } = {
-    'sarah_johnson': 'Sarah Johnson, MSW',
-    'mike_wilson': 'Dr. Mike Wilson, RN',
-    'emily_davis': 'Emily Davis, MSW',
-    'david_chen': 'David Chen, RN'
-  };
-  
-  return userMap[userId] || userId;
-}
-
-function getStaffDisplayName(staffId: string): string {
-  // Staff display name mapping (in production, this would be a database lookup)
-  const staffNameMap: { [key: string]: string } = {
-    'nick-staff': 'Nick Rodriguez',
-    'john-staff': 'John Smith',
-    'jessie-staff': 'Jessie Martinez',
-    'jason-admin': 'Jason Bloome',
-    'monica-staff': 'Monica Garcia',
-    'leidy-staff': 'Leidy Kanjanapitak'
-  };
-  
-  return staffNameMap[staffId] || staffId;
 }
 
 async function logSystemNoteAction(payload: {

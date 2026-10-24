@@ -4,12 +4,11 @@
 // Provides centralized state management for all task-related functionality
 
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import type { 
-  TaskManagementState, 
-  TaskAction, 
-  UnifiedTask, 
+import type {
+  TaskManagementState,
+  TaskAction,
+  UnifiedTask,
   TaskFilter,
-  AutomationRule 
 } from './types';
 import { taskProcessor } from './task-processor';
 import { workflowEngine } from './workflow-engine';

@@ -19,16 +19,16 @@ const infoSections = [
       "NMOHC is a payment supplement that boosts a person's monthly SSI check because they live in a licensed assisted living home rather than an apartment or house.",
       'In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state recognizes that costs are much higher than someone living independently. To help cover this, the person moves from the "Independent Living" rate to the "NMOHC" rate.',
       <div key="nmohc-1">
-        <strong>1. Confirm Financial Eligibility (The "Paper" Test)</strong>
+        <strong>1. Confirm Financial Eligibility (The &quot;Paper&quot; Test)</strong>
         <p>Since NMOHC is part of the SSI program, you can verify the financial requirements now.</p>
         <ul className="list-disc pl-5 mt-2 space-y-1">
-          <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
+          <li>Income: For 2026, total &quot;countable&quot; monthly income must be less than $1,626.07.</li>
           <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
           <li>Note: One car and the primary home are usually excluded from this limit.</li>
         </ul>
       </div>,
       <div key="nmohc-2" className="mt-4">
-        <strong>2. Verification with Social Security (The "Pre-Move" Call)</strong>
+        <strong>2. Verification with Social Security (The &quot;Pre-Move&quot; Call)</strong>
         <p>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</p>
         <ul className="list-disc pl-5 mt-2 space-y-1">
           <li>Tell them the person plans to move into a licensed RCFE.</li>

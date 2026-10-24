@@ -2,7 +2,7 @@
 // All Firebase-related types in one place for consistency
 
 import type { User } from 'firebase/auth';
-import type { Timestamp, DocumentData, QueryConstraint, OrderByDirection, WhereFilterOp } from 'firebase/firestore';
+import type { Timestamp, DocumentData, OrderByDirection, WhereFilterOp } from 'firebase/firestore';
 
 // ==================== USER & AUTH ====================
 

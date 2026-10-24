@@ -126,7 +126,7 @@ export function PrintableWaiversFormSpanish({
             <p className="font-semibold mb-2">1. Reconocimiento de Entidades Independientes</p>
             <p>
               El suscrito (Miembro o Poder Notarial/Representante Legal Autorizado) reconoce que 
-              Connections Care Home Consultants LLC ("CONNECTIONS") es un consultor de referencia y administrativo. 
+              Connections Care Home Consultants LLC (&quot;CONNECTIONS&quot;) es un consultor de referencia y administrativo. 
               Entiendo que las Instalaciones de Cuidado Residencial para Ancianos (RCFE) o Instalaciones 
               Residenciales para Adultos (ARF) referidas por CONNECTIONS son negocios independientes. No son 
               propiedad, operadas, administradas o supervisadas por CONNECTIONS.
@@ -169,7 +169,7 @@ export function PrintableWaiversFormSpanish({
             <p className="font-semibold mb-2">5. Divulgación de Evaluación RN (ISP)</p>
             <p>
               Entiendo que aunque un RN de CONNECTIONS puede realizar un Plan de Servicio Individual (ISP) para 
-              el propósito de determinación de nivel CalAIM, esta evaluación no constituye el "manejo del cuidado." 
+              el propósito de determinación de nivel CalAIM, esta evaluación no constituye el &quot;manejo del cuidado.&quot; 
               La instalación es únicamente responsable de crear su propio plan de cuidado y asegurar que las 
               necesidades diarias y seguridad del Miembro sean satisfechas.
             </p>

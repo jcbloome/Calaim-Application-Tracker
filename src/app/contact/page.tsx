@@ -3,7 +3,7 @@
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Phone, Mail, Globe, MapPin, Clock, Users } from 'lucide-react';
+import { Phone, Mail, Globe, Clock, Users } from 'lucide-react';
 import { PublicHeader } from '@/components/PublicHeader';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -33,7 +33,7 @@ export default function ContactPage() {
               Contact <span className="text-blue-600">Connect CalAIM</span>
             </h1>
             <p className="text-lg sm:text-xl text-gray-600 max-w-3xl mx-auto">
-              We're here to help you with your CalAIM Community Support for Assisted Transitions
+              We&apos;re here to help you with your CalAIM Community Support for Assisted Transitions
             </p>
           </div>
 
@@ -130,7 +130,7 @@ export default function ContactPage() {
                 <div className="mt-4 p-3 bg-blue-50 rounded-lg">
                   <p className="text-sm text-blue-800">
                     <strong>Emergency Support:</strong> For urgent matters outside business hours, 
-                    please email us and we'll respond as soon as possible.
+                    please email us and we&apos;ll respond as soon as possible.
                   </p>
                 </div>
               </CardContent>

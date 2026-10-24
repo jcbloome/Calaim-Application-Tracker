@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,27 +9,21 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { 
-  Loader2, 
-  RefreshCw, 
-  CheckCircle2, 
-  AlertTriangle, 
+import {
+  Loader2,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
   Search,
   Users,
   FolderOpen,
   Brain,
   Download,
   Upload,
-  Filter,
   Eye,
   EyeOff,
-  FileText,
-  Folder,
-  ExternalLink,
-  Check,
-  X,
   AlertCircle,
-  Target
+  Target,
 } from 'lucide-react';
 import {
   Table,
@@ -693,7 +687,7 @@ export default function ComprehensiveDriveMatching() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredSuggestions.map((suggestion, index) => {
+                    {filteredSuggestions.map((suggestion, _index) => {
                       const originalIndex = suggestions.indexOf(suggestion);
                       return (
                         <TableRow key={originalIndex} className={suggestion.requiresManualReview ? 'bg-yellow-50' : ''}>
@@ -932,7 +926,7 @@ export default function ComprehensiveDriveMatching() {
                   Unmatched Caspio Members
                 </CardTitle>
                 <CardDescription>
-                  These members don't have corresponding Drive folders or couldn't be matched
+                  These members don&apos;t have corresponding Drive folders or couldn&apos;t be matched
                 </CardDescription>
               </CardHeader>
               <CardContent>

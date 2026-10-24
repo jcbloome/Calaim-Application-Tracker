@@ -22,8 +22,9 @@ const buildField = (props: FieldProps) => React.createElement(PrintableField, pr
 const buildRow = (children: React.ReactNode[]) =>
   React.createElement(PrintableFormRow, null, children);
 
-const buildSection = (title: string, children: React.ReactNode[]) =>
-  React.createElement(PrintableFormSection, { title, children });
+const buildSection = (title: string, children: React.ReactNode[]) => (
+  <PrintableFormSection title={title}>{children}</PrintableFormSection>
+);
 
 export function PrintableCsSummaryFormVietnamese({
   data = {},
@@ -370,15 +371,15 @@ export function PrintableCsSummaryFormVietnamese({
     null
   ];
 
-  return React.createElement(
-    PrintableFormLayout,
-    {
-      title: 'Don tom tat thanh vien ho tro cong dong CalAIM',
-      subtitle: 'Chuong trinh chuyen tiep song ho tro',
-      formType: 'cs-summary',
-      applicationData: { id: applicationId },
-      showPrintButton,
-      children: layoutChildren,
-    },
+  return (
+    <PrintableFormLayout
+      title="Don tom tat thanh vien ho tro cong dong CalAIM"
+      subtitle="Chuong trinh chuyen tiep song ho tro"
+      formType="cs-summary"
+      applicationData={{ id: applicationId }}
+      showPrintButton={showPrintButton}
+    >
+      {layoutChildren}
+    </PrintableFormLayout>
   );
 }

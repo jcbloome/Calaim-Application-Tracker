@@ -243,7 +243,7 @@ function KaiserReferralEmailLogsPageContent() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [deletingLogId, setDeletingLogId] = useState('');
+  const [deletingLogId] = useState('');
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [authUpdatingById, setAuthUpdatingById] = useState<Record<string, boolean>>({});
   const [selectedLogIds, setSelectedLogIds] = useState<Record<string, boolean>>({});
@@ -312,8 +312,6 @@ function KaiserReferralEmailLogsPageContent() {
         return sortDirection === 'desc' ? bMs - aMs : aMs - bMs;
       }
 
-      const aMemberMrn = resolveMemberMrn(a);
-      const bMemberMrn = resolveMemberMrn(b);
       const aSubmittedBy = resolveSubmittedByName(a);
       const bSubmittedBy = resolveSubmittedByName(b);
       const aMemberLastName = resolveMemberLastName(a);
@@ -349,27 +347,6 @@ function KaiserReferralEmailLogsPageContent() {
       confirmText: 'Delete',
       destructive: true,
     });
-  };
-
-  const handleDeleteLog = async (logId: string) => {
-    if (!firestore || !logId) return;
-    if (!(await requestDeleteVerification(1))) return;
-    setDeletingLogId(logId);
-    try {
-      await deleteDoc(doc(firestore, 'emailLogs', logId));
-      setSelectedLogIds((prev) => {
-        if (!prev[logId]) return prev;
-        const next = { ...prev };
-        delete next[logId];
-        return next;
-      });
-    } catch (error) {
-      console.error('Failed to delete Kaiser referral log:', error);
-      const message = error instanceof Error ? error.message : String(error || 'Unknown error');
-      await appAlert(`Failed to delete log. ${message}`);
-    } finally {
-      setDeletingLogId('');
-    }
   };
 
   const handleDeleteSelectedLogs = async () => {

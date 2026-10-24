@@ -283,7 +283,7 @@ export default function SWHistoryPage() {
       {/* Link to today */}
       <div className="pt-2">
         <Button asChild variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground">
-          <Link href="/sw-portal/home">← Back to Today's List</Link>
+          <Link href="/sw-portal/home">← Back to Today&apos;s List</Link>
         </Button>
       </div>
     </div>

@@ -1,29 +1,24 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { 
-  Search, 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  Users, 
-  CheckCircle, 
-  AlertTriangle, 
+import {
+  Search,
+  Calendar,
+  Clock,
+  CheckCircle,
+  AlertTriangle,
   Plus,
   Edit,
   Eye,
-  Filter,
   Download,
   Upload,
-  Bell
+  Bell,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -48,29 +43,16 @@ interface Visit {
   careLevel: 'Low' | 'Medium' | 'High';
 }
 
-interface VisitReport {
-  id: string;
-  visitId: string;
-  memberCondition: 'Excellent' | 'Good' | 'Fair' | 'Poor';
-  rcfeCompliance: 'Compliant' | 'Minor Issues' | 'Major Issues';
-  actionItems: string[];
-  nextVisitRecommendation: string;
-  reportDate: string;
-  reportedBy: string;
-}
-
 export default function MonthlyVisitsPage() {
   const [visits, setVisits] = useState<Visit[]>([]);
-  const [visitReports, setVisitReports] = useState<VisitReport[]>([]);
-  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCounty, setSelectedCounty] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [activeTab, setActiveTab] = useState('calendar');
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [showReportModal, setShowReportModal] = useState(false);
-  const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
+  const [, setShowScheduleModal] = useState(false);
+  const [, setShowReportModal] = useState(false);
+  const [, setSelectedVisit] = useState<Visit | null>(null);
 
   const { toast } = useToast();
 
@@ -220,19 +202,6 @@ export default function MonthlyVisitsPage() {
     toast({
       title: "Visit Completed",
       description: "Visit has been marked as completed",
-    });
-  };
-
-  const handleRescheduleVisit = (visitId: string, newDate: string, newTime: string) => {
-    setVisits(prev => prev.map(visit =>
-      visit.id === visitId
-        ? { ...visit, scheduledDate: newDate, scheduledTime: newTime }
-        : visit
-    ));
-
-    toast({
-      title: "Visit Rescheduled",
-      description: "Visit has been rescheduled successfully",
     });
   };
 

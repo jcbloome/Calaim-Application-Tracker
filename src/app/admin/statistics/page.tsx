@@ -5,7 +5,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useFirestore } from '@/firebase';
-import { collection, query, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
+import { Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Loader2, RefreshCw, Users, Building2, Stethoscope, UserCheck, Activity, BarChart3, FileDown } from 'lucide-react';
 import {
@@ -179,7 +179,7 @@ export default function AdminStatisticsPage() {
   // Status statistics state
   const [statusBreakdown, setStatusBreakdown] = useState<any>({});
   const [statsLoading, setStatsLoading] = useState(false);
-  const [statsError, setStatsError] = useState<string | null>(null);
+  const [, setStatsError] = useState<string | null>(null);
 
   const [selectedMemberFilter, setSelectedMemberFilter] = useState<'authorized' | 'rcfe' | 'social_worker' | 'rn' | null>(null);
   const [healthNetRcfeRows, setHealthNetRcfeRows] = useState<HealthNetRcfeReportRow[]>([]);

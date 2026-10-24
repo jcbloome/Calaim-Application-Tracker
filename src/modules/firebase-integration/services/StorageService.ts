@@ -10,7 +10,7 @@ import {
 import { storage } from '@/firebase';
 import { FirebaseErrorHandler } from '../utils/errorHandler';
 import { FIREBASE_CONFIG } from '../config/constants';
-import type { StorageOptions, StorageFile, UploadProgress } from '../types';
+import type { StorageOptions, StorageFile } from '../types';
 
 export class StorageService {
   private storage = storage;

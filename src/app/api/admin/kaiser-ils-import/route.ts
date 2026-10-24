@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/firebase-admin';
 import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
 import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
 import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
 
 export async function POST(req: NextRequest) {
   try {

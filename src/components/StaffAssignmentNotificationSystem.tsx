@@ -7,15 +7,14 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Bell, 
-  Volume2, 
-  VolumeX, 
-  Settings, 
-  Users, 
+import {
+  Bell,
+  Volume2,
+  VolumeX,
+  Settings,
+  Users,
   CheckCircle,
   AlertCircle,
-  Loader2
 } from 'lucide-react';
 import { useGlobalNotifications } from '@/components/NotificationProvider';
 
@@ -70,7 +69,7 @@ export default function StaffAssignmentNotificationSystem() {
         description: `${key.replace(/([A-Z])/g, ' $1').toLowerCase()} ${value ? 'enabled' : 'disabled'}`,
         className: "bg-green-100 text-green-900 border-green-200",
       });
-    } catch (error) {
+    } catch  {
       toast({
         variant: "destructive",
         title: "Update Failed",

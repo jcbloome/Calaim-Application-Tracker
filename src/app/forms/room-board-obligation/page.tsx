@@ -217,13 +217,13 @@ function RoomBoardObligationContent() {
               </div>
 
               <div className="prose prose-sm max-w-none text-gray-700 space-y-3 p-4 border rounded-lg bg-muted/30">
-                <p>The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible for paying the RCFE the "assisted living" portion.</p>
-                <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Any income above $1,444.07 is not paid as "room and board" unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a higher amount for a private room (since the program does not mandate private rooms).</p>
-                <p>Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
-                <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board" payment from the member or, in certain cases, from a family member/authorized representative.</p>
-                <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
-                <p>The RCFE may also require the member/family to sign a separate admission agreement or contract that confirms the "room and board" obligation (and, in some cases, a notarized form).</p>
-                <p>If the member requests a private room, or the selected RCFE’s rates exceed the standard "room and board" plus the MCP "assisted living" payment, the RCFE may require a separate agreement for the member/family to pay an additional amount. Any such additional amount is not reflected in this commitment form.</p>
+                <p>The MCP member is responsible for paying the RCFE the &quot;room and board&quot; portion and the MCP is responsible for paying the RCFE the &quot;assisted living&quot; portion.</p>
+                <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for &quot;room and board&quot;. Any income above $1,444.07 is not paid as &quot;room and board&quot; unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a higher amount for a private room (since the program does not mandate private rooms).</p>
+                <p>Members not eligible for the NMOHC will still have a &quot;room and board&quot; obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
+                <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a &quot;room and board&quot; payment from the member or, in certain cases, from a family member/authorized representative.</p>
+                <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the &quot;room and board&quot; payment.</p>
+                <p>The RCFE may also require the member/family to sign a separate admission agreement or contract that confirms the &quot;room and board&quot; obligation (and, in some cases, a notarized form).</p>
+                <p>If the member requests a private room, or the selected RCFE’s rates exceed the standard &quot;room and board&quot; plus the MCP &quot;assisted living&quot; payment, the RCFE may require a separate agreement for the member/family to pay an additional amount. Any such additional amount is not reflected in this commitment form.</p>
               </div>
 
               <div className="space-y-4">
@@ -242,7 +242,7 @@ function RoomBoardObligationContent() {
                         />
                         <Label htmlFor="room-board-agree" className="text-blue-700">
                           Member/authorized representative <span className="font-semibold">agrees</span> to pay the required
-                          "room and board" portion.
+                          &quot;room and board&quot; portion.
                         </Label>
                       </div>
 
@@ -255,7 +255,7 @@ function RoomBoardObligationContent() {
                         />
                         <Label htmlFor="room-board-disagree" className="text-blue-700">
                           Member/authorized representative <span className="font-semibold">does not agree</span> to pay the required
-                          "room and board" portion.
+                          &quot;room and board&quot; portion.
                         </Label>
                       </div>
                     </div>

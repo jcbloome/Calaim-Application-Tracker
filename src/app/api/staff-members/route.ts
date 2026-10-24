@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     const includeFirebaseAdmins = searchParams.get('includeFirebaseAdmins') === 'true';
     const includeCaspioStaff = searchParams.get('includeCaspioStaff') !== 'false'; // Default to true
 
-    let allStaff: any[] = [];
+    const allStaff: any[] = [];
 
     // Fetch Firebase admin users if requested
     if (includeFirebaseAdmins) {

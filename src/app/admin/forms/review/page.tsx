@@ -3,19 +3,18 @@
 
 // This is a wrapper around the main review page component.
 // It ensures that the review page is loaded within the admin layout.
-import React, { Suspense, useMemo } from 'react';
+import React, { Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { useToast } from '@/hooks/use-toast';
+import { doc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, ArrowLeft, Send, Edit, CheckCircle2 } from 'lucide-react';
+import { Loader2, ArrowLeft, Edit, CheckCircle2 } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
-import type { FormStatus as FormStatusType, Application } from '@/lib/definitions';
+import type { Application } from '@/lib/definitions';
 
 
 const Field = ({ label, value, fullWidth = false }: { label: string; value?: string | number | null; fullWidth?: boolean }) => (
@@ -49,12 +48,12 @@ const formatDate = (date: any) => {
             try {
                 const parsedDate = parse(date, 'MM/dd/yyyy', new Date());
                 return format(parsedDate, 'PPP');
-            } catch (e) { return date; }
+            } catch  { return date; }
         }
         try {
             const parsedDate = new Date(date);
             if (!isNaN(parsedDate.getTime())) return format(parsedDate, 'PPP');
-        } catch (e) { /* Fallthrough */ }
+        } catch  { /* Fallthrough */ }
     }
     if (date && typeof date.toDate === 'function') {
         return format(date.toDate(), 'PPP');

@@ -11,17 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useUser } from '@/firebase';
 import { notifyNotificationSettingsChanged } from '@/lib/notification-utils';
-import { 
-  Bell, 
-  Smartphone, 
-  Mail, 
-  Settings, 
-  CheckCircle, 
+import {
+  Bell,
+  Smartphone,
+  Settings,
+  CheckCircle,
   XCircle,
   AlertTriangle,
   Info,
   Volume2,
-  VolumeX
+  VolumeX,
 } from 'lucide-react';
 import { usePushNotifications } from '@/components/PushNotificationManager';
 import { playNotificationSound, type NotificationSoundType } from '@/lib/notification-sounds';
@@ -61,7 +60,6 @@ export default function NotificationSettingsPage() {
     }
   });
   const [loading, setLoading] = useState(false);
-  const [fcmToken, setFcmToken] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [isTestingSound, setIsTestingSound] = useState(false);
   const { user } = useUser();
@@ -328,7 +326,7 @@ export default function NotificationSettingsPage() {
             <Alert className="mt-4">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Your browser doesn't support push notifications. Please use a modern browser like Chrome, Firefox, or Safari.
+                Your browser doesn&apos;t support push notifications. Please use a modern browser like Chrome, Firefox, or Safari.
               </AlertDescription>
             </Alert>
           )}
@@ -337,7 +335,7 @@ export default function NotificationSettingsPage() {
             <Alert className="mt-4">
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Push notifications are disabled. Click "Request Permission" below to enable desktop notifications.
+                Push notifications are disabled. Click &quot;Request Permission&quot; below to enable desktop notifications.
               </AlertDescription>
             </Alert>
           )}
@@ -556,7 +554,7 @@ export default function NotificationSettingsPage() {
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
-              <strong>How it works:</strong> When a staff member assigns a note to you, you'll receive an instant 
+              <strong>How it works:</strong> When a staff member assigns a note to you, you&apos;ll receive an instant 
               desktop notification even if the CalAIM app is closed. This replaces the unreliable Caspio email triggers 
               with a much more reliable push notification system.
             </AlertDescription>

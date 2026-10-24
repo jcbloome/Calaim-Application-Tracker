@@ -266,7 +266,7 @@ const getDashboardActionHref = (
 };
 
 export default function AdminDashboardPage() {
-  const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
   const router = useRouter();
@@ -1255,7 +1255,7 @@ export default function AdminDashboardPage() {
           <div>
             <CardTitle>New items log</CardTitle>
             <CardDescription>
-              Ongoing timestamped log of new activity, including each document upload, with direct links to each member's application pathway.
+              Ongoing timestamped log of new activity, including each document upload, with direct links to each member&apos;s application pathway.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">

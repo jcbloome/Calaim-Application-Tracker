@@ -22,8 +22,9 @@ const buildField = (props: FieldProps) => React.createElement(PrintableField, pr
 const buildRow = (children: React.ReactNode[]) =>
   React.createElement(PrintableFormRow, null, children);
 
-const buildSection = (title: string, children: React.ReactNode[]) =>
-  React.createElement(PrintableFormSection, { title, children });
+const buildSection = (title: string, children: React.ReactNode[]) => (
+  <PrintableFormSection title={title}>{children}</PrintableFormSection>
+);
 
 export function PrintableCsSummaryFormSpanish({
   data = {},
@@ -370,15 +371,15 @@ export function PrintableCsSummaryFormSpanish({
     null
   ];
 
-  return React.createElement(
-    PrintableFormLayout,
-    {
-      title: 'Formulario de Resumen del Miembro de Apoyo Comunitario CalAIM',
-      subtitle: 'Programa de Transiciones de Vida Asistida',
-      formType: 'cs-summary',
-      applicationData: { id: applicationId },
-      showPrintButton,
-      children: layoutChildren,
-    },
+  return (
+    <PrintableFormLayout
+      title="Formulario de Resumen del Miembro de Apoyo Comunitario CalAIM"
+      subtitle="Programa de Transiciones de Vida Asistida"
+      formType="cs-summary"
+      applicationData={{ id: applicationId }}
+      showPrintButton={showPrintButton}
+    >
+      {layoutChildren}
+    </PrintableFormLayout>
   );
 }

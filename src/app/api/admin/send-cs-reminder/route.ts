@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { sendCsSummaryReminderEmail } from '@/app/actions/send-email';

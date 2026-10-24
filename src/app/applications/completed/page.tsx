@@ -42,11 +42,11 @@ export default function ApplicationCompletedPage() {
             )}
             <CardTitle className="text-4xl font-bold text-primary">Congratulations!</CardTitle>
             <CardDescription className="text-lg max-w-xl mt-2 text-foreground">
-              Great job! We'll get to work on compiling the application and get back to you shortly with the progress.
+              Great job! We&apos;ll get to work on compiling the application and get back to you shortly with the progress.
             </CardDescription>
             <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-sm text-blue-800">
-                <strong>What's Next:</strong> You will be notified about your application processing status through this portal or by email if we require additional documents.
+                <strong>What&apos;s Next:</strong> You will be notified about your application processing status through this portal or by email if we require additional documents.
               </p>
             </div>
           </CardHeader>

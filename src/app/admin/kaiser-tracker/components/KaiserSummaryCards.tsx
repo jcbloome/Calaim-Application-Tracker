@@ -3,7 +3,6 @@
 import React from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { CheckCircle, Database, MapPin, CalendarClock } from 'lucide-react';
 import { useAuth } from '@/firebase';
 import type { KaiserMember } from './shared';
@@ -48,8 +47,6 @@ export function KaiserSummaryCards({
   calaimStatusMap,
   normalizeCalaimStatus,
   openMemberModal,
-  onRefreshNoAction,
-  isRefreshingNoAction,
   onNoActionByStaffComputed,
 }: KaiserSummaryCardsProps) {
   const auth = useAuth();
@@ -65,10 +62,10 @@ export function KaiserSummaryCards({
       }
     >
   >({});
-  const [isLoadingAssignedStaffMeta, setIsLoadingAssignedStaffMeta] = React.useState(false);
-  const [assignedStaffMetaRefreshedAt, setAssignedStaffMetaRefreshedAt] = React.useState('');
+  const [, setIsLoadingAssignedStaffMeta] = React.useState(false);
+  const [, setAssignedStaffMetaRefreshedAt] = React.useState('');
   const [activeOverrideByMemberId, setActiveOverrideByMemberId] = React.useState<Record<string, any>>({});
-  const [weeklyDigestStatus, setWeeklyDigestStatus] = React.useState<string>('');
+  const [, setWeeklyDigestStatus] = React.useState<string>('');
 
   const normalize = (value: string) =>
     String(value || '')
@@ -76,20 +73,6 @@ export function KaiserSummaryCards({
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
-
-  const ACTIVE_STATUS_DEFINITIONS = [
-    'T2028 Received, Needs First Contact',
-    'T2038 Received, Need First Contact',
-    'T2038 Received, Needs First Contact',
-    'T2038 Received, Doc Collection',
-    'RCFE Needed',
-    'R&B Needed',
-    'RN Needed',
-  ];
-  const activeStatusSet = React.useMemo(
-    () => new Set(ACTIVE_STATUS_DEFINITIONS.map((status) => normalize(status))),
-    []
-  );
 
   // Consolidated ILS request statuses:
   // - T2038_Auth_Email_Kaiser
@@ -202,30 +185,6 @@ export function KaiserSummaryCards({
       normalized === 'r&b needed';
     if (isLesser) return 'lesser';
     return 'other';
-  };
-
-  const noActionScopedStatuses = React.useMemo(
-    () => [
-      'T2038 received, Need First Contact',
-      'T2038 received, doc collection',
-      'RCFE Needed',
-      'R&B Needed',
-    ],
-    []
-  );
-
-  const noActionScopedStatusNormalized = React.useMemo(
-    () =>
-      new Set([
-        ...noActionScopedStatuses.map((status) => normalize(status)),
-        normalize('T2038 received, Needs First Contact'),
-        normalize('R B Needed'),
-      ]),
-    [noActionScopedStatuses]
-  );
-
-  const isNoActionStatusInScope = (status: string): boolean => {
-    return noActionScopedStatusNormalized.has(normalize(status));
   };
 
   React.useEffect(() => {
@@ -365,21 +324,6 @@ export function KaiserSummaryCards({
 
   const scopedNoActionMembers = noActionMembers;
 
-  const noActionPriorityMembers = React.useMemo(
-    () => scopedNoActionMembers.filter((m) => getPriorityBucket(getEffectiveKaiserStatus(m)) === 'priority'),
-    [scopedNoActionMembers, getPriorityBucket]
-  );
-  const noActionLesserPriorityMembers = React.useMemo(
-    () => scopedNoActionMembers.filter((m) => getPriorityBucket(getEffectiveKaiserStatus(m)) === 'lesser'),
-    [scopedNoActionMembers, getPriorityBucket]
-  );
-  const noActionNormalMembers = React.useMemo(
-    () => scopedNoActionMembers.filter((m) => getPriorityBucket(getEffectiveKaiserStatus(m)) === 'other'),
-    [scopedNoActionMembers, getPriorityBucket]
-  );
-  const currentNoActionCriticalCount = noActionPriorityMembers.length;
-  const currentNoActionPriorityCount = noActionLesserPriorityMembers.length;
-
   const noActionByStaffRows = React.useMemo(() => {
     const grouped = scopedNoActionMembers.reduce((acc, member) => {
       const staffName = getAssignedStaffName(member) || 'Unassigned';
@@ -416,16 +360,6 @@ export function KaiserSummaryCards({
       };
     });
   }, [noActionByStaffRows, getPriorityBucket]);
-  const noActionByStaffCounts = React.useMemo(() => {
-    return noActionOverviewByStaffRows.reduce((acc, row) => {
-      acc[row.staffName] = {
-        critical: row.priorityMembers.length,
-        priority: row.lesserMembers.length,
-        normal: row.normalMembers.length,
-      };
-      return acc;
-    }, {} as Record<string, { critical: number; priority: number; normal: number }>);
-  }, [noActionOverviewByStaffRows]);
 
   React.useEffect(() => {
     if (!onNoActionByStaffComputed) return;
@@ -443,52 +377,6 @@ export function KaiserSummaryCards({
 
     onNoActionByStaffComputed(rows);
   }, [noActionOverviewByStaffRows, onNoActionByStaffComputed]);
-
-  const noActionAgingBuckets = React.useMemo(() => {
-    const members7to13 = scopedNoActionMembers.filter((member) => {
-      const ageDays = getNoActionAgeDays(assignedStaffMetaByClientId[String(member?.client_ID2 || '').trim()]?.lastAssignedStaffActionAt || '');
-      return ageDays >= 7 && ageDays < 14;
-    });
-    const members14to20 = scopedNoActionMembers.filter((member) => {
-      const ageDays = getNoActionAgeDays(assignedStaffMetaByClientId[String(member?.client_ID2 || '').trim()]?.lastAssignedStaffActionAt || '');
-      return ageDays >= 14 && ageDays < 21;
-    });
-    const members21plus = scopedNoActionMembers.filter((member) => {
-      const ageDays = getNoActionAgeDays(assignedStaffMetaByClientId[String(member?.client_ID2 || '').trim()]?.lastAssignedStaffActionAt || '');
-      return ageDays >= 21;
-    });
-    return { members7to13, members14to20, members21plus };
-  }, [scopedNoActionMembers, assignedStaffMetaByClientId]);
-
-  const formatEtDateTime = React.useCallback((value: string) => {
-    const raw = String(value || '').trim();
-    if (!raw) return 'Not captured';
-    const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) return 'Not captured';
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/New_York',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true,
-      timeZoneName: 'short',
-    }).format(parsed);
-  }, []);
-
-  const staffDataQualityIssues = React.useMemo(() => {
-    const issues = new Set<string>();
-    members.forEach((member) => {
-      const staffName = getAssignedStaffName(member);
-      if (!staffName) return;
-      if (/^\d+$/.test(staffName)) issues.add(`Numeric-only assignment: ${staffName}`);
-      if (normalize(staffName) === 'unassigned') issues.add('Explicit "Unassigned" assignment found');
-      if (staffName.length < 3) issues.add(`Very short assignment label: ${staffName}`);
-    });
-    return Array.from(issues);
-  }, [members]);
 
   React.useEffect(() => {
     let cancelled = false;

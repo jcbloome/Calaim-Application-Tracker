@@ -1,10 +1,10 @@
 // Firebase Functions Service - Handles all Firebase Functions calls
 
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/firebase';
 import { FirebaseErrorHandler } from '../utils/errorHandler';
 import { FIREBASE_CONFIG } from '../config/constants';
-import type { FunctionCallOptions, FunctionResult } from '../types';
+import type { FunctionCallOptions } from '../types';
 
 export class FunctionsService {
   private functions = functions;

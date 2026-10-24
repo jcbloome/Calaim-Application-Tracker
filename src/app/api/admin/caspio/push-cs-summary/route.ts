@@ -29,12 +29,6 @@ const normalizeKaiserStatusForPush = (status: string) => {
   // Guard common typo variant seen in saved statuses.
   return trimmed.replace(/\bT20238\b/gi, 'T2038');
 };
-const isNotRequestedDocCollectionStatus = (status: string) => {
-  const normalized = normalizeFieldName(status);
-  if (!normalized) return false;
-  const hasT2038Token = normalized.includes('t2038') || normalized.includes('t20238');
-  return hasT2038Token && normalized.includes('notrequested') && normalized.includes('doccollection');
-};
 const looksLikeSexField = (fieldName: string) => {
   const normalized = normalizeFieldName(fieldName);
   return normalized === 'sex' || normalized === 'gender' || normalized === 'membersex' || normalized === 'membergender';
@@ -2509,7 +2503,7 @@ export async function POST(request: NextRequest) {
     };
     let upsertResponse = await doUpsert(memberData);
     if (!upsertResponse.ok) {
-      let firstErrorBody = await upsertResponse.text().catch(() => '');
+      const firstErrorBody = await upsertResponse.text().catch(() => '');
       const holdPattern = /columnnotfound/i.test(firstErrorBody) && /hold[_\s-]*for[_\s-]*social[_\s-]*worker/i.test(firstErrorBody);
       if (holdPattern) {
         const fallbackData = { ...memberData };

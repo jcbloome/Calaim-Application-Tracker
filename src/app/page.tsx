@@ -97,7 +97,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <p className="text-sm text-gray-500">Not sure where to begin? Start with "Learn About the Program."</p>
+          <p className="text-sm text-gray-500">Not sure where to begin? Start with &quot;Learn About the Program.&quot;</p>
         </div>
       </main>
     </>

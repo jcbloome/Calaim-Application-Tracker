@@ -7,14 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { 
-  AlertTriangle, 
-  Users, 
-  CheckCircle2, 
+import {
+  AlertTriangle,
+  CheckCircle2,
   Loader2,
   Link2,
   Unlink2,
-  Eye
+  Eye,
 } from 'lucide-react';
 
 interface DuplicateMatch {

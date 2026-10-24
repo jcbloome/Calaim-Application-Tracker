@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Loader2, Users, Bell, ShieldCheck, Mail, Trash2, ReceiptText, CalendarCheck, UserPlus, CheckCircle2, ChevronDown, ChevronUp, Wrench, FileText, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
 import NotificationSettings from '@/components/NotificationSettings';
 import StaffAssignmentNotificationSystem from '@/components/StaffAssignmentNotificationSystem';
@@ -140,7 +140,7 @@ type StaffReadinessBatchResult = {
 };
 
 export default function StaffManagementPage() {
-    const { isSuperAdmin, isAdmin, isLoading: isAdminLoading, user: currentUser } = useAdmin();
+    const { isSuperAdmin, isLoading: isAdminLoading, user: currentUser } = useAdmin();
     const router = useRouter();
     const { toast } = useToast();
     const firestore = useFirestore();
@@ -154,7 +154,7 @@ export default function StaffManagementPage() {
     const [memberVerificationKaiserRecipientUids, setMemberVerificationKaiserRecipientUids] = useState<string[]>([]);
     const [memberVerificationHealthNetRecipientUids, setMemberVerificationHealthNetRecipientUids] = useState<string[]>([]);
     const [claimsDepartmentNotifyRecipientUids, setClaimsDepartmentNotifyRecipientUids] = useState<string[]>([]);
-    const [isSavingNotifications, setIsSavingNotifications] = useState(false);
+    const [, setIsSavingNotifications] = useState(false);
     const [isRunningKaiserHourlyDigestTest, setIsRunningKaiserHourlyDigestTest] = useState(false);
     const [staffReadinessEmail, setStaffReadinessEmail] = useState('');
     const [staffReadinessResult, setStaffReadinessResult] = useState<StaffReadinessResult | null>(null);
@@ -238,15 +238,15 @@ export default function StaffManagementPage() {
         setIsLoadingStaff(true);
         try {
             const [adminRolesSnap, superAdminRolesSnap, usersSnap] = await Promise.all([
-                getDocs(collection(firestore, 'roles_admin')).catch(e => {
+                getDocs(collection(firestore, 'roles_admin')).catch(_e => {
                     console.warn('Staff management: roles_admin read denied, continuing with limited data.');
                     return null;
                 }),
-                getDocs(collection(firestore, 'roles_super_admin')).catch(e => {
+                getDocs(collection(firestore, 'roles_super_admin')).catch(_e => {
                     console.warn('Staff management: roles_super_admin read denied, continuing with limited data.');
                     return null;
                 }),
-                getDocs(collection(firestore, 'users')).catch(e => {
+                getDocs(collection(firestore, 'users')).catch(_e => {
                     console.warn('Staff management: users read denied, continuing with limited data.');
                     return null;
                 })
@@ -410,7 +410,7 @@ export default function StaffManagementPage() {
 
       try {
         await setDoc(doc(firestore, 'users', cleanUid), patch, { merge: true });
-      } catch (error) {
+      } catch  {
         // Revert on error (best effort)
         setStaffList((prev) =>
           prev.map((s) => {
@@ -518,7 +518,7 @@ export default function StaffManagementPage() {
         if (!firestore) return;
         try {
             const [notificationsSnap, adminAccessSnap, reviewSnap, appAccessSnap, ilsAccessSnap, digestStatusSnap] = await Promise.all([
-                getDoc(doc(firestore, 'system_settings', 'notifications')).catch(e => {
+                getDoc(doc(firestore, 'system_settings', 'notifications')).catch(_e => {
                     console.warn('Staff management: notifications settings read denied, using defaults.');
                     return null;
                 }),
@@ -766,37 +766,6 @@ export default function StaffManagementPage() {
         if (roleHint.includes('ils') || String(row.email || '').toLowerCase().endsWith('@ilshealth.com')) {
             setNewStaffRole('Staff');
             setNewStaffIsIls(true);
-        }
-    };
-
-    const handleRevokeStaff = async (uid: string) => {
-        if (!firestore) return;
-        
-        const batch = writeBatch(firestore);
-        batch.delete(doc(firestore, 'roles_admin', uid));
-        batch.delete(doc(firestore, 'roles_super_admin', uid));
-        
-        if (notificationRecipients.includes(uid)) {
-            const updatedRecipients = notificationRecipients.filter(id => id !== uid);
-            batch.set(doc(firestore, 'system_settings', 'notifications'), { recipientUids: updatedRecipients }, { merge: true });
-        }
-
-        try {
-            await batch.commit().catch(e => {
-                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `roles_admin/${uid}`, operation: 'delete' }));
-                throw e;
-            });
-            
-            toast({ 
-                title: 'Staff Roles Revoked', 
-                description: `Admin permissions have been removed for the user.`, 
-                className: 'bg-green-100 text-green-900 border-green-200' 
-            });
-            
-            await fetchAllStaff();
-            await fetchNotificationRecipients();
-        } catch (error: any) {
-            // Error is emitted above
         }
     };
 

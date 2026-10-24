@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resetTokenStore } from '@/lib/reset-tokens';
-import admin, { adminAuth, adminDb } from '@/firebase-admin';
+import { adminAuth, adminDb } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

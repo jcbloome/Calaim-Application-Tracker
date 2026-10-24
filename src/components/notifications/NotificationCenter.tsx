@@ -1,26 +1,25 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { 
-  Bell, 
-  BellRing, 
-  Check, 
-  X, 
-  AlertTriangle, 
-  Info, 
+import {
+  Bell,
+  BellRing,
+  X,
+  AlertTriangle,
+  Info,
   CheckCircle,
   Clock,
   User,
   FileText,
-  Settings
+  Settings,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { normalizePriorityLabel } from '@/lib/notification-utils';
 

@@ -158,7 +158,7 @@ export function FormSeparationTool({ uploadedFile, onSeparationComplete }: FormS
             PDF Form Separation Tool
           </CardTitle>
           <CardDescription>
-            Upload a PDF package containing multiple forms, and we'll automatically separate them into individual documents.
+            Upload a PDF package containing multiple forms, and we&apos;ll automatically separate them into individual documents.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

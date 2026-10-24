@@ -10,11 +10,9 @@ interface PrintableDeclarationFormProps {
   showPrintButton?: boolean;
 }
 
-export function PrintableDeclarationForm({ 
-  memberName = '',
-  memberMrn = '',
+export function PrintableDeclarationForm({
   applicationId,
-  showPrintButton = true 
+  showPrintButton = true,
 }: PrintableDeclarationFormProps) {
   return (
     <PrintableFormLayout
@@ -42,11 +40,11 @@ export function PrintableDeclarationForm({
           </p>
           
           <p>
-            affirm Member's Name: <span className="inline-block border-b border-gray-400 print:border-black w-64 mx-1"></span>
+            affirm Member&apos;s Name: <span className="inline-block border-b border-gray-400 print:border-black w-64 mx-1"></span>
           </p>
           
           <p>
-            Member's Medical Record Number: <span className="inline-block border-b border-gray-400 print:border-black w-48 mx-1"></span> Date of Birth: <span className="inline-block border-b border-gray-400 print:border-black w-48 mx-1"></span>
+            Member&apos;s Medical Record Number: <span className="inline-block border-b border-gray-400 print:border-black w-48 mx-1"></span> Date of Birth: <span className="inline-block border-b border-gray-400 print:border-black w-48 mx-1"></span>
           </p>
           
           <p className="leading-relaxed">

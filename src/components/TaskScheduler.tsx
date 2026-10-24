@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -11,19 +10,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Calendar as CalendarIcon, 
-  Clock, 
-  Plus, 
-  CheckCircle2, 
-  AlertCircle,
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  Plus,
+  CheckCircle2,
   User,
   ArrowRight,
   Save,
   Loader2,
-  Bell
 } from 'lucide-react';
-import { format, addDays, isAfter, isBefore, isToday } from 'date-fns';
+import { format, addDays, isBefore, isToday } from 'date-fns';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface Task {
@@ -251,7 +248,7 @@ export default function TaskScheduler({ memberId, memberName, currentAssignee, o
           className: 'bg-green-100 text-green-900 border-green-200',
         });
       }
-    } catch (error: any) {
+    } catch  {
       toast({
         variant: 'destructive',
         title: 'Update Failed',

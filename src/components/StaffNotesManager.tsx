@@ -10,22 +10,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useUser } from '@/firebase';
 import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
-import { 
-  Loader2, 
-  RefreshCw, 
-  Search, 
-  Eye, 
-  EyeOff, 
-  Bell, 
+import {
+  Loader2,
+  RefreshCw,
+  Search,
+  Eye,
+  Bell,
   MessageSquareText,
   Calendar,
   User,
   AlertTriangle,
   CheckCircle2,
   Clock,
-  ExternalLink
+  ExternalLink,
 } from 'lucide-react';
-import { format, parseISO, isToday, isThisWeek, isThisMonth } from 'date-fns';
+import { format, isToday, isThisWeek, isThisMonth } from 'date-fns';
 import Link from 'next/link';
 import MemberNotesView from './MemberNotesView';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
@@ -130,7 +129,7 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
   };
 
   const filteredAndSortedNotes = useMemo(() => {
-    let filtered = notes.filter(note => {
+    const filtered = notes.filter(note => {
       // Search filter
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();

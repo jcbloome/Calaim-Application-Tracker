@@ -331,7 +331,7 @@ export async function createCaspioApplication(firebaseData: any): Promise<Caspio
   try {
     console.log('[CaspioAPI] Creating new application...');
     
-    const accessToken = await getCaspioAccessToken();
+    await getCaspioAccessToken();
     const caspioData = transformToCaspioFormat(firebaseData);
     
     // Validate the data
@@ -411,11 +411,11 @@ export async function updateCaspioApplication(applicationId: string, firebaseDat
   try {
     console.log('[CaspioAPI] Updating application:', applicationId);
     
-    const accessToken = await getCaspioAccessToken();
+    await getCaspioAccessToken();
     const caspioData = transformToCaspioFormat(firebaseData);
     
     // Validate the data
-    const validatedData = CaspioApplicationSchema.parse(caspioData);
+    CaspioApplicationSchema.parse(caspioData);
     
     // EMERGENCY DISABLE: Caspio UPDATE operations disabled to prevent RCFE/Social Worker access interference
     console.log('🚨 EMERGENCY: Caspio UPDATE operations disabled to prevent RCFE/Social Worker access interference');

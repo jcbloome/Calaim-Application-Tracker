@@ -264,7 +264,7 @@ export async function sendFlaggedVisitNotification(visitData: any): Promise<void
       geolocation: visitData.geolocation
     };
     
-    const { subject, htmlContent, textContent } = createNotificationEmail(flaggedData);
+    const { subject } = createNotificationEmail(flaggedData);
     
     // Log notification for now (replace with actual email service)
     console.log('📧 FLAGGED VISIT NOTIFICATION:');

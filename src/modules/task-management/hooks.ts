@@ -2,7 +2,7 @@
 // Specialized hooks for common task management operations
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import type { UnifiedTask, TaskFilter, TaskPriority } from './types';
+import type { UnifiedTask, TaskFilter } from './types';
 import { useTaskManagement } from './context';
 import { taskProcessor } from './task-processor';
 import { workflowEngine } from './workflow-engine';
@@ -320,7 +320,7 @@ export function useTaskStatus() {
     return true;
   }, [actions]);
   
-  const getValidStatusTransitions = useCallback((taskId: string) => {
+  const getValidStatusTransitions = useCallback((_taskId: string) => {
     // This would return valid next statuses based on workflow rules
     // For now, return a placeholder
     return [];

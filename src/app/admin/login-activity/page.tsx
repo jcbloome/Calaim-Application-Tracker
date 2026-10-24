@@ -1,14 +1,12 @@
 'use client';
 
 import { useAdmin } from '@/hooks/use-admin';
-import { useRouter } from 'next/navigation';
 import { Loader2, ShieldAlert } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import LoginActivityTracker from '@/components/LoginActivityTracker';
 
 export default function LoginActivityPage() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
-  const router = useRouter();
 
   if (isAdminLoading) {
     return (

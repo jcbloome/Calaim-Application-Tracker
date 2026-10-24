@@ -4,40 +4,26 @@ import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { 
-  Search, 
-  MapPin, 
-  Users, 
-  Building2, 
-  Navigation, 
+import {
+  Users,
+  Building2,
+  Navigation,
   UserCheck,
   Home,
   Loader2,
   RefreshCw,
   Eye,
-  EyeOff,
   Filter,
-  ChevronDown,
   Calendar,
-  Clock,
-  CheckCircle,
-  AlertTriangle,
   Plus,
   Edit,
-  Download,
-  Upload,
-  Bell,
   UserPlus,
-  ArrowRightLeft
+  ArrowRightLeft,
 } from 'lucide-react';
-import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
 import { useToast } from '@/hooks/use-toast';
 import SimpleMapTest from '@/components/SimpleMapTest';
 import { ResourceDetailModal } from '@/components/ResourceDetailModal';
@@ -110,7 +96,7 @@ export default function MapIntelligencePage() {
 
   // Monthly Visits state
   const [visits, setVisits] = useState<Visit[]>([]);
-  const [isVisitsLoading, setIsVisitsLoading] = useState(false);
+  const [, setIsVisitsLoading] = useState(false);
   const [visitFilter, setVisitFilter] = useState({
     status: 'all',
     healthPlan: 'all',
@@ -480,7 +466,7 @@ export default function MapIntelligencePage() {
           description: `2 members reassigned from ${sourceStaff.name} to ${targetStaff.name} based on location proximity.`
         });
       }
-    } catch (error) {
+    } catch  {
       toast({
         title: "Reassignment Failed",
         description: "There was an error processing the staff reassignment.",

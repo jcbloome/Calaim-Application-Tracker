@@ -32,7 +32,7 @@ const infoSections = [
           </p>
           <p>
             For many seniors and disabled individuals, a monthly income above <span className="font-semibold">$1,856</span> (the 2026 limit)
-            triggers a high Share of Cost. However, California's <span className="font-semibold">250% Working Disabled Program (WDP)</span> offers
+            triggers a high Share of Cost. However, California&apos;s <span className="font-semibold">250% Working Disabled Program (WDP)</span> offers
             a legal way to eliminate that cost and keep more of your money.
           </p>
         </div>
@@ -44,7 +44,7 @@ const infoSections = [
             <span className="font-semibold">$0 monthly premium</span> and <span className="font-semibold">$0 Share of Cost</span>.
           </li>
           <li>
-            <span className="font-semibold">Broad definition of "work"</span>: no traditional full-time job required. "Working" can include
+            <span className="font-semibold">Broad definition of &quot;work&quot;</span>: no traditional full-time job required. &quot;Working&quot; can include
             part-time tasks like pet sitting, consulting for a neighbor, or even recycling. No minimum hours required.
           </li>
           <li>
@@ -60,7 +60,7 @@ const infoSections = [
         <div className="mt-5 font-semibold text-gray-900">Additional SOC Reduction Strategies (County Eligibility Process)</div>
         <div className="mt-2 space-y-3 text-sm text-gray-700 leading-relaxed">
           <div>
-            <div className="font-semibold text-gray-900">1. The "Excess Income" Room and Board Adjustment</div>
+            <div className="font-semibold text-gray-900">1. The &quot;Excess Income&quot; Room and Board Adjustment</div>
             <div>
               Under California law (and often reflected in RCFE admission agreements), there is a distinction
               between what an SSI recipient pays and what a private-pay or high-income resident pays.
@@ -178,7 +178,7 @@ const infoSections = [
             <div className="font-semibold text-gray-900">3. Your Local County Social Services (DPSS)</div>
             <div>
               Contact your local county eligibility worker and ask for an{' '}
-              <span className="font-semibold">"evaluation for the 250% Working Disabled Program."</span>
+              <span className="font-semibold">&quot;evaluation for the 250% Working Disabled Program.&quot;</span>
             </div>
             <div>
               <span className="font-semibold">Online Portal:</span>{' '}

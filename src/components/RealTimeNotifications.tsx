@@ -8,12 +8,11 @@ import {
   query,
   where,
   onSnapshot,
-  limit,
   Timestamp,
   doc,
   updateDoc,
   serverTimestamp,
-  getDoc
+  getDoc,
 } from 'firebase/firestore';
 import { useGlobalNotifications } from './NotificationProvider';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -123,7 +122,7 @@ export function RealTimeNotifications() {
     sound: true,
     soundType: 'mellow-note'
   });
-  const [webAppEnabled, setWebAppEnabled] = useState(true);
+  const [, setWebAppEnabled] = useState(true);
   const [globalControls, setGlobalControls] = useState({
     masterSwitch: true,
     quietHours: {
@@ -133,7 +132,7 @@ export function RealTimeNotifications() {
     },
     forceSuppressWebWhenDesktopActive: false
   });
-  const [globalPolicy, setGlobalPolicy] = useState<{ forceSuppressWebWhenDesktopActive: boolean }>({
+  const [, setGlobalPolicy] = useState<{ forceSuppressWebWhenDesktopActive: boolean }>({
     forceSuppressWebWhenDesktopActive: false
   });
   const [webToastPolicy, setWebToastPolicy] = useState<{
@@ -393,11 +392,10 @@ export function RealTimeNotifications() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!window.desktopNotifications) return;
-    let unsubscribe: (() => void) | undefined;
     window.desktopNotifications.getState()
       .then((state) => setDesktopState(state))
       .catch((error) => console.warn('Failed to read desktop notification state:', error));
-    unsubscribe = window.desktopNotifications.onChange((state) => {
+    const unsubscribe = window.desktopNotifications.onChange((state) => {
       setDesktopState(state);
     });
     return () => {
@@ -609,13 +607,6 @@ export function RealTimeNotifications() {
 
     return '/admin/my-notes';
   };
-
-  // Electron should only react to Priority-like notes.
-  // Treat legacy "Urgent" as Priority (no separate urgent tier).
-  const isDesktopPriority = (priority: unknown) => {
-    const normalized = normalizePriorityLabel(String(priority || ''));
-    return normalized === 'Priority' || normalized === 'Urgent';
-  };
   const isDesktopNotifiable = (input: { priority?: unknown; type?: unknown; isGeneral?: unknown; source?: unknown }) => {
     const type = String(input?.type || '').toLowerCase();
     const interoffice = Boolean(input?.isGeneral) || type.includes('interoffice');
@@ -666,7 +657,6 @@ export function RealTimeNotifications() {
         let hasNewDesktopAlert = false;
         let hasNewPriority = false;
         let hasNewUrgent = false;
-        let total = 0;
         const shouldTrackDesktopDelivery =
           typeof window !== 'undefined' &&
           Boolean(window.desktopNotifications) &&
@@ -677,7 +667,6 @@ export function RealTimeNotifications() {
         const shouldMarkSeenNow = !desktopEffectivePaused;
 
         snapshot.forEach((docSnap) => {
-          total += 1;
           const data = docSnap.data() as StaffNotification;
           const noteType = String((data as any)?.type || '').toLowerCase();
           const isInterofficeType = noteType.includes('interoffice');
@@ -864,7 +853,6 @@ export function RealTimeNotifications() {
           const detailMessage = highlightMessage
             || (recentLines.length > 0 ? `Recent notes:\n${recentLines.join('\n')}` : summaryMessage);
           const tagLabel = undefined;
-          const priorityTag = urgentExists ? 'Urgent' : priorityExists ? 'Priority' : undefined;
           const links: Array<{ label: string; url: string }> = [
             { label: 'Open My Notifications', url: '/admin/my-notes' }
           ];
@@ -888,7 +876,6 @@ export function RealTimeNotifications() {
             if (Boolean((highlightNote as any)?.suppressWebToast)) return false;
             return shouldShowWebToastBase;
           })();
-          const shouldPopup = shouldShowWebToastBase && forceExpanded;
 
           if (!canShowNotifications() && !forceExpanded) {
             if (summaryNotificationIdRef.current) {
@@ -965,17 +952,7 @@ export function RealTimeNotifications() {
               isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral, source: n.source })
             );
             const desktopCount = desktopPending.length;
-            const desktopHighlight = desktopPending[0] || null;
             const desktopTitle = desktopCount === 1 ? 'Priority note' : 'Priority notes';
-            const desktopMessage =
-              desktopHighlight
-                ? (sanitizeNoteMessage(desktopHighlight.message) || sanitizeFieldLabel(desktopHighlight.title) || 'Priority note')
-                : (desktopCount === 1 ? '1 priority note pending' : `${desktopCount} priority notes pending`);
-            const desktopLatest = desktopPending[0];
-            const recentThresholdMs = 2 * 60 * 1000;
-            const desktopIsRecent =
-              Boolean(desktopLatest?.timestamp) &&
-              Date.now() - desktopLatest.timestamp.getTime() <= recentThresholdMs;
             desktopPriorityPillRef.current = desktopPending.map((note) => ({
               kind: 'note',
               source: note.source,

@@ -12,7 +12,7 @@ import { doc, getDoc, Firestore } from 'firebase/firestore';
 import { auth, db } from '@/firebase';
 import { FirebaseErrorHandler } from '../utils/errorHandler';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
-import type { FirebaseUser, AdminRole } from '../types';
+import type { FirebaseUser } from '../types';
 
 export class AuthService {
   private auth: Auth;

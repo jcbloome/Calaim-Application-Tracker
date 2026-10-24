@@ -17,7 +17,6 @@ import {
   Info
 } from 'lucide-react';
 import { useMemberNotesSync } from '@/lib/member-notes-sync';
-import { format } from 'date-fns';
 
 export default function SyncStatusDashboard() {
   const [processing, setProcessing] = useState(false);
@@ -236,7 +235,7 @@ export default function SyncStatusDashboard() {
           <Clock className="h-4 w-4" />
           <AlertDescription>
             <strong>Pending Syncs:</strong> {syncStats.pendingSyncs} notes are waiting to be synced to Caspio. 
-            Click "Process Pending Syncs" to sync them now.
+            Click &quot;Process Pending Syncs&quot; to sync them now.
           </AlertDescription>
         </Alert>
       )}

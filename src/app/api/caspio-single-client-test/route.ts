@@ -223,21 +223,6 @@ async function findCreatedClientRecord(accessToken: string, baseUrl: string, tes
   throw new Error(`Could not find created client record for ${testClient.firstName} ${testClient.lastName}`);
 }
 
-// Extract client_ID2 from response
-function extractClientId(clientResult: any): string {
-  // Handle mock response from empty Caspio response
-  if (clientResult && clientResult.client_ID2) {
-    return clientResult.client_ID2;
-  } else if (clientResult && clientResult.Client_ID2) {
-    return clientResult.Client_ID2;
-  } else if (clientResult && clientResult.Record_ID) {
-    return clientResult.Record_ID;
-  } else {
-    console.log('Available fields in client response:', Object.keys(clientResult || {}));
-    throw new Error('client_ID2/Client_ID2/Record_ID not found in client response');
-  }
-}
-
 // Get client record by ID
 async function getClientRecord(accessToken: string, baseUrl: string, clientId: string): Promise<any> {
   const clientRecordUrl = `${baseUrl}/tables/connect_tbl_clients/records`;

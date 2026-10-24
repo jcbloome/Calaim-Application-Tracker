@@ -47,7 +47,7 @@ export const calculateTaskDates = (dateString: string): DateCalculationResult =>
       formattedDate,
       relativeDescription
     };
-  } catch (error) {
+  } catch  {
     return {
       daysUntilDue: 999,
       isOverdue: false,

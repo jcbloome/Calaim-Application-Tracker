@@ -8,7 +8,6 @@ import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { SW_LOGIN_URL } from '@/lib/app-urls';
-import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 import { formatIspContactBlockForSwEmail, normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,7 +15,6 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -71,7 +69,6 @@ const DEFAULT_SIGNATURE_PHONE = '800-330-5993';
 const DEFAULT_PRE_REVIEW_MANAGER_NAME = 'John';
 const DEFAULT_PRE_REVIEW_MANAGER_EMAIL = 'john@carehomefinders.com';
 const DEFAULT_SEND_OWNER_NAME = 'Kaiser staff (ILS package)';
-const DEFAULT_SEND_OWNER_EMAIL = '';
 
 const ISP_PROGRESS_STEPS = [
   { key: 'sent_to_sw', label: 'Sent to SW' },
@@ -610,11 +607,6 @@ const toIsoTimestamp = (value: any): string => {
   return new Date(ms).toISOString();
 };
 
-const todayLocalKey = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
 const toMmDdYyyyOrRaw = (value: string | undefined | null) => {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -632,60 +624,6 @@ const fmtTimeline = (ms: number) => {
   } catch {
     return '';
   }
-};
-
-const toEditHistoryMs = (entry: any): number => {
-  const viaTs = toMs(entry?.editedAt);
-  if (viaTs > 0) return viaTs;
-  const viaIso = toMs(entry?.editedAtIso);
-  return viaIso > 0 ? viaIso : 0;
-};
-
-type TimelineItem = { key: string; label: string; ms: number; by?: string };
-
-const timelineFor = (r: StandaloneUpload): TimelineItem[] => {
-  const items: TimelineItem[] = [];
-  const receivedMs = toMs(r.createdAt) || 0;
-  if (receivedMs) items.push({ key: 'received', label: 'Received', ms: receivedMs });
-
-  const rnAssignedMs = toMs(r.alftRnAssignedAt);
-  if (rnAssignedMs) items.push({ key: 'rnAssigned', label: 'RN assigned', ms: rnAssignedMs, by: r.alftRnName || r.alftRnEmail || '' });
-
-  const rnDownloadedMs = toMs(r.alftRnDownloadedAt);
-  if (rnDownloadedMs) items.push({ key: 'rnDownloaded', label: 'RN downloaded', ms: rnDownloadedMs, by: r.alftRnName || r.alftRnEmail || '' });
-
-  const rnReuploadedMs = toMs(r.alftRnRevisionUploadedAt);
-  if (rnReuploadedMs) {
-    const latestRevision = (r.alftRevisions || []).slice(-1)[0] as any;
-    const by = String(latestRevision?.uploadedByName || latestRevision?.uploadedByEmail || r.alftRnName || r.alftRnEmail || '').trim();
-    items.push({ key: 'rnReuploaded', label: 'RN re-uploaded', ms: rnReuploadedMs, by });
-  }
-
-  const staffAssignedMs = toMs(r.alftStaffAssignedAt);
-  if (staffAssignedMs) items.push({ key: 'staffAssigned', label: 'Staff assigned', ms: staffAssignedMs, by: r.alftStaffName || r.alftStaffEmail || '' });
-
-  const sigRequestedMs = toMs((r as any)?.alftSignature?.requestedAt);
-  if (sigRequestedMs) items.push({ key: 'sigRequested', label: 'Signatures requested', ms: sigRequestedMs });
-
-  const rnSignedMs = toMs((r as any)?.alftSignature?.rnSignedAt);
-  if (rnSignedMs) items.push({ key: 'rnSigned', label: 'RN signed', ms: rnSignedMs, by: r.alftRnName || r.alftRnEmail || '' });
-
-  const mswSignedMs = toMs((r as any)?.alftSignature?.mswSignedAt);
-  if (mswSignedMs) items.push({ key: 'mswSigned', label: 'MSW signed', ms: mswSignedMs, by: r.uploaderName || r.uploaderEmail || '' });
-
-  const packetReady = Boolean((r as any)?.alftSignature?.packetPdfStoragePath);
-  const completedMs = toMs((r as any)?.alftSignature?.completedAt);
-  if (packetReady && completedMs) items.push({ key: 'packetReady', label: 'Packet ready', ms: completedMs });
-
-  const managerReviewedMs = toMs((r as any)?.alftManagerReview?.reviewedAt);
-  if (managerReviewedMs) {
-    const by = toLabel((r as any)?.alftManagerReview?.reviewedByName || (r as any)?.alftManagerReview?.reviewedByEmail);
-    items.push({ key: 'managerReviewed', label: 'Kaiser manager reviewed', ms: managerReviewedMs, by });
-  }
-
-  return items
-    .filter((x) => x.ms > 0)
-    .sort((a, b) => a.ms - b.ms);
 };
 
 type StageKey =
@@ -737,31 +675,6 @@ const computeStage = (r: StandaloneUpload): StageKey => {
   return 'received';
 };
 
-const stageBadge = (stage: StageKey) => {
-  switch (stage) {
-    case 'received':
-      return <Badge variant="secondary">1) Received</Badge>;
-    case 'returned_to_sw':
-      return <Badge className="bg-red-700 text-white hover:bg-red-700">Returned to SW revision</Badge>;
-    case 'rn_assigned':
-      return <Badge className="bg-indigo-600 text-white hover:bg-indigo-600">1) Assigned</Badge>;
-    case 'rn_downloaded':
-      return <Badge className="bg-blue-600 text-white hover:bg-blue-600">2) RN downloaded</Badge>;
-    case 'rn_reuploaded':
-      return <Badge className="bg-purple-700 text-white hover:bg-purple-700">2) RN re-uploaded</Badge>;
-    case 'staff_assigned':
-      return <Badge className="bg-amber-600 text-white hover:bg-amber-600">3) Staff review</Badge>;
-    case 'sent_for_signature':
-      return <Badge className="bg-emerald-700 text-white hover:bg-emerald-700">3) Signatures requested</Badge>;
-    case 'manager_review':
-      return <Badge className="bg-blue-700 text-white hover:bg-blue-700">4) Kaiser manager review</Badge>;
-    case 'ready_to_send':
-      return <Badge className="bg-violet-700 text-white hover:bg-violet-700">5) Ready to email Jocelyn</Badge>;
-    case 'completed':
-      return <Badge variant="outline">Complete</Badge>;
-  }
-};
-
 const stageBlockClass = (stage: StageKey | 'not_started') => {
   switch (stage) {
     case 'received':
@@ -800,82 +713,6 @@ const trackerCurrentStatusLabel = (r: StandaloneUpload, stage: StageKey | 'not_s
   return toLabel((r as any)?.workflowStatus) || toLabel(r.status) || 'pending';
 };
 
-const nextFlowForRow = (r: StandaloneUpload) => {
-  const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
-  const signatureStatus = toLabel((r as any)?.alftSignature?.status).toLowerCase();
-  const mswSigned = toMs((r as any)?.alftSignature?.mswSignedAt) > 0;
-  const rnSigned = toMs((r as any)?.alftSignature?.rnSignedAt) > 0;
-  const managerName = toLabel(
-    (r as any)?.workflowRouting?.nextRecipientName ||
-      (r as any)?.assignedManager?.name ||
-      (r as any)?.workflowRouting?.finalReviewOwnerName ||
-      (r as any)?.alftManagerReview?.reviewedByName
-  ) || DEFAULT_PRE_REVIEW_MANAGER_NAME;
-  const managerEmail = toLabel(
-    (r as any)?.workflowRouting?.nextRecipientEmail ||
-      (r as any)?.assignedManager?.email ||
-      (r as any)?.workflowRouting?.finalReviewOwnerEmail ||
-      (r as any)?.alftManagerReview?.reviewedByEmail
-  ) || DEFAULT_PRE_REVIEW_MANAGER_EMAIL;
-  const swName = toLabel(r.uploaderName) || 'Social Worker';
-  const swEmail = toLabel(r.uploaderEmail);
-  const rnName = toLabel(r.alftRnName) || 'Assigned RN';
-  const rnEmail = toLabel(r.alftRnEmail);
-
-  if (workflowStatus.includes('completed_sent_to_jocelyn') || toLabel(r.status).toLowerCase() === 'completed') {
-    return { label: 'Completed', name: 'Jocelyn', email: toLabel((r as any)?.alftCompletionEmail?.to), color: 'border-green-300 bg-green-50 text-green-900' };
-  }
-  if (workflowStatus.includes('returned_to_sw') || toLabel(r.status).toLowerCase().includes('returned_to_sw')) {
-    return { label: 'SW revision needed', name: swName, email: swEmail, color: 'border-red-300 bg-red-50 text-red-900' };
-  }
-  if (
-    workflowStatus.includes('returned_to_staff') ||
-    workflowStatus.includes('returned_to_admin') ||
-    workflowStatus.includes('waiting_staff_revision')
-  ) {
-    return { label: 'Staff revision needed', name: managerName, email: managerEmail, color: 'border-amber-300 bg-amber-50 text-amber-900' };
-  }
-  if (workflowStatus.includes('returned_to_rn') || workflowStatus.includes('waiting_rn_revision')) {
-    return { label: 'RN revision needed', name: rnName, email: rnEmail, color: 'border-violet-300 bg-violet-50 text-violet-900' };
-  }
-  if (
-    workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
-    workflowStatus.includes('awaiting_rn_final_signature') ||
-    signatureStatus.includes('awaiting_rn')
-  ) {
-    return { label: 'RN review/signature', name: rnName, email: rnEmail, color: 'border-violet-300 bg-violet-50 text-violet-900' };
-  }
-  if (mswSigned && !rnSigned) {
-    return { label: 'Manager pre-review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
-  }
-  if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
-    return { label: 'Final manager review', name: managerName, email: managerEmail, color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900' };
-  }
-  if (workflowStatus.includes('awaiting_manager_review_pre_rn')) {
-    return { label: 'Manager pre-review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
-  }
-  if (workflowStatus.includes('sw_invited') || workflowStatus.includes('sw_form')) {
-    return { label: 'SW complete + submit', name: swName, email: swEmail, color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
-  }
-  return { label: 'Start workflow', name: swName, email: swEmail, color: 'border-slate-300 bg-slate-50 text-slate-900' };
-};
-
-const prefillSourceFlowLabel = (r: StandaloneUpload) => {
-  const mode = toLabel((r as any)?.prefillSourceMode).toLowerCase();
-  const label = toLabel((r as any)?.prefillSourceLabel);
-  if (mode === 'cs_summary_app') return 'Member info source: App';
-  if (mode === 'caspio_selected_fields') return 'Member info source: Caspio';
-  if (label) return `Member info source: ${label}`;
-  return 'Member info source: Not captured';
-};
-
-const prefillSourceFlowClass = (r: StandaloneUpload) => {
-  const mode = toLabel((r as any)?.prefillSourceMode).toLowerCase();
-  if (mode === 'cs_summary_app') return 'border-green-300 bg-green-50 text-green-900';
-  if (mode === 'caspio_selected_fields') return 'border-blue-300 bg-blue-50 text-blue-900';
-  return 'border-slate-300 bg-slate-50 text-slate-800';
-};
-
 const assignmentWorkflowSignals = (row: AlftAssignmentQueueRow) => {
   const status = String(row?.status || '').toLowerCase();
   const workflowStatus = String(row?.workflowStatus || '').toLowerCase();
@@ -904,33 +741,6 @@ const assignmentWorkflowSignals = (row: AlftAssignmentQueueRow) => {
   return { status, workflowStatus, swInviteSent, swSubmitted, returnedToSw, rnStep, finalManager, readyToSend, complete };
 };
 
-const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
-  const { workflowStatus, swInviteSent, swSubmitted, returnedToSw, rnStep, finalManager, readyToSend, complete } =
-    assignmentWorkflowSignals(row);
-  if (complete) {
-    return 'Next: Workflow complete. Send/confirm completed ALFT PDF to Jocelyn.';
-  }
-  if (returnedToSw) {
-    return 'Next: SW applies requested changes, signs again, and routes back to John for re-check.';
-  }
-  if (rnStep) {
-    return 'Next: RN reviews, edits as needed, and signs; then packet routes to John for final review.';
-  }
-  if (finalManager) {
-    return 'Next: John completes final review, then the packet is sent/printed to Jocelyn.';
-  }
-  if (readyToSend) {
-    return 'Next: Send or print the completed ALFT packet to Jocelyn.';
-  }
-  if (swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
-    return 'Next: John (ALTA manager) does first review and either rejects for SW changes or approves to send to RN.';
-  }
-  if (swInviteSent) {
-    return 'Next: SW logs into portal, completes prepopulated ALFT, and submits with signature.';
-  }
-  return 'Next: Preview prefilled pages, then send workflow notice to SW.';
-};
-
 const assignmentStageBlock = (row: AlftAssignmentQueueRow) => {
   const { workflowStatus, swSubmitted, returnedToSw, rnStep, finalManager, readyToSend, complete } =
     assignmentWorkflowSignals(row);
@@ -957,58 +767,6 @@ const assignmentStageBlock = (row: AlftAssignmentQueueRow) => {
   }
   return { label: 'Prefill ready', color: 'border-slate-300 bg-slate-50 text-slate-900' };
 };
-
-const assignmentNextRecipientBlock = (row: AlftAssignmentQueueRow) => {
-  const { workflowStatus, swSubmitted, returnedToSw, rnStep, finalManager, readyToSend, complete } = assignmentWorkflowSignals(row);
-  const swName = toLabel(row.assignedSwName) || 'Social Worker';
-  const swEmail = toLabel(row.assignedSwEmail);
-  const managerName = toLabel(
-    (row as any)?.alftManagerName ||
-    (row as any)?.assignedManagerName ||
-    (row as any)?.assignedByName
-  ) || DEFAULT_PRE_REVIEW_MANAGER_NAME;
-  const managerEmail = toLabel(
-    (row as any)?.alftManagerEmail ||
-    (row as any)?.assignedManagerEmail ||
-    (row as any)?.assignedByEmail
-  ) || DEFAULT_PRE_REVIEW_MANAGER_EMAIL;
-  const sendOwnerName =
-    toLabel((row as any)?.workflowRouting?.nextRecipientName) ||
-    DEFAULT_SEND_OWNER_NAME;
-  const sendOwnerEmail =
-    toLabel((row as any)?.workflowRouting?.nextRecipientEmail) ||
-    DEFAULT_SEND_OWNER_EMAIL;
-
-  if (returnedToSw) {
-    return { label: 'SW revision needed', name: swName, email: swEmail, color: 'border-red-300 bg-red-50 text-red-900' };
-  }
-  if (complete) {
-    return { label: 'Completed', name: 'Workflow complete', email: '', color: 'border-slate-300 bg-slate-50 text-slate-900' };
-  }
-  if (rnStep) {
-    return { label: 'RN review/signature', name: 'Leslie (RN)', email: 'rn@carehomefinders.com', color: 'border-violet-300 bg-violet-50 text-violet-900' };
-  }
-  if (finalManager || swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
-    return { label: finalManager ? 'John final review' : 'Manager review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
-  }
-  if (readyToSend) {
-    return { label: 'Send step', name: sendOwnerName, email: sendOwnerEmail, color: 'border-purple-300 bg-purple-50 text-purple-900' };
-  }
-  if (workflowStatus.includes('sw_invited') || workflowStatus.includes('sw_form')) {
-    return { label: 'SW invited/submitting', name: swName, email: swEmail, color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
-  }
-  return { label: 'Start workflow', name: swName, email: swEmail, color: 'border-blue-300 bg-blue-50 text-blue-900' };
-};
-
-const assignmentSourceBlock = (row: AlftAssignmentQueueRow) => {
-  const mode = resolvePrefillSourceMode(row);
-  if (mode === 'cs_summary_app') {
-    return { label: 'Member info source: App', value: 'cs_summary_app', color: 'border-green-300 bg-green-50 text-green-900' };
-  }
-  return { label: 'Member info source: Caspio', value: 'caspio_selected_fields', color: 'border-blue-300 bg-blue-50 text-blue-900' };
-};
-
-const asAnswer = (value: unknown) => String(value ?? '').trim();
 const toTitleCaseCity = (value: unknown) => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -1058,11 +816,6 @@ const resolvePrefillSourceMode = (row: AlftAssignmentQueueRow): 'cs_summary_app'
   if (mode === 'caspio_selected_fields') return 'caspio_selected_fields';
   const label = String(row.prefillSourceLabel || '').trim().toLowerCase();
   return label.includes('app cs summary') ? 'cs_summary_app' : 'caspio_selected_fields';
-};
-
-const prefillSourceBadgeLabel = (row: AlftAssignmentQueueRow) => {
-  const mode = resolvePrefillSourceMode(row);
-  return mode === 'cs_summary_app' ? 'Source: App' : 'Source: Caspio';
 };
 
 const getRequiredValueFromAssignmentRow = (row: AlftAssignmentQueueRow, key: string) => {
@@ -1147,12 +900,6 @@ const stepChipClass = (step: { done: boolean; current: boolean }) => {
   if (step.done) return 'border-slate-300 bg-white text-green-700';
   if (step.current) return 'border-slate-300 bg-white text-slate-900';
   return 'border-slate-200 bg-white text-slate-500';
-};
-
-const stepDotClass = (step: { done: boolean; current: boolean }) => {
-  if (step.done) return 'bg-emerald-500';
-  if (step.current) return 'bg-blue-500';
-  return 'bg-slate-300';
 };
 
 type WorkflowChecklistStep = {
@@ -1289,7 +1036,7 @@ export default function AdminAlftTrackerPage() {
   const [staffLoading, setStaffLoading] = useState(false);
 
   const [assignOpen, setAssignOpen] = useState(false);
-  const [assignKind, setAssignKind] = useState<'rn' | 'staff'>('rn');
+  const [assignKind] = useState<'rn' | 'staff'>('rn');
   const [assignRow, setAssignRow] = useState<StandaloneUpload | null>(null);
   const [assignUid, setAssignUid] = useState<string>('');
 
@@ -1368,7 +1115,6 @@ export default function AdminAlftTrackerPage() {
   const [isRnStaff, setIsRnStaff] = useState(false);
   const [startingWorkflowFor, setStartingWorkflowFor] = useState('');
   const [verifyingMemberId, setVerifyingMemberId] = useState('');
-  const [pullingIspForMemberId, setPullingIspForMemberId] = useState('');
   const [swEmailPreviewUseTestOverride, setSwEmailPreviewUseTestOverride] = useState(false);
   const [swEmailPreviewTestEmail, setSwEmailPreviewTestEmail] = useState('');
   const [dummySendRnEmail, setDummySendRnEmail] = useState('');
@@ -1902,16 +1648,9 @@ export default function AdminAlftTrackerPage() {
     };
   }, [swEmailPreviewRow]);
 
-  const openAssign = useCallback((row: StandaloneUpload, kind: 'rn' | 'staff') => {
-    setAssignRow(row);
-    setAssignKind(kind);
-    setAssignUid('');
-    setAssignOpen(true);
-  }, []);
-
   // Returns true for admins / Kaiser staff only — RN staff submit with suggested tier instead of reject.
   const canKickBackToSw = useCallback(
-    (row: StandaloneUpload) => {
+    (_row: StandaloneUpload) => {
       if (isSuperAdmin || isAdmin || isKaiserAssignmentManager || isKaiserStaff) return true;
       return false;
     },
@@ -2194,95 +1933,6 @@ export default function AdminAlftTrackerPage() {
     [firestore, toast, user]
   );
 
-  const pullIspInfoFromCaspio = useCallback(
-    async (row: AlftAssignmentQueueRow) => {
-      if (!firestore) return;
-      const memberId = String(row.memberId || row.id || '').trim();
-      if (!memberId || pullingIspForMemberId) return;
-      setPullingIspForMemberId(memberId);
-      try {
-        const memberIdLower = memberId.toLowerCase();
-        const memberMrn = String(row.memberMrn || '').trim().toLowerCase();
-        const memberName = String(row.memberName || '').trim().toLowerCase();
-        const findHit = (members: any[]) =>
-          members.find((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim().toLowerCase() === memberIdLower) ||
-          (memberMrn
-            ? members.find((m: any) =>
-                String(m?.memberMrn || m?.MCP_CIN || m?.Member_MRN || '').trim().toLowerCase() === memberMrn
-              )
-            : null) ||
-          (memberName
-            ? members.find((m: any) => String(m?.memberName || m?.Senior_Last_First_ID || '').trim().toLowerCase() === memberName)
-            : null);
-        // Targeted Client_ID2 pull first; only fall back to the full Caspio list when the row's id isn't a Client_ID2.
-        let hit: any = null;
-        try {
-          const targeted = await fetchKaiserMembers<any>({ source: 'caspio', refresh: true, clientId2: memberId });
-          hit = findHit(targeted.members);
-        } catch {
-          hit = null;
-        }
-        if (!hit) {
-          const full = await fetchKaiserMembers<any>({
-            source: 'caspio',
-            refresh: true,
-            retryAction: 'click Pull ISP info again',
-          });
-          hit = findHit(full.members);
-        }
-        if (!hit) throw new Error('Member not found in Caspio pull.');
-
-        const contactFirst = toLabel(hit?.ISP_Contact_First || hit?.Contact_First);
-        const contactLast = toLabel(hit?.ISP_Contact_Last || hit?.Contact_Last);
-        const combinedContactName = `${contactFirst} ${contactLast}`.trim();
-        const patch = {
-          ispCurrentLocation: toLabel(hit?.ISP_Contact_Location),
-          ispFacilityName: toLabel(hit?.ISP_Contact_Location),
-          currentLocationType: toLabel(hit?.ISP_Location_Type),
-          currentLocationTypeOther: toLabel(hit?.ISP_Location_Type),
-          ispCurrentAddressStreet: toLabel(hit?.ISP_Contact_Address),
-          ispCurrentAddressCity: toTitleCaseCity(toLabel(hit?.ISP_Contact_City)),
-          ispCurrentAddressState: toLabel(hit?.ISP_Contact_State),
-          ispCurrentAddressZip: toLabel(hit?.ISP_Contact_Zip),
-          ispContactName: toLabel(combinedContactName || hit?.ISP_Contact_Name || hit?.ispContactName || hit?.RCFE_Admin_Name || hit?.Contact_Name),
-          ispContactRelationship: sanitizeRelationshipLabel(
-            toLabel(hit?.ISP_Contact_Relationship || hit?.ispContactRelationship || hit?.Contact_Relationship)
-          ),
-          ispContactPhone: toLabel(hit?.ISP_Contact_Phone || hit?.ispContactPhone || hit?.Member_Phone || hit?.memberPhone),
-          ispContactEmail: toLabel(hit?.ISP_Contact_Email || hit?.ispContactEmail || hit?.Member_Email || hit?.memberEmail).toLowerCase(),
-          ispContactConfirmDate: toLabel(
-            hit?.ISP_Contact_Confirm_Field || hit?.ISP_Contact_Confirm_Date || hit?.ISP_Contact_Confirm || hit?.ISP_Confirm_Date
-          ),
-        };
-
-        await updateDoc(doc(firestore, 'alft_assignments', memberId), {
-          ...patch,
-          updatedAt: serverTimestamp(),
-        });
-
-        setSwEmailPreviewRow((prev) =>
-          prev && String(prev.memberId || prev.id || '').trim() === memberId
-            ? ({ ...prev, ...patch } as AlftAssignmentQueueRow)
-            : prev
-        );
-
-        toast({
-          title: 'ISP info refreshed from Caspio',
-          description: 'SW email preview now uses the latest ISP contact fields.',
-        });
-      } catch (e: any) {
-        toast({
-          title: 'Could not pull ISP info',
-          description: e?.message || 'Please retry.',
-          variant: 'destructive',
-        });
-      } finally {
-        setPullingIspForMemberId('');
-      }
-    },
-    [firestore, pullingIspForMemberId, toast]
-  );
-
   const openEdit = useCallback((row: StandaloneUpload) => {
     const seed = createInitialExactAlftAnswers();
     const raw = row?.alftForm?.exactPacketAnswers;
@@ -2523,27 +2173,6 @@ export default function AdminAlftTrackerPage() {
     } catch (e: any) {
       toast({ title: 'Assignment failed', description: e?.message || 'Could not save assignment.', variant: 'destructive' });
     }
-  };
-
-  const markRnDownloaded = async (row: StandaloneUpload) => {
-    if (!firestore) return;
-    try {
-      await updateDoc(doc(firestore, 'standalone_upload_submissions', row.id), {
-        alftRnDownloadedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      } as any);
-      toast({ title: 'Marked downloaded', description: 'Saved RN download timestamp.' });
-    } catch (e: any) {
-      toast({ title: 'Update failed', description: e?.message || 'Could not update.', variant: 'destructive' });
-    }
-  };
-
-  const openRevision = (row: StandaloneUpload) => {
-    setRevRow(row);
-    setRevFile(null);
-    setRevNote('');
-    setRevProgress(0);
-    setRevOpen(true);
   };
 
   const uploadRevision = async () => {
@@ -3051,21 +2680,6 @@ export default function AdminAlftTrackerPage() {
     }
   };
 
-  const resendSwNoticeFromEdit = async (row: StandaloneUpload) => {
-    const assignmentRow = findAssignmentForUpload(row);
-    if (!assignmentRow) {
-      toast({
-        title: 'SW assignment not found',
-        description: 'This intake is missing an ALFT assignment row, so SW email cannot be resent from this view.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    const proceed = await appConfirm('Re-send ALFT workflow email to the assigned social worker now?');
-    if (!proceed) return;
-    await startWorkflowFromIntake(assignmentRow, { skipVerificationCheck: true });
-  };
-
   const openResendSwPreviewFromEdit = (row: StandaloneUpload) => {
     const assignmentRow = findAssignmentForUpload(row);
     if (!assignmentRow) {
@@ -3232,25 +2846,6 @@ export default function AdminAlftTrackerPage() {
     }
   };
 
-  const resolveTemplateUrlFromUpload = (row: StandaloneUpload | null) => {
-    if (!row) return '';
-    const files = Array.isArray((row as any)?.files) ? (row as any).files : [];
-    for (const file of files) {
-      const url = String((file as any)?.downloadURL || '').trim();
-      const name = String((file as any)?.fileName || '').trim();
-      if (!url) continue;
-      if (/\.pdf(\?|$)/i.test(url) || /\.pdf(\?|$)/i.test(name)) return url;
-    }
-    const revisions = Array.isArray((row as any)?.alftRevisions) ? (row as any).alftRevisions : [];
-    for (let i = revisions.length - 1; i >= 0; i -= 1) {
-      const url = String((revisions[i] as any)?.downloadURL || '').trim();
-      const name = String((revisions[i] as any)?.fileName || '').trim();
-      if (!url) continue;
-      if (/\.pdf(\?|$)/i.test(url) || /\.pdf(\?|$)/i.test(name)) return url;
-    }
-    return '';
-  };
-
   const openLiveAlftPrintable = async (opts?: { requireUnlock?: boolean }) => {
     if (!editRow?.id) return;
     const requireUnlock = opts?.requireUnlock !== false;
@@ -3280,10 +2875,6 @@ export default function AdminAlftTrackerPage() {
     params.set('returnTo', `/admin/alft-tracker?edit=${encodeURIComponent(editRow.id)}`);
     const href = `/admin/alft-tracker/dummy-preview?${params.toString()}`;
     window.location.assign(href);
-  };
-
-  const printCurrentEditPdf = () => {
-    void openLiveAlftPrintable({ requireUnlock: true });
   };
 
   /** Rebuild+download ALFT packet in a hidden iframe — stay on the tracker page (no viewer). */
@@ -3881,20 +3472,6 @@ export default function AdminAlftTrackerPage() {
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e: any) {
       toast({ title: 'Download failed', description: e?.message || 'Could not download.', variant: 'destructive' });
-    }
-  };
-
-  const markCompleted = async (row: StandaloneUpload) => {
-    if (!firestore) return;
-    try {
-      await updateDoc(doc(firestore, 'standalone_upload_submissions', row.id), {
-        status: 'processed',
-        processedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      } as any);
-      toast({ title: 'Completed', description: 'Removed from pending intake queue.' });
-    } catch (e: any) {
-      toast({ title: 'Update failed', description: e?.message || 'Could not update.', variant: 'destructive' });
     }
   };
 

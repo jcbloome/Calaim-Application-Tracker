@@ -487,27 +487,6 @@ const resolveSentToSw = (
   return { atMs, label, recipient: recipientEmail };
 };
 
-const resolveRnResend = (
-  log: IspWorkflowActivityEntry[],
-  alftRnResend: any
-): { wasResent: boolean; atMs: number; label: string } => {
-  const activityEntries = log
-    .filter((entry) => clean(entry.event) === 'resent_to_rn')
-    .sort((a, b) => toMs(b.atIso) - toMs(a.atIso));
-  const activity = activityEntries[0] || null;
-  const metaAtMs = toMs(alftRnResend?.resentAt);
-  const atMs = Math.max(toMs(activity?.atIso), metaAtMs);
-  const note = clean(alftRnResend?.note) || clean(activity?.details);
-  if (!atMs && !activity && !alftRnResend) {
-    return { wasResent: false, atMs: 0, label: '' };
-  }
-  const when = formatWhen(atMs);
-  const label = when
-    ? `Resent to RN: ${when}${note ? ` — ${note}` : ''}`
-    : `Resent to RN${note ? ` — ${note}` : ''}`;
-  return { wasResent: true, atMs, label };
-};
-
 const latestNonInviteActivityLabel = (log: IspWorkflowActivityEntry[]) => {
   const sorted = [...log]
     .filter((entry) => clean(entry.event) !== 'sw_invite_sent')

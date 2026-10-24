@@ -16,16 +16,12 @@ interface SimpleGoogleMapsProps {
 export default function SimpleGoogleMaps({
   center = { lat: 36.7783, lng: -119.4179 },
   zoom = 6,
-  staffData = {},
-  rcfeData = {},
-  showStaffLayer = true,
-  showRCFELayer = false,
-  onCountySelect
+  onCountySelect,
 }: SimpleGoogleMapsProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [map, setMap] = useState<any>(null);
+  const [, setMap] = useState<any>(null);
   const retryCountRef = useRef(0);
   const maxRetries = 5;
 

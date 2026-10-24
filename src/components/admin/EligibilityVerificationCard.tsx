@@ -9,16 +9,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  CheckCircle, 
-  XCircle, 
-  Upload, 
-  Eye, 
+import {
+  CheckCircle,
+  XCircle,
   AlertTriangle,
   Shield,
   FileImage,
-  Trash2,
-  Save
+  Save,
 } from 'lucide-react';
 
 export interface EligibilityData {
@@ -240,7 +237,7 @@ export function EligibilityVerificationCard({
                 }}
               />
               <p className="text-xs text-gray-600 mt-1">
-                Upload a screenshot of the eligibility verification from {memberData.healthPlan}'s system
+                Upload a screenshot of the eligibility verification from {memberData.healthPlan}&apos;s system
               </p>
             </div>
 

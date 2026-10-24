@@ -1,7 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { FileText, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
 
 interface NewDocumentBadgeProps {
   hasNewDocuments?: boolean;

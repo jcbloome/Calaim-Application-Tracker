@@ -9,20 +9,17 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Search, 
-  FolderOpen, 
-  CheckCircle2, 
-  AlertTriangle, 
+import {
+  Search,
+  FolderOpen,
+  CheckCircle2,
+  AlertTriangle,
   X,
-  RefreshCw,
   Loader2,
   FileText,
   User,
   MapPin,
   Activity,
-  ExternalLink,
-  Download
 } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
@@ -403,7 +400,7 @@ export default function ClientIDFileFinder() {
               <li>Find the member folder you want to tag</li>
               <li>Rename it to include <code className="bg-gray-100 px-1 rounded">:ClientID: CL######</code> at the end</li>
               <li>Example: <code className="bg-gray-100 px-1 rounded">John Smith - SNF Transition :ClientID: CL001234</code></li>
-              <li>Come back here and click "Search ClientID Files" to find them</li>
+              <li>Come back here and click &quot;Search ClientID Files&quot; to find them</li>
             </ol>
           </div>
           
@@ -411,7 +408,7 @@ export default function ClientIDFileFinder() {
             <div className="text-sm">
               <strong className="text-blue-800">Current Status:</strong>
               <p className="text-blue-700 mt-1">
-                You mentioned adding ClientID tags to two files. Use the "Search ClientID Files" button above to locate them and verify they match with Caspio records.
+                You mentioned adding ClientID tags to two files. Use the &quot;Search ClientID Files&quot; button above to locate them and verify they match with Caspio records.
               </p>
             </div>
           </div>
