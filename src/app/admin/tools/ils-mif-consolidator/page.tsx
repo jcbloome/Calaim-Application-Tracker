@@ -3,28 +3,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  FileSpreadsheet,
   Loader2,
   Mail,
-  MapPin,
-  RefreshCw,
   Search,
-  Upload,
-  Users,
   ExternalLink,
   History,
-  Download,
-  Trash2,
-  ArrowDownWideNarrow,
-  ArrowUpNarrowWide,
-  Eye,
   ChevronDown,
   ChevronRight,
-  Copy,
-  Send,
   FileText,
-  Undo2,
-  Pencil,
 } from 'lucide-react';
 import {
   addDoc,
@@ -48,10 +34,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { identityTokenLookupKeys } from '@/lib/member-identity';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -63,7 +46,6 @@ import {
 import {
   annotateIlsMifRowsWithCaspioMembers,
   annotateIlsMifRowsWithOtherPlanMembers,
-  buildIlsMifDedupeKey as buildIlsMifDedupeKeyStrict,
   compareMifFileNamesByGeneratedDate,
   dedupeIlsMifMasterRows,
   diffIlsMifMemberLists,
@@ -85,7 +67,6 @@ import {
   mifAuthorizationExtendsPastCaspio,
   ilsMifRowNeedsAuthorizedUpdate,
   isIlsMifCaspioAuthorizedStatus,
-  isIlsMifCaspioPendingStatus,
   isIlsMifRowNotInterested,
   isIlsMifSourcedMasterRow,
   isIlsMifPersistedMasterRow,
@@ -113,7 +94,6 @@ import {
   ILS_MIF_FIRESTORE_REMOVE_BATCH_SIZE,
   ILS_MIF_FIRESTORE_DECLINE_BATCH_SIZE,
   ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE,
-  CS_MIF_EXPORT_HEADERS,
   type IlsMifUploadParsePreview,
   type IlsMifCompanionSheet,
   ILS_MIF_AUDIT_COLLECTION,
@@ -158,124 +138,30 @@ import {
   downloadMifServiceDeliveryPdfToBrowser,
   masterRowToMifServiceDeliveryIdentity,
   caspioCachedMemberToMifServiceDeliveryIdentity,
-  MIF_SERVICE_DELIVERY_FORM_NAME,
 } from '@/lib/mif-service-delivery-form';
 import { appConfirm } from '@/components/AppDialogHost';
 import { CaspioUpdateLog } from './components/CaspioUpdateLog';
 import { addIlsMifAuditDoc } from '@/lib/log-change-event';
-
-type IlsMifDedupeKeyInput = Parameters<typeof buildIlsMifDedupeKeyStrict>[0];
-
-const buildIlsMifDedupeKey = (row: Partial<IlsMifDedupeKeyInput>) =>
-  buildIlsMifDedupeKeyStrict(row as IlsMifDedupeKeyInput);
-
-type FilterMode =
-  | 'all'
-  | 'not-in-caspio'
-  | 'new'
-  | 'caspio'
-  | 'caspio-pending'
-  | 'status-updates'
-  | 'duplicates'
-  | 'incomplete'
-  | 'northern'
-  | 'declined';
-
-const MASTER_FILTER_LABELS: Record<FilterMode, string> = {
-  all: 'Master list (all members)',
-  'not-in-caspio': 'Not in Caspio',
-  new: 'Not in Caspio',
-  caspio: 'In Caspio (Kaiser)',
-  'caspio-pending': 'CalAIM Status Pending',
-  'status-updates': 'Caspio updates needed',
-  duplicates: 'Batch duplicates',
-  incomplete: 'Incomplete',
-  northern: 'Northern · not in Caspio',
-  declined: 'Declined',
-};
-
-/** Short plain-language help for the banner above the member table. */
-const MASTER_FILTER_HELP: Record<FilterMode, string> = {
-  all: 'Every member on the consolidated master list.',
-  'not-in-caspio':
-    'Kaiser members not in Caspio yet (Create Application candidates). Denied members are under Northern not in Caspio / Declined.',
-  new: 'Kaiser members not in Caspio yet (Create Application candidates). Denied members are under Northern not in Caspio / Declined.',
-  caspio: 'Members already matched to a Kaiser Caspio record (any CalAIM status).',
-  'caspio-pending':
-    'Caspio CalAIM_Status is still Pending. That is not the same as “needs authorize push” — only members whose MIF auth end extends past Caspio appear under Caspio updates needed. If auth dates are already in Caspio, set CalAIM_Status to Authorized in Caspio (or Refresh Caspio after you change it).',
-  'status-updates':
-    'Actionable Caspio field updates from this MIF: Pending→Authorized (newer auth end), auth date extensions, or T2038 Requested→Received.',
-  duplicates: 'Duplicate rows within the current upload batch.',
-  incomplete: 'Rows missing required identity fields (e.g. Medi-Cal/CIN).',
-  northern:
-    'Northern California counties not yet in Caspio. Already-denied members stay listed with Denied service + date.',
-  declined:
-    'Members we denied services for (bulk Northern denial, single-auth, or Create App). Still appear on monthly MIF master with date.',
-};
-
-type ConsolidationRunSummary = {
-  id: string;
-  createdAtIso: string;
-  label: string;
-  sourceFiles: string[];
-  totals: {
-    total: number;
-    unique: number;
-    caspio: number;
-    duplicates: number;
-    incomplete: number;
-    northern: number;
-  };
-  newMemberCount: number;
-  memberCount?: number;
-  caspioMemberCount?: number;
-  northernMemberCount?: number;
-  declinedMemberCount?: number;
-};
-
-type DeclinedMemberRecord = {
-  id: string;
-  memberFirstName: string;
-  memberLastName: string;
-  memberMrn: string;
-  memberCounty: string;
-  memberMediCalNum: string;
-  memberDob: string;
-  clientId2: string;
-  dedupeKey: string;
-  sourceFileName: string;
-  sourceType: string;
-  declinedAtIso: string;
-  emailSubject: string;
-  emailBodyText: string;
-  customText: string;
-  actedByEmail: string;
-  to: string[];
-  cc: string[];
-};
-
-type NorthernDeclineBatchMember = {
-  memberFirstName: string;
-  memberLastName: string;
-  memberMrn: string;
-  memberCounty: string;
-  memberMediCalNum: string;
-  dedupeKey: string;
-};
-
-type NorthernDeclineBatchRecord = {
-  id: string;
-  sentAtIso: string;
-  subject: string;
-  emailBodyText: string;
-  customText: string;
-  memberCount: number;
-  members: NorthernDeclineBatchMember[];
-  actedByEmail: string;
-  to: string[];
-  cc: string[];
-  runId: string;
-};
+import {
+  buildIlsMifDedupeKey,
+  FilterMode,
+  MASTER_FILTER_LABELS,
+  MASTER_FILTER_HELP,
+  ConsolidationRunSummary,
+  DeclinedMemberRecord,
+  NorthernDeclineBatchMember,
+  NorthernDeclineBatchRecord,
+} from './components/consolidator-types';
+import { ConsolidatorWorkflowCard } from './components/ConsolidatorWorkflowCard';
+import { UploadedFilesCard } from './components/UploadedFilesCard';
+import { ConsolidationRunsCard } from './components/ConsolidationRunsCard';
+import { DeclinedMembersPanel } from './components/DeclinedMembersPanel';
+import { MasterRowsToolbar } from './components/MasterRowsToolbar';
+import { MasterRowsTable } from './components/MasterRowsTable';
+import { DeclineComposerDialog } from './components/DeclineComposerDialog';
+import { DeclinedMemberEmailDialog } from './components/DeclinedMemberEmailDialog';
+import { NorthernBatchEmailDialog } from './components/NorthernBatchEmailDialog';
+import { AuthDetailDialog } from './components/AuthDetailDialog';
 
 export default function IlsMifConsolidatorPage() {
   const { toast } = useToast();
@@ -4961,722 +4847,68 @@ export default function IlsMifConsolidatorPage() {
 
   return (
     <div className="space-y-6 w-full min-w-0">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5" />
-            ILS MIF Consolidator
-          </CardTitle>
-          <CardDescription>
-            Upload MIFs to grow the shared master list (deduped). Same-day or same-filename files are compared by
-            member (MRN/CIN/name). After Caspio check, new members are saved to the master automatically. Then send
-            remaining new members to Create Application anytime.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded border border-blue-200 bg-blue-50/70 px-3 py-2 text-xs text-blue-950 space-y-1">
-            <div className="font-medium">Recommended workflow</div>
-            <ol className="list-decimal pl-4 space-y-0.5">
-              <li>
-                <span className="font-medium">1) Upload MIFs</span> — merges into the master (deduped), saves file
-                history, checks Caspio, and auto-saves the shared master. Same filename / same day is OK: we
-                compare members and only add people who are not already on the list.
-              </li>
-              <li>
-                <span className="font-medium">Single Auth PDFs</span> — use{' '}
-                <Link href="/admin/applications/create#kaiser-ils-datapage" className="underline underline-offset-2">
-                  Create Application
-                </Link>{' '}
-                instead. Single auths are not added to the MIF master (MIF/RFT export lacks full auth fields). Create
-                App parses the PDF, checks MIF master and Caspio, and creates the application directly.
-              </li>
-              <li>
-                <span className="font-medium">2) Bulk Email Denial</span> — northern not-in-Caspio members (optional).
-              </li>
-              <li>
-                <span className="font-medium">3) Send New Members to Create Application</span> — opens Create App
-                with members who are not in Caspio, not declined, and <span className="font-medium">do not already
-                have a skeleton</span>. You can return here anytime and send remaining new members again.
-              </li>
-              <li>
-                <span className="font-medium">Later MIFs / Re-check</span> — upload more files or Re-check Caspio;
-                both auto-save the master + dated run to Firestore. Use Save master now if you changed the list without
-                re-checking.
-              </li>
-              <li>
-                <span className="font-medium">Service Request Form</span> — for one member (e.g. already in Caspio):
-                search the master list and click the row <span className="font-medium">PDF</span> button, or use{' '}
-                <span className="font-medium">One member from Caspio</span> below. You do not need to select 20 rows or
-                batch-create applications.
-              </li>
-            </ol>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              multiple
-              className="hidden"
-              onChange={(event) => void handleUploadFiles(event.target.files)}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isParsing || isMatching || isSaving}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {isParsing || isMatching || isSaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="mr-2 h-4 w-4" />
-              )}
-              {isParsing
-                ? 'Uploading into master list…'
-                : isMatching
-                  ? 'Checking Caspio…'
-                  : isSaving
-                    ? 'Saving master…'
-                    : '1) Upload MIFs → Consolidate + Check Caspio'}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isSendingDeclines || isCheckingDeclineCaspio || !rows.length || !hasCheckedCaspio}
-              onClick={() => openNorthernDeclineComposer()}
-            >
-              {isSendingDeclines || isCheckingDeclineCaspio ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Mail className="mr-2 h-4 w-4" />
-              )}
-              {isCheckingDeclineCaspio ? 'Checking Caspio…' : '2) Bulk Email Denial'}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={
-                !rows.length ||
-                isSaving ||
-                isParsing ||
-                isMatching ||
-                !hasCheckedCaspio ||
-                remainingNewForCreateApp.length === 0
-              }
-              onClick={() => void sendSelectedToCreateApplication()}
-              title={
-                remainingNewForCreateApp.length
-                  ? `${remainingNewForCreateApp.length} member(s) still need a skeleton (not in Caspio, not declined). Selected rows are preferred; otherwise all remaining new members are sent.`
-                  : 'No remaining new members without a skeleton.'
-              }
-            >
-              <ExternalLink className="mr-2 h-4 w-4" />
-              3) Send New Members to Create Application
-              {hasCheckedCaspio && remainingNewForCreateApp.length
-                ? ` (${remainingNewForCreateApp.length})`
-                : ''}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isDownloading || !rows.length}
-              title="Every member on the master list once — same list used for Download Full Master"
-              onClick={() => void downloadMasterAsCsMif('all')}
-            >
-              {isDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-              Download Full Master ({totals.total})
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isDownloading || !visibleRows.length || filter === 'all' || filter === 'duplicates'}
-              title="Download members matching the active master-list filter (non-duplicates only)"
-              onClick={() => void downloadMasterAsCsMif('filtered')}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Download Filtered View
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isDownloading || !rows.length || !hasCheckedCaspio}
-              onClick={() => void downloadMasterAsCsMif('new')}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Export Not in Caspio
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isComparingRuns || runs.length < 2}
-              onClick={() => void compareActiveRunToPrevious()}
-            >
-              {isComparingRuns ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <History className="mr-2 h-4 w-4" />}
-              Compare to Previous Run
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!rows.length && !sourceFiles.length}
-              onClick={() => clearSessionList()}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Clear Session List
-            </Button>
-            <Button
-              size="sm"
-              className="bg-emerald-700 text-white hover:bg-emerald-800"
-              disabled={isLoadingSaved}
-              onClick={() => void loadSavedMasterList()}
-            >
-              {isLoadingSaved ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4" />}
-              Load Latest Master List
-            </Button>
-          </div>
-
-          {masterListCreatedAtIso || lastMifUploadedAtIso ? (
-            <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 space-y-1">
-              {masterListUpdatedLabel ? (
-                <div>
-                  <span className="font-semibold">Master list last updated:</span>{' '}
-                  <span className="font-mono tabular-nums">{masterListUpdatedLabel}</span>
-                  <span className="ml-2 text-xs text-emerald-800">
-                    (saved master in Firestore)
-                  </span>
-                </div>
-              ) : null}
-              {lastMifUploadedSummary ? (
-                <div>
-                  <span className="font-semibold">Last MIF uploaded:</span>{' '}
-                  <span className="break-all font-medium text-emerald-950">{lastMifUploadedFileName || 'Unknown MIF file'}</span>
-                  <span className="ml-1 font-mono tabular-nums text-emerald-900">
-                    · {lastMifUploadedLabel}
-                  </span>
-                  {lastMifUploadedRowCount > 0 ? (
-                    <span className="ml-1 text-xs text-emerald-800">
-                      ({lastMifUploadedRowCount} member{lastMifUploadedRowCount === 1 ? '' : 's'})
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="text-xs text-emerald-800">
-                Load Latest Master List refreshes from Firestore and re-checks Kaiser Caspio for status changes.
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-              Master list last-updated time is not available yet. Use{' '}
-              <span className="font-medium">Load Latest Master List</span> after a save, or upload/re-check Caspio to
-              create the master timestamp.
-            </div>
-          )}
-
-          <div className="rounded border bg-slate-50 px-3 py-2 text-xs text-slate-700">
-            Decline emails go <span className="font-medium">To</span> {ILS_DECISION_TO[0]} and always{' '}
-            <span className="font-medium">CC</span> {ILS_DECISION_CC[0]}. Subject uses member name + MRN.
-          </div>
-
-          <div className="space-y-1 text-sm text-muted-foreground">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="inline-flex flex-wrap items-center gap-1">
-                Session files ({mifDateSortDesc ? 'newest first' : 'oldest first'}):{' '}
-                <span className="font-medium text-slate-800">
-                  {sortedSessionFiles.length ? `${sortedSessionFiles.length} MIF file(s)` : 'None yet'}
-                </span>
-                {sortedSessionFiles.length ? (
-                  <>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-0.5 text-blue-700 underline-offset-2 hover:underline"
-                      onClick={() => setSessionFilesExpanded((prev) => !prev)}
-                    >
-                      {sessionFilesExpanded ? (
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      ) : (
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      )}
-                      {sessionFilesExpanded ? 'Hide MIFs' : 'Show MIFs'}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-blue-700 underline-offset-2 hover:underline"
-                      onClick={() => toggleMifDateSort()}
-                    >
-                      reverse
-                    </button>
-                  </>
-                ) : null}
-              </span>
-              {lastMatchedLabel ? <span>Last Caspio check: {lastMatchedLabel}</span> : null}
-              {masterListCreatedAtIso ? (
-                <span>
-                  Master list last updated:{' '}
-                  <span className="font-medium text-slate-800">{masterListUpdatedLabel}</span>
-                </span>
-              ) : null}
-              {lastMifUploadedSummary ? (
-                <span>
-                  Last MIF uploaded:{' '}
-                  <span className="font-medium text-slate-800">{lastMifUploadedSummary}</span>
-                </span>
-              ) : null}
-              {activeRunId ? <span>Active run: {activeRunId}</span> : null}
-            </div>
-            {sessionFilesExpanded && sortedSessionFiles.length ? (
-              <ul className="max-h-[180px] overflow-auto rounded border bg-white divide-y text-xs text-slate-800">
-                {sortedSessionFiles.map((fileName) => {
-                  const dateKey = extractMifGeneratedDateKey(fileName);
-                  return (
-                    <li
-                      key={`session-mif-${fileName}`}
-                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5"
-                    >
-                      <span className="font-medium">{fileName}</span>
-                      <span className="text-muted-foreground">
-                        {formatMifGeneratedDateLabel(dateKey) || dateKey || 'No date in name'}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-          </div>
-
-          {uploadDateWarnings.length ? (
-            <div className="rounded border border-amber-300 bg-amber-50 text-xs text-amber-950">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
-                onClick={() => setUploadDateWarningsExpanded((prev) => !prev)}
-                aria-expanded={uploadDateWarningsExpanded}
-              >
-                <span className="inline-flex min-w-0 items-center gap-2 font-medium">
-                  {uploadDateWarningsExpanded ? (
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                  )}
-                  <span className="truncate">
-                    MIF date overlap warnings
-                    <span className="ml-1 font-normal text-amber-800">
-                      · {uploadDateWarnings.length} notice{uploadDateWarnings.length === 1 ? '' : 's'}
-                    </span>
-                  </span>
-                </span>
-                <span className="shrink-0 text-[11px] font-medium text-amber-800">
-                  {uploadDateWarningsExpanded ? 'Hide' : 'Show'}
-                </span>
-              </button>
-              {uploadDateWarningsExpanded ? (
-                <div className="space-y-1 border-t border-amber-200 px-3 py-2">
-                  {uploadDateWarnings.map((line) => (
-                    <div key={line}>{line}</div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {lastUploadParsePreview ? (
-            <div className="rounded border border-emerald-300 bg-emerald-50 text-xs text-emerald-950">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
-                onClick={() => setParsePreviewExpanded((prev) => !prev)}
-                aria-expanded={parsePreviewExpanded}
-              >
-                <span className="inline-flex min-w-0 items-center gap-2 font-medium">
-                  {parsePreviewExpanded ? (
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                  )}
-                  <span className="truncate">
-                    Parse preview — sample member
-                    <span className="ml-1 font-normal text-emerald-800">
-                      · {lastUploadParsePreview.sampleMemberLabel || '—'}
-                      {' · '}
-                      {lastUploadParsePreview.populatedHeaderCount}/{CS_MIF_EXPORT_HEADERS.length} ILS columns
-                      {lastUploadParsePreview.emptyHeaders.length
-                        ? ` · ${lastUploadParsePreview.emptyHeaders.length} empty`
-                        : ''}
-                    </span>
-                  </span>
-                </span>
-                <span className="shrink-0 text-[11px] font-medium text-emerald-800">
-                  {parsePreviewExpanded ? 'Hide' : 'Show'}
-                </span>
-              </button>
-              {parsePreviewExpanded ? (
-                <div className="space-y-3 border-t border-emerald-200 px-3 py-3">
-                  <p className="text-emerald-900">
-                    One sample row from the latest upload batch. Values below are what we parsed and will use for master
-                    download / Create App notes. Empty fields are highlighted.
-                  </p>
-                  <div className="rounded border border-emerald-200 bg-white/70 p-3 space-y-2">
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 font-medium text-emerald-950">
-                      <span>{lastUploadParsePreview.sourceFileName}</span>
-                      <span>{lastUploadParsePreview.memberCount} member(s) in upload</span>
-                      <span>Sample: {lastUploadParsePreview.sampleMemberLabel || '—'}</span>
-                      <span>
-                        {lastUploadParsePreview.populatedHeaderCount}/{CS_MIF_EXPORT_HEADERS.length} ILS columns
-                        populated
-                      </span>
-                      <span>
-                        {lastUploadParsePreview.sheetHeaderCount} sheet headers ·{' '}
-                        {lastUploadParsePreview.originalColumnCount} raw columns captured
-                      </span>
-                    </div>
-                    {lastUploadParsePreview.emptyHeaders.length ? (
-                      <div className="text-amber-800">
-                        Empty on sample row: {lastUploadParsePreview.emptyHeaders.slice(0, 8).join(', ')}
-                        {lastUploadParsePreview.emptyHeaders.length > 8
-                          ? ` (+${lastUploadParsePreview.emptyHeaders.length - 8} more)`
-                          : ''}
-                      </div>
-                    ) : (
-                      <div className="text-emerald-800">All standard ILS CS MIF columns populated on sample row.</div>
-                    )}
-                    <div className="max-h-64 overflow-auto rounded border border-emerald-100">
-                      <table className="w-full text-left">
-                        <thead className="sticky top-0 bg-emerald-100/90">
-                          <tr>
-                            <th className="px-2 py-1 font-semibold">ILS column</th>
-                            <th className="px-2 py-1 font-semibold">Parsed value</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {CS_MIF_EXPORT_HEADERS.map((header) => {
-                            const value = String(lastUploadParsePreview.sampleByHeader[header] || '').trim();
-                            return (
-                              <tr
-                                key={`${lastUploadParsePreview.sourceFileName}-${header}`}
-                                className={
-                                  value ? 'border-t border-emerald-50' : 'border-t border-amber-100 bg-amber-50/80'
-                                }
-                              >
-                                <td className="px-2 py-1 align-top font-medium whitespace-nowrap">{header}</td>
-                                <td className="px-2 py-1 align-top break-all">{value || '— empty —'}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-            <Button
-              size="default"
-              className="h-10 px-5 font-semibold"
-              disabled={isMatching || isSaving || isParsing || !rows.length}
-              onClick={() => void recheckCaspioAndSaveMaster()}
-            >
-              {isMatching || isSaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
-              )}
-              {isMatching ? 'Checking Caspio…' : isSaving ? 'Saving master…' : 'Re-check Caspio'}
-            </Button>
-            <Button
-              size="default"
-              variant="outline"
-              className="h-10 px-4 font-semibold"
-              disabled={isSaving || isParsing || isMatching || !rows.length || !hasCheckedCaspio}
-              onClick={() =>
-                void saveMasterListAndRun({ quiet: false, skipPartialConfirm: true })
-              }
-            >
-              {isSaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <History className="mr-2 h-4 w-4" />
-              )}
-              Save master now
-            </Button>
-            <div className="min-w-0 flex-1 text-right space-y-0.5">
-              <div className="text-sm font-semibold text-slate-900">
-                {hasCheckedCaspio ? 'Kaiser Caspio status for summary cards' : 'Re-check Caspio required'}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {hasCheckedCaspio
-                  ? lastMatchedLabel
-                    ? `${lastMatchedLabel}. Re-check auto-saves the master. Not in Caspio = same members Create Application loads (no skeleton yet).`
-                    : 'Re-check refreshes Caspio status and auto-saves the master. Not in Caspio = same members Create Application loads (no skeleton yet).'
-                  : 'Not in Caspio / Already in Caspio / Northern counts stay blank until you re-check (Kaiser only). Upload or Re-check auto-saves the master.'}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm text-blue-950">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="font-semibold">Running master consolidator total</span>
-              <span className="text-2xl font-bold tabular-nums">{totals.total}</span>
-              <span className="text-blue-800">
-                unique member{totals.total === 1 ? '' : 's'} across all MIFs
-              </span>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-blue-900/90">
-              <span>
-                New from uploads (this session):{' '}
-                <span className="font-semibold tabular-nums">{sessionNetNewFromUploads}</span>
-              </span>
-              {lastUploadStats ? (
-                <span>
-                  Latest upload:{' '}
-                  <span className="font-semibold tabular-nums">{lastUploadStats.parsedRows}</span> spreadsheet row
-                  {lastUploadStats.parsedRows === 1 ? '' : 's'} parsed
-                  {' → '}
-                  <span className="font-semibold tabular-nums">{lastUploadStats.uniqueParsed}</span> unique people
-                  {lastUploadStats.duplicateParsed > 0 ? (
-                    <>
-                      {' · '}
-                      <span className="tabular-nums">{lastUploadStats.duplicateParsed}</span> repeat line
-                      {lastUploadStats.duplicateParsed === 1 ? '' : 's'} (same person on multiple spreadsheet lines — not added again to master)
-                    </>
-                  ) : null}
-                  {' · '}
-                  <span className="font-semibold tabular-nums">+{lastUploadStats.netNew}</span> new to master
-                  {' · '}
-                  <span className="tabular-nums">{lastUploadStats.fileCount}</span> file
-                  {lastUploadStats.fileCount === 1 ? '' : 's'}
-                </span>
-              ) : null}
-              <span>
-                Member rows across all uploaded MIF files:{' '}
-                <span className="font-semibold tabular-nums">{rawMembersAcrossUploadedMifs}</span>
-                <span className="text-blue-800/80"> (before unique merge)</span>
-              </span>
-              {totals.duplicateSpreadsheetLines > 0 ? (
-                <span>
-                  {totals.duplicateSpreadsheetLines} extra spreadsheet line
-                  {totals.duplicateSpreadsheetLines === 1 ? '' : 's'} from last merge (same person already on master)
-                </span>
-              ) : null}
-              {sortedSessionFiles.length ? (
-                <span>
-                  {sortedSessionFiles.length} MIF file{sortedSessionFiles.length === 1 ? '' : 's'} in
-                  this session
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-1 text-xs text-blue-800/90">
-              <span className="font-medium">Master list</span> = every member once (full list for download). Some MIFs
-              include the full roster — uploading another full file updates existing people and only adds net-new
-              members. The same MRN/CIN/Client ID never appears twice.
-              New from uploads = people added to the master when you upload. Monthly stats on{' '}
-              <Link href="/admin/tools/kaiser-statistics" className="underline underline-offset-2">
-                Kaiser Statistics
-              </Link>
-              .
-            </p>
-            {rawMembersAcrossUploadedMifs > totals.total * 5 && totals.total > 0 ? (
-              <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-950">
-                <span className="font-semibold">Spreadsheet rows exceed unique master total (expected when full MIFs overlap).</span>{' '}
-                {rawMembersAcrossUploadedMifs.toLocaleString()} spreadsheet rows were logged across uploaded files, and{' '}
-                {totals.total} unique people are on the master. That is normal when monthly/full MIFs repeat the same
-                members — duplicates are merged by MRN/CIN/Client ID, not listed twice. If unique people looks far too
-                low for one file alone, check Excel MRN/CIN formatting, then hard-refresh and re-upload.
-              </p>
-            ) : null}
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {clickableStat(
-              'all',
-              'Master list total',
-              totals.total,
-              '',
-              {
-                hint:
-                  `Every member once · Download Full Master exports all ${totals.total}` +
-                  (sessionNetNewFromUploads
-                    ? ` · +${sessionNetNewFromUploads} new this session`
-                    : ''),
-              }
-            )}
-            {clickableStat(
-              'new',
-              'Not in Caspio',
-              hasCheckedCaspio ? totals.notInCaspioAll : '—',
-              hasCheckedCaspio ? 'text-emerald-700' : 'text-muted-foreground',
-              {
-                disabled: !hasCheckedCaspio,
-                hint: hasCheckedCaspio
-                  ? totals.alreadyHaveSkeleton > 0
-                    ? `Create App candidates · ${totals.alreadyHaveSkeleton} already have skeleton · denials are under Northern not in Caspio`
-                    : 'Create App candidates · denials are under Northern not in Caspio'
-                  : 'Re-check Caspio first',
-              }
-            )}
-            {clickableStat(
-              'caspio',
-              'In Caspio (Kaiser)',
-              hasCheckedCaspio ? totals.caspio : '—',
-              hasCheckedCaspio ? 'text-amber-700' : 'text-muted-foreground',
-              {
-                disabled: !hasCheckedCaspio,
-                hint: hasCheckedCaspio ? 'CalAIM Authorized in Caspio' : 'Re-check Caspio first',
-              }
-            )}
-            {clickableStat(
-              'caspio-pending',
-              'CalAIM Pending',
-              hasCheckedCaspio ? totals.caspioPending : '—',
-              hasCheckedCaspio ? 'text-violet-700' : 'text-muted-foreground',
-              {
-                disabled: !hasCheckedCaspio,
-                hint: hasCheckedCaspio
-                  ? 'In Caspio · Pending with MIF auth end after Caspio auth end'
-                  : 'Re-check Caspio first',
-              }
-            )}
-            {clickableStat(
-              'status-updates',
-              'Caspio updates needed',
-              hasCheckedCaspio ? totals.statusUpdates : '—',
-              hasCheckedCaspio ? 'text-fuchsia-700' : 'text-muted-foreground',
-              {
-                disabled: !hasCheckedCaspio,
-                hint: hasCheckedCaspio
-                  ? `${totals.needsAuthorized} new/extended auth → Authorized · ${totals.needsT2038Received} T2038 updates`
-                  : 'Re-check Caspio first',
-              }
-            )}
-            {clickableStat('incomplete', 'Incomplete', totals.incomplete, 'text-red-700')}
-            {clickableStat(
-              'northern',
-              'Northern not in Caspio',
-              hasCheckedCaspio ? totals.northern : '—',
-              hasCheckedCaspio ? 'text-indigo-700' : 'text-muted-foreground',
-              {
-                disabled: !hasCheckedCaspio,
-                hint: hasCheckedCaspio
-                  ? totals.northernNeedingDenial < totals.northern
-                    ? `${totals.northernNeedingDenial} still need denial · ${
-                        totals.northern - totals.northernNeedingDenial
-                      } already denied (kept on list)`
-                    : 'Still need denial email'
-                  : 'Re-check Caspio first',
-              }
-            )}
-            {clickableStat(
-              'declined',
-              'Declined list',
-              Math.max(totals.declined || 0, declinedMembers.length),
-              'text-rose-700',
-              {
-                hint:
-                  northernDeclineBatches.length > 0
-                    ? `${northernDeclineBatches.length} bulk send(s) logged · denied stay on monthly MIF`
-                    : 'Denied service + date · stay on monthly MIF updates',
-              }
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[240px] max-w-lg flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={queryText}
-                onChange={(event) => {
-                  setQueryText(event.target.value);
-                  scrollToMasterList();
-                }}
-                placeholder="Search member by name, MRN, CIN, DOB, county…"
-                className="pl-9"
-                aria-label="Search master MIF members"
-              />
-            </div>
-            {queryText.trim() ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => setQueryText('')}
-              >
-                Clear search
-              </Button>
-            ) : null}
-            <Button
-              size="sm"
-              variant={northernOnly || filter === 'northern' ? 'default' : 'outline'}
-              disabled={!hasCheckedCaspio}
-              onClick={() => {
-                setNorthernOnly((prev) => !prev);
-                setFilter('northern');
-                scrollToMasterList();
-              }}
-            >
-              <MapPin className="mr-1 h-4 w-4" />
-              Northern not in Caspio
-            </Button>
-            {(
-              [
-                ['new', 'Not in Caspio'],
-                ['caspio', 'In Caspio'],
-                ['status-updates', 'Status updates'],
-                ['duplicates', 'Duplicates'],
-                ['incomplete', 'Incomplete'],
-                ['declined', 'Declined'],
-                ['all', 'All'],
-              ] as Array<[FilterMode, string]>
-            ).map(([value, label]) => (
-              <Button
-                key={value}
-                size="sm"
-                variant={filter === value ? 'default' : 'outline'}
-                disabled={
-                  (value === 'new' || value === 'caspio' || value === 'status-updates') &&
-                  !hasCheckedCaspio
-                }
-                onClick={() => {
-                  setFilter(value);
-                  if (value !== 'northern') setNorthernOnly(false);
-                  scrollToMasterList();
-                }}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
-
-          {hasCheckedCaspio && pendingAuthorizeCandidates.length > 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
-              <div className="min-w-0 space-y-1">
-                <div className="text-sm font-semibold text-violet-950">
-                  Pending → Authorized — update manually in Caspio ({pendingAuthorizeCandidates.length})
-                </div>
-                <div className="text-xs text-violet-900/90">
-                  These members are still Pending in Caspio but the MIF shows a T2038 authorization. Staff set
-                  Authorized in Caspio directly so the assigned staff are informed. Open a row&apos;s auth details to
-                  copy the auth number and dates, then use Refresh Caspio on the row to clear it from this list.
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {hasCheckedCaspio && pendingT2038ReceivedCandidates.length > 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-4 py-3">
-              <div className="min-w-0 space-y-1">
-                <div className="text-sm font-semibold text-fuchsia-950">
-                  T2038 Requested → Received — update manually in Caspio ({pendingT2038ReceivedCandidates.length})
-                </div>
-                <div className="text-xs text-fuchsia-900/90">
-                  These members are on a MIF with a T2038 auth but Caspio still shows T2038 Requested. Set
-                  Kaiser_Status to “{ILS_MIF_TARGET_T2038_RECEIVED_STATUS}” in Caspio, then use Refresh Caspio on
-                  the row to clear it from this list.
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+      <ConsolidatorWorkflowCard
+        fileInputRef={fileInputRef}
+        handleUploadFiles={handleUploadFiles}
+        isParsing={isParsing}
+        isMatching={isMatching}
+        isSaving={isSaving}
+        isSendingDeclines={isSendingDeclines}
+        isCheckingDeclineCaspio={isCheckingDeclineCaspio}
+        rows={rows}
+        hasCheckedCaspio={hasCheckedCaspio}
+        openNorthernDeclineComposer={openNorthernDeclineComposer}
+        remainingNewForCreateApp={remainingNewForCreateApp}
+        sendSelectedToCreateApplication={sendSelectedToCreateApplication}
+        isDownloading={isDownloading}
+        downloadMasterAsCsMif={downloadMasterAsCsMif}
+        totals={totals}
+        visibleRows={visibleRows}
+        filter={filter}
+        isComparingRuns={isComparingRuns}
+        runs={runs}
+        compareActiveRunToPrevious={compareActiveRunToPrevious}
+        sourceFiles={sourceFiles}
+        clearSessionList={clearSessionList}
+        isLoadingSaved={isLoadingSaved}
+        loadSavedMasterList={loadSavedMasterList}
+        masterListCreatedAtIso={masterListCreatedAtIso}
+        lastMifUploadedAtIso={lastMifUploadedAtIso}
+        masterListUpdatedLabel={masterListUpdatedLabel}
+        lastMifUploadedSummary={lastMifUploadedSummary}
+        lastMifUploadedFileName={lastMifUploadedFileName}
+        lastMifUploadedLabel={lastMifUploadedLabel}
+        lastMifUploadedRowCount={lastMifUploadedRowCount}
+        mifDateSortDesc={mifDateSortDesc}
+        sortedSessionFiles={sortedSessionFiles}
+        setSessionFilesExpanded={setSessionFilesExpanded}
+        sessionFilesExpanded={sessionFilesExpanded}
+        toggleMifDateSort={toggleMifDateSort}
+        lastMatchedLabel={lastMatchedLabel}
+        activeRunId={activeRunId}
+        uploadDateWarnings={uploadDateWarnings}
+        setUploadDateWarningsExpanded={setUploadDateWarningsExpanded}
+        uploadDateWarningsExpanded={uploadDateWarningsExpanded}
+        lastUploadParsePreview={lastUploadParsePreview}
+        setParsePreviewExpanded={setParsePreviewExpanded}
+        parsePreviewExpanded={parsePreviewExpanded}
+        recheckCaspioAndSaveMaster={recheckCaspioAndSaveMaster}
+        saveMasterListAndRun={saveMasterListAndRun}
+        sessionNetNewFromUploads={sessionNetNewFromUploads}
+        lastUploadStats={lastUploadStats}
+        rawMembersAcrossUploadedMifs={rawMembersAcrossUploadedMifs}
+        clickableStat={clickableStat}
+        declinedMembers={declinedMembers}
+        northernDeclineBatches={northernDeclineBatches}
+        queryText={queryText}
+        setQueryText={setQueryText}
+        scrollToMasterList={scrollToMasterList}
+        northernOnly={northernOnly}
+        setNorthernOnly={setNorthernOnly}
+        setFilter={setFilter}
+        pendingAuthorizeCandidates={pendingAuthorizeCandidates}
+        pendingT2038ReceivedCandidates={pendingT2038ReceivedCandidates}
+      />
 
       {latestConsolidationRun ? (
         <Card>
@@ -5734,366 +4966,42 @@ export default function IlsMifConsolidatorPage() {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader className="pb-2">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between gap-3 text-left"
-            onClick={() => setUploadedFilesSectionExpanded((prev) => !prev)}
-            aria-expanded={uploadedFilesSectionExpanded}
-          >
-            <CardTitle className="flex items-center gap-2 text-base">
-              {uploadedFilesSectionExpanded ? (
-                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
-              <Upload className="h-4 w-4 shrink-0" />
-              Uploaded MIF Files (viewable)
-              <span className="text-sm font-normal text-muted-foreground">
-                · {uploadedFiles.length} file{uploadedFiles.length === 1 ? '' : 's'}
-              </span>
-            </CardTitle>
-            <span className="shrink-0 text-xs font-medium text-blue-700">
-              {uploadedFilesSectionExpanded ? 'Hide' : 'Show'}
-            </span>
-          </button>
-          {uploadedFilesSectionExpanded ? (
-            <CardDescription>
-              Each uploaded MIF is saved with its members. Expand a row to see names and MRNs. Same-date uploads report
-              how many members are new before merge.
-              {masterListCreatedAtIso
-                ? ` Master list last updated ${new Date(masterListCreatedAtIso).toLocaleString()}.`
-                : ''}
-            </CardDescription>
-          ) : null}
-        </CardHeader>
-        {uploadedFilesSectionExpanded ? (
-        <CardContent className="space-y-2">
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 text-rose-700"
-              disabled={!uploadedFiles.length || deletingUploadId === '__all__'}
-              onClick={() => void clearAllUploadedFileRecords()}
-            >
-              {deletingUploadId === '__all__' ? (
-                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="mr-2 h-3.5 w-3.5" />
-              )}
-              Clear All Upload History
-            </Button>
-          </div>
-          <div className="max-h-[420px] overflow-auto rounded border">
-            <table className="min-w-full text-sm">
-              <thead className="sticky top-0 bg-slate-50 text-left">
-                <tr>
-                  <th className="px-3 py-2">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 font-semibold hover:text-blue-700"
-                      onClick={() => toggleMifDateSort()}
-                      title="Toggle MIF date sort"
-                    >
-                      MIF date
-                      {mifDateSortDesc ? (
-                        <ArrowDownWideNarrow className="h-3.5 w-3.5" />
-                      ) : (
-                        <ArrowUpNarrowWide className="h-3.5 w-3.5" />
-                      )}
-                      <span className="text-[10px] font-normal text-muted-foreground">
-                        {mifDateSortDesc ? 'newest' : 'oldest'}
-                      </span>
-                    </button>
-                  </th>
-                  <th className="px-3 py-2">File</th>
-                  <th className="px-3 py-2">Uploaded</th>
-                  <th className="px-3 py-2">Members</th>
-                  <th className="px-3 py-2">Linked run</th>
-                  <th className="px-3 py-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedUploadedFiles.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
-                      No uploaded MIF files saved yet.
-                    </td>
-                  </tr>
-                ) : (
-                  sortedUploadedFiles.map((file) => {
-                    const dateKey = file.mifDateKey || extractMifGeneratedDateKey(file.fileName);
-                    const isExpanded = expandedUploadId === file.id;
-                    const members = uploadMembersById[file.id] || [];
-                    return (
-                      <React.Fragment key={file.id}>
-                        <tr className="border-t">
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            {file.mifDateLabel || formatMifGeneratedDateLabel(dateKey) || dateKey || '—'}
-                          </td>
-                          <td className="px-3 py-2 font-medium">{file.fileName}</td>
-                          <td className="px-3 py-2">
-                            {file.uploadedAtIso ? new Date(file.uploadedAtIso).toLocaleString() : '—'}
-                          </td>
-                          <td className="px-3 py-2">{file.rowCount || 0}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{file.runId || 'Not linked yet'}</td>
-                          <td className="px-3 py-2">
-                            <div className="flex flex-wrap gap-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2"
-                                onClick={() => void toggleUploadedMifMembers(file.id)}
-                              >
-                                {loadingUploadMembersId === file.id ? (
-                                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Eye className="mr-1 h-3.5 w-3.5" />
-                                )}
-                                {isExpanded ? 'Hide members' : 'View members'}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 text-rose-700"
-                                disabled={deletingUploadId === file.id}
-                                onClick={() => void deleteUploadedFileRecord(file)}
-                              >
-                                {deletingUploadId === file.id ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                )}
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                        {isExpanded ? (
-                          <tr className="border-t bg-slate-50">
-                            <td colSpan={6} className="px-3 py-2">
-                              {loadingUploadMembersId === file.id ? (
-                                <div className="text-xs text-muted-foreground">Loading members…</div>
-                              ) : members.length === 0 ? (
-                                <div className="text-xs text-muted-foreground">
-                                  No saved members for this file (older uploads may only have history metadata).
-                                </div>
-                              ) : (
-                                <div className="max-h-[220px] overflow-auto rounded border bg-white">
-                                  <table className="min-w-full text-xs">
-                                    <thead className="sticky top-0 bg-slate-100 text-left">
-                                      <tr>
-                                        <th className="px-2 py-1">Last</th>
-                                        <th className="px-2 py-1">First</th>
-                                        <th className="px-2 py-1">MRN</th>
-                                        <th className="px-2 py-1">CIN</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {members.map((member, index) => (
-                                        <tr
-                                          key={`${file.id}-${member.memberMrn || member.memberMediCalNum || index}`}
-                                          className="border-t"
-                                        >
-                                          <td className="px-2 py-1">{member.memberLastName}</td>
-                                          <td className="px-2 py-1">{member.memberFirstName}</td>
-                                          <td className="px-2 py-1">{member.memberMrn || '—'}</td>
-                                          <td className="px-2 py-1">{member.memberMediCalNum || '—'}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        ) : null}
-                      </React.Fragment>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-        ) : null}
-      </Card>
+      <UploadedFilesCard
+        setUploadedFilesSectionExpanded={setUploadedFilesSectionExpanded}
+        uploadedFilesSectionExpanded={uploadedFilesSectionExpanded}
+        uploadedFiles={uploadedFiles}
+        masterListCreatedAtIso={masterListCreatedAtIso}
+        deletingUploadId={deletingUploadId}
+        clearAllUploadedFileRecords={clearAllUploadedFileRecords}
+        toggleMifDateSort={toggleMifDateSort}
+        mifDateSortDesc={mifDateSortDesc}
+        sortedUploadedFiles={sortedUploadedFiles}
+        expandedUploadId={expandedUploadId}
+        uploadMembersById={uploadMembersById}
+        toggleUploadedMifMembers={toggleUploadedMifMembers}
+        loadingUploadMembersId={loadingUploadMembersId}
+        deleteUploadedFileRecord={deleteUploadedFileRecord}
+      />
 
-      <Card>
-        <CardHeader className="pb-2">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between gap-3 text-left"
-            onClick={() => setConsolidationRunsSectionExpanded((prev) => !prev)}
-            aria-expanded={consolidationRunsSectionExpanded}
-          >
-            <CardTitle className="flex items-center gap-2 text-base">
-              {consolidationRunsSectionExpanded ? (
-                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
-              <History className="h-4 w-4 shrink-0" />
-              Consolidation Runs
-              <span className="text-sm font-normal text-muted-foreground">
-                · {runs.length} run{runs.length === 1 ? '' : 's'}
-              </span>
-            </CardTitle>
-            <span className="shrink-0 text-xs font-medium text-blue-700">
-              {consolidationRunsSectionExpanded ? 'Hide' : 'Show'}
-            </span>
-          </button>
-          {consolidationRunsSectionExpanded ? (
-            <CardDescription>
-              Each MIF upload auto-saves a dated run. The latest run supports Open / Create App; older runs keep their
-              MIF filenames for history (Show MIFs). Members stay on the shared master list.
-            </CardDescription>
-          ) : null}
-        </CardHeader>
-        {consolidationRunsSectionExpanded ? (
-        <CardContent className="space-y-2">
-          {runs.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No saved runs yet.</div>
-          ) : (
-            runs.map((run) => {
-              const runMifs = sortMifFileNamesByGeneratedDate(run.sourceFiles || [], mifDateSortDirection);
-              const isExpanded = expandedRunId === run.id;
-              const isLatestRun = latestConsolidationRun?.id === run.id;
-              const totalSaved = run.memberCount || run.totals.total || 0;
-              return (
-                <div key={run.id} className="rounded border px-3 py-2 text-sm space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      className="text-left"
-                      onClick={() => setExpandedRunId(isExpanded ? '' : run.id)}
-                    >
-                      <div className="font-medium">
-                        {run.label || run.createdAtIso}
-                        {isLatestRun ? (
-                          <span className="ml-2 text-xs font-normal text-blue-700">Latest</span>
-                        ) : null}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Full list {totalSaved} · {run.newMemberCount} new ·{' '}
-                        {run.caspioMemberCount ?? run.totals.caspio} in Caspio ·{' '}
-                        {run.northernMemberCount ?? run.totals.northern} northern
-                        {typeof run.declinedMemberCount === 'number'
-                          ? ` · ${run.declinedMemberCount} declined`
-                          : ''}
-                        {runMifs.length ? ` · ${runMifs.length} MIF file(s)` : ''}
-                        {' · '}
-                        <span className="text-blue-700">{isExpanded ? 'Hide MIFs' : 'Show MIFs'}</span>
-                      </div>
-                    </button>
-                    <div className="flex flex-wrap gap-2">
-                      {isLatestRun ? (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isLoadingSaved || isRestoringRemoved || Boolean(deletingRunId)}
-                            onClick={() => {
-                              setExpandedRunId(run.id);
-                              void loadSavedMasterList(run.id);
-                            }}
-                          >
-                            Open Run
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isLoadingSaved || isRestoringRemoved || Boolean(deletingRunId)}
-                            onClick={() => {
-                              setExpandedRunId(run.id);
-                              void restoreRemovedAndStartOver(run.id);
-                            }}
-                            title="Restore Northern CA / RCFE removals for this run and reload from scratch"
-                          >
-                            {isRestoringRemoved && restoringRunId === run.id ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <RefreshCw className="mr-2 h-4 w-4" />
-                            )}
-                            Start over
-                          </Button>
-                          <Button
-                            size="sm"
-                            disabled={Boolean(deletingRunId)}
-                            onClick={() => void sendSelectedToCreateApplication(run.id)}
-                          >
-                            Send New to Create App
-                          </Button>
-                        </>
-                      ) : null}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-rose-700"
-                        disabled={deletingRunId === run.id || Boolean(deletingRunId)}
-                        onClick={() => void deleteConsolidationRun(run)}
-                      >
-                        {deletingRunId === run.id ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="mr-2 h-4 w-4" />
-                        )}
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                  {isExpanded ? (
-                    <div className="rounded border bg-slate-50 px-3 py-2">
-                      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-xs font-medium text-slate-700">
-                          MIFs in this run ({mifDateSortDesc ? 'newest → oldest' : 'oldest → newest'})
-                        </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-[11px]"
-                          onClick={() => toggleMifDateSort()}
-                        >
-                          {mifDateSortDesc ? (
-                            <ArrowDownWideNarrow className="mr-1 h-3.5 w-3.5" />
-                          ) : (
-                            <ArrowUpNarrowWide className="mr-1 h-3.5 w-3.5" />
-                          )}
-                          Reverse date order
-                        </Button>
-                      </div>
-                      {runMifs.length === 0 ? (
-                        <div className="text-xs text-muted-foreground">No source MIF filenames saved.</div>
-                      ) : (
-                        <ul className="divide-y rounded border bg-white">
-                          {runMifs.map((fileName) => {
-                            const dateKey = extractMifGeneratedDateKey(fileName);
-                            return (
-                              <li
-                                key={`${run.id}-${fileName}`}
-                                className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 text-xs"
-                              >
-                                <span className="font-medium text-slate-900">{fileName}</span>
-                                <span className="text-muted-foreground">
-                                  {formatMifGeneratedDateLabel(dateKey) || dateKey || 'No date in name'}
-                                </span>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })
-          )}
-        </CardContent>
-        ) : null}
-      </Card>
+      <ConsolidationRunsCard
+        setConsolidationRunsSectionExpanded={setConsolidationRunsSectionExpanded}
+        consolidationRunsSectionExpanded={consolidationRunsSectionExpanded}
+        runs={runs}
+        mifDateSortDirection={mifDateSortDirection}
+        expandedRunId={expandedRunId}
+        latestConsolidationRun={latestConsolidationRun}
+        setExpandedRunId={setExpandedRunId}
+        isLoadingSaved={isLoadingSaved}
+        isRestoringRemoved={isRestoringRemoved}
+        deletingRunId={deletingRunId}
+        loadSavedMasterList={loadSavedMasterList}
+        restoreRemovedAndStartOver={restoreRemovedAndStartOver}
+        restoringRunId={restoringRunId}
+        sendSelectedToCreateApplication={sendSelectedToCreateApplication}
+        deleteConsolidationRun={deleteConsolidationRun}
+        mifDateSortDesc={mifDateSortDesc}
+        toggleMifDateSort={toggleMifDateSort}
+      />
 
       {filter === 'declined' ? (
         <Card ref={masterListAnchorRef} id="mif-master-list">
@@ -6123,368 +5031,28 @@ export default function IlsMifConsolidatorPage() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Bulk send log ({northernDeclineBatches.length})</div>
-              <div className="max-h-[280px] overflow-auto rounded border">
-                <table className="w-max min-w-full text-sm">
-                  <thead className="sticky top-0 z-10 bg-slate-50 text-left">
-                    <tr>
-                      <th className="whitespace-nowrap px-3 py-2">Sent</th>
-                      <th className="whitespace-nowrap px-3 py-2">Members</th>
-                      <th className="whitespace-nowrap px-3 py-2">Subject</th>
-                      <th className="whitespace-nowrap px-3 py-2">By</th>
-                      <th className="whitespace-nowrap px-3 py-2">Email</th>
-                      <th className="whitespace-nowrap px-3 py-2">Restore</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {northernDeclineBatches.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
-                          No bulk northern denial emails logged yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      northernDeclineBatches.map((batch) => (
-                        <tr key={batch.id} className="border-t">
-                          <td className="whitespace-nowrap px-3 py-2">
-                            {batch.sentAtIso ? new Date(batch.sentAtIso).toLocaleString() : '—'}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-center">{batch.memberCount}</td>
-                          <td
-                            className="max-w-[28rem] truncate px-3 py-2 text-muted-foreground"
-                            title={batch.subject || undefined}
-                          >
-                            {batch.subject || '—'}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                            {batch.actedByEmail || '—'}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2">
-                            <div className="flex flex-nowrap gap-1">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 shrink-0 px-2"
-                                onClick={() => setViewedNorthernBatch(batch)}
-                              >
-                                <Eye className="mr-1 h-3.5 w-3.5" />
-                                View Email
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 shrink-0 px-2"
-                                disabled={isSendingDeclines || isCheckingDeclineCaspio}
-                                onClick={() => openResendNorthernBatchComposer(batch)}
-                              >
-                                <Send className="mr-1 h-3.5 w-3.5" />
-                                Edit &amp; Resend
-                              </Button>
-                            </div>
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 shrink-0 px-2 text-sky-800"
-                              disabled={isUndeclining || !(batch.members || []).length}
-                              title="Put these members back on Northern / Create Application lists"
-                              onClick={() => void undeclineNorthernBatchMembers(batch)}
-                            >
-                              {isUndeclining ? (
-                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Undo2 className="mr-1 h-3.5 w-3.5" />
-                              )}
-                              Undecline all
-                            </Button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-medium">
-                  Declined members ({declinedMembers.length})
-                  {Object.values(declinedCaspioDisplayById).filter((s) => s.inCaspio === true).length
-                    ? ` · ${Object.values(declinedCaspioDisplayById).filter((s) => s.inCaspio === true).length} already in Caspio`
-                    : ''}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    disabled={isRefreshingDeclinedCaspio || !declinedMembers.length}
-                    onClick={() => void refreshDeclinedCaspioStatus()}
-                  >
-                    {isRefreshingDeclinedCaspio ? (
-                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                    )}
-                    {isRefreshingDeclinedCaspio ? 'Checking Caspio…' : 'Check Caspio'}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    disabled={
-                      isDownloadingServiceDeliveryPdf ||
-                      !Object.values(selectedDeclinedMemberIds).some(Boolean)
-                    }
-                    title="Download line-by-line Service Request Form PDF(s) for selected declined members"
-                    onClick={() =>
-                      void downloadServiceDeliveryPdfForDeclinedMembers(
-                        declinedMembers.filter((row) => selectedDeclinedMemberIds[row.id])
-                      )
-                    }
-                  >
-                    {isDownloadingServiceDeliveryPdf ? (
-                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <FileText className="mr-1 h-3.5 w-3.5" />
-                    )}
-                    Service Request Form
-                    {Object.values(selectedDeclinedMemberIds).filter(Boolean).length
-                      ? ` (${Object.values(selectedDeclinedMemberIds).filter(Boolean).length})`
-                      : ''}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    disabled={
-                      isSendingDeclines ||
-                      isCheckingDeclineCaspio ||
-                      !Object.values(selectedDeclinedMemberIds).some(Boolean)
-                    }
-                    title="Live Caspio check, then preview/edit/resend one bulk denial for selected declined members"
-                    onClick={() => openResendSelectedDeclinedMembersComposer()}
-                  >
-                    {isSendingDeclines || isCheckingDeclineCaspio ? (
-                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Mail className="mr-1 h-3.5 w-3.5" />
-                    )}
-                    {isCheckingDeclineCaspio ? 'Checking Caspio…' : 'Bulk Email Denial'}
-                    {!isCheckingDeclineCaspio &&
-                    Object.values(selectedDeclinedMemberIds).filter(Boolean).length
-                      ? ` (${Object.values(selectedDeclinedMemberIds).filter(Boolean).length})`
-                      : ''}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-sky-800"
-                    disabled={
-                      isUndeclining ||
-                      !Object.values(selectedDeclinedMemberIds).some(Boolean)
-                    }
-                    onClick={() => void undeclineSelectedDeclinedMembersFromList()}
-                  >
-                    {isUndeclining ? (
-                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Undo2 className="mr-1 h-3.5 w-3.5" />
-                    )}
-                    Undecline selected
-                    {Object.values(selectedDeclinedMemberIds).filter(Boolean).length
-                      ? ` (${Object.values(selectedDeclinedMemberIds).filter(Boolean).length})`
-                      : ''}
-                  </Button>
-                </div>
-              </div>
-              <div className="max-h-[420px] overflow-auto rounded border">
-                <table className="w-max min-w-full text-sm">
-                  <thead className="sticky top-0 z-10 bg-slate-50 text-left">
-                    <tr>
-                      <th className="w-10 whitespace-nowrap px-3 py-2">
-                        <Checkbox
-                          checked={
-                            declinedMembers.length > 0 &&
-                            declinedMembers.every((row) => selectedDeclinedMemberIds[row.id])
-                          }
-                          onCheckedChange={(checked) => {
-                            const on = checked === true;
-                            const next: Record<string, boolean> = {};
-                            if (on) {
-                              declinedMembers.forEach((row) => {
-                                next[row.id] = true;
-                              });
-                            }
-                            setSelectedDeclinedMemberIds(next);
-                          }}
-                          aria-label="Select all declined members"
-                        />
-                      </th>
-                      <th className="whitespace-nowrap px-3 py-2">Member</th>
-                      <th className="whitespace-nowrap px-3 py-2">MRN</th>
-                      <th className="whitespace-nowrap px-3 py-2">County</th>
-                      <th className="whitespace-nowrap px-3 py-2">In Caspio</th>
-                      <th className="whitespace-nowrap px-3 py-2">Denied</th>
-                      <th className="whitespace-nowrap px-3 py-2">Source</th>
-                      <th className="whitespace-nowrap px-3 py-2">Subject</th>
-                      <th className="whitespace-nowrap px-3 py-2">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {declinedMembers.length === 0 ? (
-                      <tr>
-                        <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
-                          No declined members yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      declinedMembers.map((row) => {
-                        const caspioStatus = declinedCaspioDisplayById[row.id];
-                        const inCaspio = caspioStatus?.inCaspio;
-                        const sourceLabel =
-                          row.sourceType === 'single_auth_pdf'
-                            ? 'Single auth'
-                            : row.sourceType === 'mif_consolidator_bulk' || !row.sourceType
-                              ? 'Northern bulk'
-                              : row.sourceType === 'create_app_ils_import'
-                                ? 'Create App'
-                                : row.sourceType;
-                        return (
-                        <tr
-                          key={row.id}
-                          className={`border-t ${inCaspio === true ? 'bg-amber-50/70' : ''}`}
-                        >
-                          <td className="whitespace-nowrap px-3 py-2">
-                            <Checkbox
-                              checked={Boolean(selectedDeclinedMemberIds[row.id])}
-                              onCheckedChange={(checked) =>
-                                setSelectedDeclinedMemberIds((prev) => ({
-                                  ...prev,
-                                  [row.id]: checked === true,
-                                }))
-                              }
-                              aria-label={`Select ${row.memberLastName}, ${row.memberFirstName}`}
-                            />
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 font-medium">
-                            {row.memberLastName}, {row.memberFirstName}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">
-                            {row.memberMrn || '—'}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2">{row.memberCounty || '—'}</td>
-                          <td className="whitespace-nowrap px-3 py-2">
-                            {isRefreshingDeclinedCaspio && inCaspio == null ? (
-                              <span className="inline-flex items-center gap-1 text-muted-foreground">
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Checking…
-                              </span>
-                            ) : inCaspio === true ? (
-                              <span
-                                className="inline-flex max-w-[14rem] flex-col gap-0.5"
-                                title={caspioStatus?.label || 'In Caspio'}
-                              >
-                                <span className="font-medium text-amber-900">Yes</span>
-                                <span className="truncate text-[11px] text-amber-800/90">
-                                  {caspioStatus?.label || 'In Caspio'}
-                                </span>
-                              </span>
-                            ) : inCaspio === false ? (
-                              <span className="font-medium text-emerald-700">No</span>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2">
-                            {row.declinedAtIso ? new Date(row.declinedAtIso).toLocaleString() : '—'}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                            {sourceLabel || '—'}
-                          </td>
-                          <td
-                            className="max-w-[22rem] truncate px-3 py-2 text-muted-foreground"
-                            title={row.emailSubject || undefined}
-                          >
-                            {row.emailSubject || '—'}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2">
-                            <div className="flex flex-nowrap gap-1.5">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 shrink-0 px-2"
-                                disabled={isDownloadingServiceDeliveryPdf}
-                                title="Download Service Request Form PDF for this member's file"
-                                onClick={() => void downloadServiceDeliveryPdfForDeclinedMembers([row])}
-                              >
-                                <FileText className="mr-1 h-3.5 w-3.5" />
-                                PDF
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 shrink-0 px-2"
-                                onClick={() => openDeclinedEmailViewer(row)}
-                              >
-                                <Eye className="mr-1 h-3.5 w-3.5" />
-                                View Email
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 shrink-0 px-2"
-                                disabled={isSendingDeclines || isCheckingDeclineCaspio}
-                                onClick={() => openResendDeclinedMemberComposer(row)}
-                              >
-                                <Send className="mr-1 h-3.5 w-3.5" />
-                                Edit &amp; Resend
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 shrink-0 px-2 text-sky-800"
-                                disabled={isUndeclining}
-                                title="Put back on Northern / Create Application lists"
-                                onClick={() =>
-                                  void undeclineDeclinedRecords([row], {
-                                    label: `${row.memberLastName}, ${row.memberFirstName}`.trim(),
-                                  })
-                                }
-                              >
-                                {isUndeclining ? (
-                                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Undo2 className="mr-1 h-3.5 w-3.5" />
-                                )}
-                                Undecline
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </CardContent>
+          <DeclinedMembersPanel
+            northernDeclineBatches={northernDeclineBatches}
+            setViewedNorthernBatch={setViewedNorthernBatch}
+            isSendingDeclines={isSendingDeclines}
+            isCheckingDeclineCaspio={isCheckingDeclineCaspio}
+            openResendNorthernBatchComposer={openResendNorthernBatchComposer}
+            isUndeclining={isUndeclining}
+            undeclineNorthernBatchMembers={undeclineNorthernBatchMembers}
+            declinedMembers={declinedMembers}
+            declinedCaspioDisplayById={declinedCaspioDisplayById}
+            isRefreshingDeclinedCaspio={isRefreshingDeclinedCaspio}
+            refreshDeclinedCaspioStatus={refreshDeclinedCaspioStatus}
+            isDownloadingServiceDeliveryPdf={isDownloadingServiceDeliveryPdf}
+            selectedDeclinedMemberIds={selectedDeclinedMemberIds}
+            downloadServiceDeliveryPdfForDeclinedMembers={downloadServiceDeliveryPdfForDeclinedMembers}
+            openResendSelectedDeclinedMembersComposer={openResendSelectedDeclinedMembersComposer}
+            undeclineSelectedDeclinedMembersFromList={undeclineSelectedDeclinedMembersFromList}
+            setSelectedDeclinedMemberIds={setSelectedDeclinedMemberIds}
+            openDeclinedEmailViewer={openDeclinedEmailViewer}
+            openResendDeclinedMemberComposer={openResendDeclinedMemberComposer}
+            undeclineDeclinedRecords={undeclineDeclinedRecords}
+          />
         </Card>
       ) : (
         <Card ref={masterListAnchorRef} id="mif-master-list">
@@ -6690,172 +5258,38 @@ export default function IlsMifConsolidatorPage() {
                 </Button>
               </div>
             ) : null}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8"
-                disabled={!visibleRows.length}
-                onClick={selectAllVisibleMasterRows}
-              >
-                Select all shown
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8"
-                disabled={!selectedVisibleRows.length}
-                onClick={deselectVisibleMasterRows}
-              >
-                Deselect shown
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8"
-                disabled={!Object.values(selected).some(Boolean)}
-                onClick={deselectAllMasterRows}
-              >
-                Deselect all
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8"
-                disabled={
-                  isDownloadingServiceDeliveryPdf ||
-                  !selectedServiceDeliveryRows.length
-                }
-                title="Generate & download Service Delivery Form PDF(s) from selected members’ MIF data"
-                onClick={() => void downloadServiceDeliveryPdfForMembers(selectedServiceDeliveryRows)}
-              >
-                {isDownloadingServiceDeliveryPdf ? (
-                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Download className="mr-1 h-3.5 w-3.5" />
-                )}
-                Service Delivery Form
-                {selectedServiceDeliveryRows.length ? ` (${selectedServiceDeliveryRows.length})` : ''}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="default"
-                className="h-8"
-                disabled={
-                  !hasCheckedCaspio ||
-                  isSaving ||
-                  isParsing ||
-                  isMatching ||
-                  (selectedNewRows.length === 0 && remainingNewForCreateApp.length === 0)
-                }
-                title={
-                  selectedNewRows.length
-                    ? `Send ${selectedNewRows.length} selected Create App candidate(s) to Create Application (Parse Row there)`
-                    : remainingNewForCreateApp.length
-                      ? `Send all ${remainingNewForCreateApp.length} remaining Create App candidate(s)`
-                      : 'No Create App candidates (not in Caspio, no skeleton)'
-                }
-                onClick={() => void sendSelectedToCreateApplication()}
-              >
-                <ExternalLink className="mr-1 h-3.5 w-3.5" />
-                Send to Create App
-                {selectedNewRows.length
-                  ? ` (${selectedNewRows.length} selected)`
-                  : remainingNewForCreateApp.length
-                    ? ` (${remainingNewForCreateApp.length})`
-                    : ''}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8"
-                disabled={
-                  isSendingDeclines ||
-                  isCheckingDeclineCaspio ||
-                  !hasCheckedCaspio ||
-                  (selectedNorthernForDecline.length === 0 && totals.northern < 1)
-                }
-                title={
-                  selectedNorthernForDecline.length
-                    ? `Live Caspio check, then email ILS denial for ${selectedNorthernForDecline.length} selected northern member(s)`
-                    : totals.northern
-                      ? `Live Caspio check, then include all ${totals.northern} northern not-in-Caspio member(s)`
-                      : 'Select northern Not in Caspio members, or open Northern not in Caspio filter'
-                }
-                onClick={() => openNorthernDeclineComposer()}
-              >
-                {isSendingDeclines || isCheckingDeclineCaspio ? (
-                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Mail className="mr-1 h-3.5 w-3.5" />
-                )}
-                {isCheckingDeclineCaspio ? 'Checking Caspio…' : 'Bulk Email Denial'}
-                {!isCheckingDeclineCaspio && selectedNorthernForDecline.length
-                  ? ` (${selectedNorthernForDecline.length})`
-                  : !isCheckingDeclineCaspio && totals.northern
-                    ? ` (${totals.northern})`
-                    : ''}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 text-sky-800"
-                disabled={isUndeclining || selectedDeclinedRows.length === 0}
-                title={
-                  selectedDeclinedRows.length
-                    ? `Remove Declined status for ${selectedDeclinedRows.length} selected member(s)`
-                    : 'Select Declined member(s) first'
-                }
-                onClick={() => void undeclineSelectedMembers()}
-              >
-                {isUndeclining ? (
-                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Undo2 className="mr-1 h-3.5 w-3.5" />
-                )}
-                Undecline selected
-                {selectedDeclinedRows.length ? ` (${selectedDeclinedRows.length})` : ''}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 text-rose-700"
-                disabled={isRemovingSelected || isRestoringRemoved || !Object.values(selected).some(Boolean)}
-                onClick={() => void removeSelectedFromSessionList()}
-              >
-                {isRemovingSelected ? (
-                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                )}
-                Remove selected from run
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8"
-                disabled={isRestoringRemoved || isRemovingSelected || (!removedKeys.size && !activeRunId)}
-                onClick={() => void restoreRemovedAndStartOver(activeRunId || undefined)}
-                title="Put Northern CA / RCFE removals (and other removals) back, then reload the run"
-              >
-                {isRestoringRemoved ? (
-                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                )}
-                Restore removed · Start over
-                {removedKeys.size ? ` (${removedKeys.size})` : ''}
-              </Button>
-            </div>
+            <MasterRowsToolbar
+              visibleRows={visibleRows}
+              selectAllVisibleMasterRows={selectAllVisibleMasterRows}
+              selectedVisibleRows={selectedVisibleRows}
+              deselectVisibleMasterRows={deselectVisibleMasterRows}
+              selected={selected}
+              deselectAllMasterRows={deselectAllMasterRows}
+              isDownloadingServiceDeliveryPdf={isDownloadingServiceDeliveryPdf}
+              selectedServiceDeliveryRows={selectedServiceDeliveryRows}
+              downloadServiceDeliveryPdfForMembers={downloadServiceDeliveryPdfForMembers}
+              hasCheckedCaspio={hasCheckedCaspio}
+              isSaving={isSaving}
+              isParsing={isParsing}
+              isMatching={isMatching}
+              selectedNewRows={selectedNewRows}
+              remainingNewForCreateApp={remainingNewForCreateApp}
+              sendSelectedToCreateApplication={sendSelectedToCreateApplication}
+              isSendingDeclines={isSendingDeclines}
+              isCheckingDeclineCaspio={isCheckingDeclineCaspio}
+              selectedNorthernForDecline={selectedNorthernForDecline}
+              totals={totals}
+              openNorthernDeclineComposer={openNorthernDeclineComposer}
+              isUndeclining={isUndeclining}
+              selectedDeclinedRows={selectedDeclinedRows}
+              undeclineSelectedMembers={undeclineSelectedMembers}
+              isRemovingSelected={isRemovingSelected}
+              isRestoringRemoved={isRestoringRemoved}
+              removeSelectedFromSessionList={removeSelectedFromSessionList}
+              removedKeys={removedKeys}
+              activeRunId={activeRunId}
+              restoreRemovedAndStartOver={restoreRemovedAndStartOver}
+            />
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
               <span>
                 Page {Math.min(masterPage + 1, masterPageCount)} of {masterPageCount} · showing{' '}
@@ -6901,561 +5335,38 @@ export default function IlsMifConsolidatorPage() {
                 </Button>
               </div>
             </div>
-            <div className="max-h-[560px] overflow-auto rounded border">
-              <TooltipProvider delayDuration={150} skipDelayDuration={0}>
-              <table className="w-max min-w-full table-auto text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-50 text-left">
-                  <tr>
-                    <th className="px-3 py-2 whitespace-nowrap">
-                      <label className="inline-flex items-center gap-2 cursor-pointer whitespace-nowrap">
-                        <input
-                          type="checkbox"
-                          checked={allVisibleSelected}
-                          ref={(el) => {
-                            if (el) el.indeterminate = someVisibleSelected;
-                          }}
-                          disabled={!visibleRows.length}
-                          onChange={(event) => {
-                            if (event.target.checked) selectAllVisibleMasterRows();
-                            else deselectVisibleMasterRows();
-                          }}
-                          aria-label="Select all shown members"
-                        />
-                        <span>Select</span>
-                      </label>
-                    </th>
-                    <th className="px-3 py-2 whitespace-nowrap">Status</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[16rem]">
-                      Member
-                      <span className="ml-1 font-normal text-[10px] text-muted-foreground">
-                        (hover preview · download form)
-                      </span>
-                    </th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[10rem]">MRN / CIN</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">County</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[7rem]">CalAIM Status</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[9rem]">Kaiser Status</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[9rem]">Auth #</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">Auth start</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">Auth end</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">MIF date</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[20rem]">Source file</th>
-                    <th className="px-3 py-2 whitespace-nowrap">Service Delivery</th>
-                    <th className="px-3 py-2 whitespace-nowrap">Create App</th>
-                    <th className="px-3 py-2 whitespace-nowrap">MIF → Caspio</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={15} className="px-3 py-8 text-center text-muted-foreground">
-                        Upload MIF spreadsheets to build the master list.
-                      </td>
-                    </tr>
-                  ) : (
-                    pagedVisibleRows.map((sourceRow, rowIndex) => {
-                      const row = forDisplay(sourceRow);
-                      const rowKey = `${row.rowId}-${masterPage * effectiveMasterPageSize + rowIndex}`;
-                      const mifDateLabel = mifDateLabelForRow(row);
-                      const hasMifSource = ilsMifRowHasMifSourceData(row);
-                      return (
-                        <tr key={rowKey} className="border-t align-top">
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(selected[row.rowId])}
-                              onChange={(event) =>
-                                setSelected((prev) => ({ ...prev, [row.rowId]: event.target.checked }))
-                              }
-                              aria-label={`Select ${row.memberLastName}, ${row.memberFirstName}`}
-                            />
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <div className="space-y-1.5">
-                              {statusBadge(row)}
-                              <div className="flex flex-col items-stretch gap-1 max-w-[12rem]">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 border-sky-400 bg-sky-50 px-2 text-sky-950 hover:bg-sky-100 hover:text-sky-950"
-                                  disabled={
-                                    isMatching ||
-                                    isSaving ||
-                                    isParsing ||
-                                    refreshingCaspioRowId === row.rowId
-                                  }
-                                  title="Re-check this member in Caspio (refresh status / match)"
-                                  onClick={() => void refreshMemberRowFromCaspio(row)}
-                                >
-                                  {refreshingCaspioRowId === row.rowId ? (
-                                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                                  )}
-                                  Refresh Caspio
-                                </Button>
-                                {canPushAuthToCaspio(row) ? (
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    className="h-7 bg-fuchsia-700 px-2 text-white hover:bg-fuchsia-800 hover:text-white disabled:opacity-60"
-                                    disabled={Boolean(pushingAuthRowId) || isSaving || isMatching}
-                                    title="Push MIF Authorization Number and Start/End dates (T2038) to Caspio — status is not changed"
-                                    onClick={() => void pushAuthFieldsToCaspio(row)}
-                                  >
-                                    {pushingAuthRowId === row.rowId ? (
-                                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <Send className="mr-1 h-3.5 w-3.5" />
-                                    )}
-                                    Update Caspio
-                                  </Button>
-                                ) : null}
-                                {hasCheckedCaspio && ilsMifRowNeedsAuthorizedUpdate(row) ? (
-                                  <span
-                                    className="inline-flex h-7 items-center rounded-md border border-violet-200 bg-violet-50 px-2 text-xs font-medium text-violet-900"
-                                    title="Set Authorized manually in Caspio, then click Refresh Caspio"
-                                  >
-                                    Authorize in Caspio
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 font-medium whitespace-nowrap">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    type="button"
-                                    className="cursor-help text-left font-medium underline decoration-dotted decoration-slate-400 underline-offset-2 hover:text-sky-900"
-                                    title="Hover for Service Delivery Form preview — use Download form to save PDF"
-                                  >
-                                    {row.memberLastName}, {row.memberFirstName}
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent
-                                  side="right"
-                                  align="start"
-                                  className="z-[200] max-w-sm border border-slate-200 bg-white p-3 text-slate-900 shadow-lg"
-                                >
-                                  <div className="space-y-1.5 text-xs">
-                                    <div className="font-semibold text-sm text-slate-900">
-                                      {MIF_SERVICE_DELIVERY_FORM_NAME}
-                                    </div>
-                                    <div className="rounded border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] text-sky-950">
-                                      Use <span className="font-semibold">Download form</span> on this row (or select
-                                      rows + toolbar) to generate and save the PDF from MIF data.
-                                    </div>
-                                    {!hasMifSource ? (
-                                      <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-950">
-                                        This row is on the consolidator master and matched Caspio by MRN/CIN — it was
-                                        not imported from Caspio. MIF file/auth/service-delivery fields are missing on
-                                        the saved row. Re-upload the MIF that includes this member, then Re-check Caspio.
-                                      </div>
-                                    ) : null}
-                                    <div>
-                                      <span className="text-muted-foreground">Referring org:</span>{' '}
-                                      {row.referringOrganization || '—'}
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground">Referring party:</span>{' '}
-                                      {row.careManagerName || '—'}
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground">Referring phone:</span>{' '}
-                                      {row.careManagerPhone || '—'}
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground">Referring email:</span>{' '}
-                                      {row.careManagerEmail || '—'}
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground">Member phone:</span>{' '}
-                                      {row.memberPhone || row.primaryPhoneNumber || '—'}
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground">DOB:</span>{' '}
-                                      {row.memberDob || '—'}
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground">Address:</span>{' '}
-                                      {[
-                                        row.memberResidentialAddress || row.memberAddress,
-                                        row.memberResidentialCity || row.memberCity,
-                                        row.memberState,
-                                        row.memberResidentialZip || row.memberZip,
-                                      ]
-                                        .filter(Boolean)
-                                        .join(', ') || '—'}
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground">Emergency contact:</span>{' '}
-                                      {[row.emergencyContactName, row.emergencyContactRelationship]
-                                        .filter(Boolean)
-                                        .join(' · ') || '—'}
-                                      {row.emergencyContactPhone
-                                        ? ` · ${row.emergencyContactPhone}`
-                                        : ''}
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground">Auth #:</span>{' '}
-                                      {row.authorizationNumberT2038 || '—'}
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground">Auth dates:</span>{' '}
-                                      {row.authorizationStartT2038 || '—'} –{' '}
-                                      {row.authorizationEndT2038 || '—'}
-                                    </div>
-                                    <div>
-                                      <span className="text-muted-foreground">MIF date:</span>{' '}
-                                      {mifDateLabel || '—'}
-                                    </div>
-                                    <div className="break-all">
-                                      <span className="text-muted-foreground">Source file:</span>{' '}
-                                      {row.sourceFileName || '—'}
-                                    </div>
-                                  </div>
-                                </TooltipContent>
-                              </Tooltip>
-                            <div className="mt-0.5 text-[11px] font-normal text-slate-700 whitespace-normal">
-                              <span
-                                className={
-                                  row.authorizationNumberT2038 ? 'text-slate-800' : 'text-amber-800 font-medium'
-                                }
-                              >
-                                Auth # {row.authorizationNumberT2038 || 'missing'}
-                              </span>
-                              <span className="mx-1 text-slate-400">·</span>
-                              <span
-                                className={
-                                  row.authorizationStartT2038 && row.authorizationEndT2038
-                                    ? 'text-slate-800'
-                                    : 'text-amber-800 font-medium'
-                                }
-                              >
-                                {row.authorizationStartT2038 || '—'} – {row.authorizationEndT2038 || '—'}
-                              </span>
-                            </div>
-                            <div
-                              className={`text-[11px] font-normal whitespace-normal ${
-                                mifDateLabel ? 'text-sky-900 font-medium' : 'text-amber-800'
-                              }`}
-                            >
-                              MIF date: {mifDateLabel || '—'}
-                              {row.sourceFileName ? (
-                                <span className="font-normal text-slate-500"> · {row.sourceFileName}</span>
-                              ) : null}
-                            </div>
-                            {hasMifSource ? (
-                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                <Badge className="bg-sky-100 text-sky-950 hover:bg-sky-100 text-[10px] px-1.5 py-0">
-                                  MIF on file
-                                </Badge>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 px-1.5 text-[10px] text-sky-950"
-                                  disabled={
-                                    isDownloadingServiceDeliveryPdf ||
-                                    !isServiceDeliveryEligibleRow(sourceRow)
-                                  }
-                                  title="Generate & download Service Delivery Form PDF from this member’s MIF"
-                                  onClick={() => void downloadServiceDeliveryPdfForMembers([sourceRow])}
-                                >
-                                  {isDownloadingServiceDeliveryPdf ? (
-                                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                  ) : (
-                                    <Download className="mr-1 h-3 w-3" />
-                                  )}
-                                  Download form
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="mt-0.5 text-[11px] font-normal text-amber-800">
-                                Master-list identity matched Caspio
-                                {row.caspioMatchedBy ? ` by ${String(row.caspioMatchedBy).replace('_', ' ')}` : ''}
-                                {row.caspioMatchedClientId2
-                                  ? ` · Client_ID2 ${row.caspioMatchedClientId2}`
-                                  : ''}
-                                {' — '}MIF file/auth not stored on this row
-                              </div>
-                            )}
-                            {isNorthernCounty(row.memberCounty) ? (
-                              <div className="text-[11px] font-normal text-indigo-700">Northern county</div>
-                            ) : null}
-                            {hasCheckedCaspio && ilsMifRowNeedsAuthorizedUpdate(row) ? (
-                              <div className="text-[11px] font-normal text-violet-800">
-                                Pending with newer MIF auth end
-                                {row.caspioAuthorizationEndT2038
-                                  ? ` (Caspio ends ${row.caspioAuthorizationEndT2038}`
-                                  : ' (no Caspio auth end'}
-                                {row.authorizationEndT2038
-                                  ? `; MIF ends ${row.authorizationEndT2038})`
-                                  : ')'}{' '}
-                                — update CalAIM_Status to Authorized
-                              </div>
-                            ) : hasCheckedCaspio && ilsMifRowPendingAuthAlreadyOnFile(row) ? (
-                              <div className="text-[11px] font-normal text-slate-700">
-                                Caspio CalAIM_Status is still Pending, but MIF auth end does not extend past Caspio
-                                {row.caspioAuthorizationEndT2038
-                                  ? ` (Caspio ends ${row.caspioAuthorizationEndT2038}`
-                                  : ''}
-                                {row.authorizationEndT2038 && row.caspioAuthorizationEndT2038
-                                  ? `; MIF ends ${row.authorizationEndT2038})`
-                                  : row.caspioAuthorizationEndT2038
-                                    ? ')'
-                                    : ''}
-                                . Not queued under Caspio updates needed — if this auth is approved, set CalAIM_Status
-                                to Authorized in Caspio, then Refresh Caspio. A brand-new auth needs a MIF with a later
-                                end date to queue Pending→Authorized.
-                              </div>
-                            ) : null}
-                            {hasCheckedCaspio && row.caspioOtherPlanExists ? (
-                              <div className="mt-0.5 text-[11px] font-normal text-amber-900">
-                                In Caspio under {row.caspioOtherPlanMco || 'another health plan'} — not
-                                Kaiser intake
-                                {row.markKaiserInactive ? ' · Kaiser Inactive marked' : ''}
-                              </div>
-                            ) : null}
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <div>MRN: {row.memberMrn || '—'}</div>
-                            <div>CIN: {row.memberMediCalNum || '—'}</div>
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">{row.memberCounty || '—'}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-xs">
-                            {!hasCheckedCaspio ? (
-                              <span className="text-muted-foreground">—</span>
-                            ) : row.caspioExists ? (
-                              <span
-                                className={
-                                  isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus)
-                                    ? 'font-medium text-violet-800'
-                                    : ''
-                                }
-                              >
-                                {row.caspioCalAIMStatus || '—'}
-                              </span>
-                            ) : row.caspioOtherPlanExists ? (
-                              <div className="space-y-0.5">
-                                <span className="font-medium text-amber-900">
-                                  In Caspio · {row.caspioOtherPlanMco || 'other plan'}
-                                </span>
-                                {row.caspioOtherPlanCalAimStatus ? (
-                                  <div className="text-[11px] text-amber-800">
-                                    CalAIM: {row.caspioOtherPlanCalAimStatus}
-                                  </div>
-                                ) : null}
-                                {row.caspioOtherPlanClientId2 ? (
-                                  <div className="text-[11px] text-muted-foreground font-mono">
-                                    {row.caspioOtherPlanClientId2}
-                                  </div>
-                                ) : null}
-                              </div>
-                            ) : (
-                              <div className="space-y-0.5">
-                                <span className="text-emerald-800">Not in Caspio</span>
-                                {String(row.skeletonApplicationId || '').trim() ? (
-                                  <div>
-                                    <Badge className="bg-sky-100 text-sky-950 hover:bg-sky-100 text-[10px] px-1.5 py-0">
-                                      Skeleton on file
-                                    </Badge>
-                                  </div>
-                                ) : null}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap text-xs">
-                            <div className="space-y-1.5">
-                              {hasCheckedCaspio && row.caspioExists ? (
-                                <div>{row.caspioKaiserStatus || '—'}</div>
-                              ) : row.markKaiserInactive ? (
-                                <Badge className="bg-slate-200 text-slate-900 hover:bg-slate-200 text-[10px] px-1.5 py-0">
-                                  Inactive (marked)
-                                </Badge>
-                              ) : (
-                                <div className="text-muted-foreground">—</div>
-                              )}
-                              <label className="flex items-center gap-1.5 text-[11px] text-slate-700 cursor-pointer">
-                                <Checkbox
-                                  checked={Boolean(row.markKaiserInactive)}
-                                  onCheckedChange={(v) =>
-                                    patchMasterRowAuthFields(row.rowId, {
-                                      markKaiserInactive: Boolean(v),
-                                    })
-                                  }
-                                  aria-label={`Mark Kaiser_Status Inactive for ${row.memberLastName}, ${row.memberFirstName}`}
-                                />
-                                <span>Kaiser Inactive</span>
-                              </label>
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <Input
-                              value={row.authorizationNumberT2038 || ''}
-                              onChange={(e) =>
-                                patchMasterRowAuthFields(row.rowId, {
-                                  authorizationNumberT2038: e.target.value,
-                                })
-                              }
-                              placeholder="Auth #"
-                              className={`h-8 min-w-[9rem] font-mono text-xs ${
-                                row.authorizationNumberT2038 ? '' : 'border-amber-400 bg-amber-50'
-                              }`}
-                            />
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <Input
-                              value={row.authorizationStartT2038 || ''}
-                              onChange={(e) =>
-                                patchMasterRowAuthFields(row.rowId, {
-                                  authorizationStartT2038: e.target.value,
-                                })
-                              }
-                              placeholder="MM/DD/YYYY"
-                              className={`h-8 min-w-[8rem] font-mono text-xs ${
-                                row.authorizationStartT2038 ? '' : 'border-amber-400 bg-amber-50'
-                              }`}
-                            />
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <Input
-                              value={row.authorizationEndT2038 || ''}
-                              onChange={(e) =>
-                                patchMasterRowAuthFields(row.rowId, {
-                                  authorizationEndT2038: e.target.value,
-                                })
-                              }
-                              placeholder="MM/DD/YYYY"
-                              className={`h-8 min-w-[8rem] font-mono text-xs ${
-                                row.authorizationEndT2038 ? '' : 'border-amber-400 bg-amber-50'
-                              }`}
-                            />
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-sky-950">
-                            {mifDateLabel || '—'}
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
-                            {row.sourceFileName || '—'}
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2"
-                              disabled={
-                                isDownloadingServiceDeliveryPdf ||
-                                !isServiceDeliveryEligibleRow(sourceRow)
-                              }
-                              title={
-                                isServiceDeliveryEligibleRow(sourceRow)
-                                  ? 'Generate & download Service Delivery Form PDF from this member’s MIF'
-                                  : 'Incomplete or duplicate batch rows cannot generate a PDF'
-                              }
-                              onClick={() => void downloadServiceDeliveryPdfForMembers([sourceRow])}
-                            >
-                              <Download className="mr-1 h-3.5 w-3.5" />
-                              Download
-                            </Button>
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            {String(row.skeletonApplicationId || '').trim() &&
-                            !row.caspioExists &&
-                            row.mergeStatus !== 'already_in_caspio' ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 text-sky-900"
-                                asChild
-                              >
-                                <Link
-                                  href={`/admin/applications/${encodeURIComponent(String(row.skeletonApplicationId).trim())}`}
-                                  title={`Open skeleton application ${String(row.skeletonApplicationId).trim()}`}
-                                >
-                                  <ExternalLink className="mr-1 h-3.5 w-3.5" />
-                                  Open skeleton
-                                </Link>
-                              </Button>
-                            ) : (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 text-emerald-800"
-                                disabled={
-                                  !hasCheckedCaspio ||
-                                  isSaving ||
-                                  isParsing ||
-                                  isMatching ||
-                                  !isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
-                                }
-                                title={
-                                  isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
-                                    ? 'Open Create Application and parse this member into the form'
-                                    : 'Only Not in Caspio members without a skeleton can be sent (incomplete / missing CIN is OK)'
-                                }
-                                onClick={() => sendOneMemberToCreateApplication(row)}
-                              >
-                                <ExternalLink className="mr-1 h-3.5 w-3.5" />
-                                Create App
-                              </Button>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            <div className="flex flex-nowrap items-center gap-1.5">
-                              {ilsMifRowNeedsAuthorizedUpdate(row) ? (
-                                <span
-                                  className="inline-flex h-7 shrink-0 items-center rounded-md border border-violet-200 bg-violet-50 px-2 text-xs font-medium text-violet-900"
-                                  title="Set Authorized manually in Caspio, then refresh Caspio for this member"
-                                >
-                                  Authorize in Caspio
-                                </span>
-                              ) : null}
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 shrink-0 px-2"
-                                disabled={
-                                  isMatching ||
-                                  isSaving ||
-                                  isParsing ||
-                                  refreshingCaspioRowId === row.rowId
-                                }
-                                title="Re-match this member against Caspio after you update auth or Caspio info (keeps your edited fields)"
-                                onClick={() => void refreshMemberRowFromCaspio(row)}
-                              >
-                                {refreshingCaspioRowId === row.rowId ? (
-                                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                                )}
-                                Caspio
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 shrink-0 px-2"
-                                onClick={() => setAuthDetailRow(row)}
-                              >
-                                <Eye className="mr-1 h-3.5 w-3.5" />
-                                Auth
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-              </TooltipProvider>
-            </div>
+            <MasterRowsTable
+              allVisibleSelected={allVisibleSelected}
+              someVisibleSelected={someVisibleSelected}
+              visibleRows={visibleRows}
+              selectAllVisibleMasterRows={selectAllVisibleMasterRows}
+              deselectVisibleMasterRows={deselectVisibleMasterRows}
+              pagedVisibleRows={pagedVisibleRows}
+              forDisplay={forDisplay}
+              masterPage={masterPage}
+              effectiveMasterPageSize={effectiveMasterPageSize}
+              mifDateLabelForRow={mifDateLabelForRow}
+              selected={selected}
+              setSelected={setSelected}
+              statusBadge={statusBadge}
+              isMatching={isMatching}
+              isSaving={isSaving}
+              isParsing={isParsing}
+              refreshingCaspioRowId={refreshingCaspioRowId}
+              refreshMemberRowFromCaspio={refreshMemberRowFromCaspio}
+              canPushAuthToCaspio={canPushAuthToCaspio}
+              pushingAuthRowId={pushingAuthRowId}
+              pushAuthFieldsToCaspio={pushAuthFieldsToCaspio}
+              hasCheckedCaspio={hasCheckedCaspio}
+              isDownloadingServiceDeliveryPdf={isDownloadingServiceDeliveryPdf}
+              isServiceDeliveryEligibleRow={isServiceDeliveryEligibleRow}
+              downloadServiceDeliveryPdfForMembers={downloadServiceDeliveryPdfForMembers}
+              patchMasterRowAuthFields={patchMasterRowAuthFields}
+              declinedKeys={declinedKeys}
+              memberKey={memberKey}
+              sendOneMemberToCreateApplication={sendOneMemberToCreateApplication}
+              setAuthDetailRow={setAuthDetailRow}
+            />
           </CardContent>
         </Card>
       )}
@@ -7617,643 +5528,57 @@ export default function IlsMifConsolidatorPage() {
         </Link>
       </div>
 
-      <Dialog
-        open={declineComposerOpen}
-        onOpenChange={(open) => {
-          if (isSendingDeclines || isCheckingDeclineCaspio) return;
-          setDeclineComposerOpen(open);
-          if (!open) {
-            setDeclineComposerRows([]);
-            setDeclineComposerSubject('');
-            setDeclineComposerBody('');
-            setDeclineComposerIsResend(false);
-            setDeclineComposerShowEditor(false);
-            setDeclineComposerCaspioBlocked([]);
-            setDeclinePreviewApproved(false);
-            setDeclineConfirmTyped('');
-          }
-        }}
-      >
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0 sm:rounded-lg">
-          <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
-            <DialogTitle>
-              {declineComposerIsResend
-                ? 'Resend northern denial — preview'
-                : 'Bulk northern denial — preview'}
-            </DialogTitle>
-            <DialogDescription>
-              {declineComposerIsResend
-                ? 'Live Caspio check done. Review the email, edit if needed, approve, then resend. Covers '
-                : 'Live Caspio check done. Review the email, edit if needed, approve, then send. Covers '}
-              {declineComposerRows.length} member{declineComposerRows.length === 1 ? '' : 's'}
-              {declineComposerCaspioBlocked.length
-                ? ` (${declineComposerCaspioBlocked.length} already in Caspio excluded)`
-                : ''}
-              .
-            </DialogDescription>
-            <div className="flex flex-wrap gap-2 pt-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={declineComposerShowEditor ? 'outline' : 'default'}
-                disabled={isSendingDeclines}
-                onClick={() => setDeclineComposerShowEditor(false)}
-              >
-                <Eye className="mr-1.5 h-3.5 w-3.5" />
-                Preview
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={declineComposerShowEditor ? 'default' : 'outline'}
-                disabled={isSendingDeclines}
-                onClick={() => setDeclineComposerShowEditor(true)}
-              >
-                <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                Edit text
-              </Button>
-            </div>
-          </DialogHeader>
+      <DeclineComposerDialog
+        declineComposerOpen={declineComposerOpen}
+        isSendingDeclines={isSendingDeclines}
+        isCheckingDeclineCaspio={isCheckingDeclineCaspio}
+        setDeclineComposerOpen={setDeclineComposerOpen}
+        setDeclineComposerRows={setDeclineComposerRows}
+        setDeclineComposerSubject={setDeclineComposerSubject}
+        setDeclineComposerBody={setDeclineComposerBody}
+        setDeclineComposerIsResend={setDeclineComposerIsResend}
+        setDeclineComposerShowEditor={setDeclineComposerShowEditor}
+        setDeclineComposerCaspioBlocked={setDeclineComposerCaspioBlocked}
+        setDeclinePreviewApproved={setDeclinePreviewApproved}
+        setDeclineConfirmTyped={setDeclineConfirmTyped}
+        declineComposerIsResend={declineComposerIsResend}
+        declineComposerRows={declineComposerRows}
+        declineComposerCaspioBlocked={declineComposerCaspioBlocked}
+        declineComposerShowEditor={declineComposerShowEditor}
+        declineComposerSubject={declineComposerSubject}
+        declineComposerBody={declineComposerBody}
+        declineConfirmTyped={declineConfirmTyped}
+        declinePreviewApproved={declinePreviewApproved}
+        bulkSendNorthernDeclines={bulkSendNorthernDeclines}
+      />
 
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4 text-sm">
-            <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 space-y-1">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Will be delivered to
-              </div>
-              <div>
-                <span className="font-medium">To:</span>{' '}
-                <span className="font-mono text-[13px]">{ILS_DECISION_TO.join(', ')}</span>
-              </div>
-              <div>
-                <span className="font-medium">CC:</span>{' '}
-                <span className="font-mono text-[13px]">{ILS_DECISION_CC.join(', ')}</span>
-              </div>
-            </div>
+      <DeclinedMemberEmailDialog
+        viewedDeclineEmail={viewedDeclineEmail}
+        setViewedDeclineEmail={setViewedDeclineEmail}
+        isUndeclining={isUndeclining}
+        undeclineDeclinedRecords={undeclineDeclinedRecords}
+        isSendingDeclines={isSendingDeclines}
+        openResendDeclinedMemberComposer={openResendDeclinedMemberComposer}
+      />
 
-            {declineComposerShowEditor ? (
-              <>
-                <div className="space-y-1">
-                  <Label htmlFor="northern-decline-subject">Subject</Label>
-                  <Input
-                    id="northern-decline-subject"
-                    value={declineComposerSubject}
-                    onChange={(event) => {
-                      setDeclineComposerSubject(event.target.value);
-                      setDeclinePreviewApproved(false);
-                    }}
-                    disabled={isSendingDeclines}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="northern-decline-body">Email message</Label>
-                  <Textarea
-                    id="northern-decline-body"
-                    value={declineComposerBody}
-                    onChange={(event) => {
-                      setDeclineComposerBody(event.target.value);
-                      setDeclinePreviewApproved(false);
-                    }}
-                    className="min-h-[280px] font-mono text-[13px] leading-6"
-                    disabled={isSendingDeclines}
-                  />
-                  <div className="text-[11px] text-muted-foreground">
-                    Changing the message clears the approval checkbox so you re-confirm before send.
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Subject
-                  </div>
-                  <div className="rounded border bg-white px-3 py-2 font-medium">
-                    {declineComposerSubject || '—'}
-                  </div>
-                </div>
-                <div>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Message preview
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7"
-                      disabled={isSendingDeclines}
-                      onClick={() => setDeclineComposerShowEditor(true)}
-                    >
-                      <Pencil className="mr-1 h-3.5 w-3.5" />
-                      Edit text
-                    </Button>
-                  </div>
-                  <div className="max-h-[320px] overflow-y-auto whitespace-pre-wrap rounded border bg-white p-3 leading-6">
-                    {declineComposerBody || '—'}
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div className="max-h-40 overflow-auto rounded border">
-              <table className="min-w-full text-xs">
-                <thead className="sticky top-0 bg-slate-50 text-left">
-                  <tr>
-                    <th className="px-2 py-1 w-10">#</th>
-                    <th className="px-2 py-1">Member</th>
-                    <th className="px-2 py-1">MRN</th>
-                    <th className="px-2 py-1">County</th>
-                    <th className="px-2 py-1">Caspio</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {declineComposerRows.map((row, index) => (
-                    <tr key={row.rowId} className="border-t">
-                      <td className="px-2 py-1 text-muted-foreground tabular-nums">{index + 1}</td>
-                      <td className="px-2 py-1">
-                        {row.memberLastName}, {row.memberFirstName}
-                      </td>
-                      <td className="px-2 py-1">{row.memberMrn || '—'}</td>
-                      <td className="px-2 py-1">{row.memberCounty || '—'}</td>
-                      <td className="px-2 py-1 text-emerald-700">Not in Caspio</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {declineComposerCaspioBlocked.length ? (
-              <div className="space-y-2 rounded border border-amber-300 bg-amber-50 px-3 py-2">
-                <div className="text-sm font-medium text-amber-950">
-                  Already in Caspio — excluded from this denial ({declineComposerCaspioBlocked.length})
-                </div>
-                <div className="text-xs text-amber-900">
-                  Live Kaiser check matched these members. They are flagged and left out of the email so you do not
-                  decline someone already in Caspio.
-                </div>
-                <div className="max-h-36 overflow-auto rounded border border-amber-200 bg-white">
-                  <table className="min-w-full text-xs">
-                    <thead className="sticky top-0 bg-amber-50/80 text-left">
-                      <tr>
-                        <th className="px-2 py-1">Member</th>
-                        <th className="px-2 py-1">MRN</th>
-                        <th className="px-2 py-1">County</th>
-                        <th className="px-2 py-1">Match</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {declineComposerCaspioBlocked.map((row) => (
-                        <tr key={`blocked-${row.rowId}`} className="border-t">
-                          <td className="px-2 py-1 font-medium">
-                            {row.memberLastName}, {row.memberFirstName}
-                          </td>
-                          <td className="px-2 py-1">{row.memberMrn || '—'}</td>
-                          <td className="px-2 py-1">{row.memberCounty || '—'}</td>
-                          <td className="px-2 py-1 text-amber-900">
-                            {row.caspioMatchLabel ||
-                              row.caspioMatchedClientId2 ||
-                              row.caspioCalAIMStatus ||
-                              'In Caspio'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
-
-            {declineComposerRows.length >= NORTHERN_DECLINE_CONFIRM_THRESHOLD ? (
-              <div className="space-y-1 rounded border border-amber-300 bg-amber-50 px-3 py-2">
-                <Label htmlFor="northern-decline-confirm-count" className="text-amber-950">
-                  Type {declineComposerRows.length} to confirm member count
-                </Label>
-                <Input
-                  id="northern-decline-confirm-count"
-                  value={declineConfirmTyped}
-                  onChange={(event) => setDeclineConfirmTyped(event.target.value)}
-                  placeholder={String(declineComposerRows.length)}
-                  className="max-w-[160px] bg-white"
-                  disabled={isSendingDeclines}
-                />
-              </div>
-            ) : null}
-
-            <label
-              htmlFor="northern-decline-approve-preview"
-              className="flex items-start gap-3 rounded border border-slate-300 bg-white px-3 py-3 cursor-pointer"
-            >
-              <Checkbox
-                id="northern-decline-approve-preview"
-                checked={declinePreviewApproved}
-                onCheckedChange={(checked) => setDeclinePreviewApproved(checked === true)}
-                disabled={isSendingDeclines}
-                className="mt-0.5"
-              />
-              <span className="text-sm leading-5">
-                <span className="font-medium text-slate-900">Required:</span> I have reviewed this email preview
-                (recipients, subject, and message) and approve sending it to {ILS_DECISION_TO.join(', ')}
-                {ILS_DECISION_CC.length ? ` (CC ${ILS_DECISION_CC.join(', ')})` : ''}.
-              </span>
-            </label>
-          </div>
-
-          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-6 py-4 sm:gap-0">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSendingDeclines}
-              onClick={() => setDeclineComposerOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              disabled={
-                isSendingDeclines ||
-                !declineComposerRows.length ||
-                !declinePreviewApproved ||
-                !String(declineComposerSubject || '').trim() ||
-                !String(declineComposerBody || '').trim()
-              }
-              onClick={() => void bulkSendNorthernDeclines()}
-            >
-              {isSendingDeclines ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              {declineComposerIsResend ? 'Approve preview and resend' : 'Approve preview and send'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(viewedDeclineEmail)} onOpenChange={(open) => !open && setViewedDeclineEmail(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0 sm:rounded-lg">
-          <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
-            <DialogTitle>Declined member email</DialogTitle>
-            <DialogDescription>
-              {viewedDeclineEmail
-                ? `${viewedDeclineEmail.memberLastName}, ${viewedDeclineEmail.memberFirstName}`
-                : 'Decline email'}
-            </DialogDescription>
-          </DialogHeader>
-          {viewedDeclineEmail ? (
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-sky-200 bg-sky-50 px-3 py-2">
-                <span className="text-sky-950">
-                  Preview of what was sent. Resend with edits, or Undecline to put them back on Create Application /
-                  Northern lists.
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="text-sky-800"
-                    disabled={isUndeclining}
-                    onClick={() =>
-                      void undeclineDeclinedRecords([viewedDeclineEmail], {
-                        label: `${viewedDeclineEmail.memberLastName}, ${viewedDeclineEmail.memberFirstName}`.trim(),
-                      }).then((ok) => {
-                        if (ok) setViewedDeclineEmail(null);
-                      })
-                    }
-                  >
-                    <Undo2 className="mr-1.5 h-3.5 w-3.5" />
-                    Undecline
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={isSendingDeclines}
-                    onClick={() => openResendDeclinedMemberComposer(viewedDeclineEmail)}
-                  >
-                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                    Edit text &amp; resend
-                  </Button>
-                </div>
-              </div>
-              <div>
-                <span className="font-medium">To:</span>{' '}
-                {(viewedDeclineEmail.to.length ? viewedDeclineEmail.to : [...ILS_DECISION_TO]).join(', ')}
-              </div>
-              <div>
-                <span className="font-medium">CC:</span>{' '}
-                {(viewedDeclineEmail.cc.length ? viewedDeclineEmail.cc : [...ILS_DECISION_CC]).join(', ')}
-              </div>
-              <div>
-                <span className="font-medium">Subject:</span> {viewedDeclineEmail.emailSubject || '—'}
-              </div>
-              {viewedDeclineEmail.customText ? (
-                <div>
-                  <span className="font-medium">Custom text included:</span>
-                  <div className="mt-1 whitespace-pre-wrap rounded border bg-amber-50 px-3 py-2">
-                    {viewedDeclineEmail.customText}
-                  </div>
-                </div>
-              ) : null}
-              <div className="whitespace-pre-wrap rounded border bg-slate-50 p-3 leading-6">
-                {viewedDeclineEmail.emailBodyText || 'Email body was not stored for this older decline record.'}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Sent {viewedDeclineEmail.declinedAtIso ? new Date(viewedDeclineEmail.declinedAtIso).toLocaleString() : '—'}
-                {viewedDeclineEmail.actedByEmail ? ` by ${viewedDeclineEmail.actedByEmail}` : ''}
-              </div>
-            </div>
-          ) : null}
-          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-6 py-4 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setViewedDeclineEmail(null)}>
-              Close
-            </Button>
-            {viewedDeclineEmail ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="text-sky-800"
-                  disabled={isUndeclining}
-                  onClick={() =>
-                    void undeclineDeclinedRecords([viewedDeclineEmail], {
-                      label: `${viewedDeclineEmail.memberLastName}, ${viewedDeclineEmail.memberFirstName}`.trim(),
-                    }).then((ok) => {
-                      if (ok) setViewedDeclineEmail(null);
-                    })
-                  }
-                >
-                  <Undo2 className="mr-2 h-4 w-4" />
-                  Undecline
-                </Button>
-                <Button
-                  type="button"
-                  disabled={isSendingDeclines}
-                  onClick={() => openResendDeclinedMemberComposer(viewedDeclineEmail)}
-                >
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit text &amp; resend
-                </Button>
-              </>
-            ) : null}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(viewedNorthernBatch)} onOpenChange={(open) => !open && setViewedNorthernBatch(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0 sm:rounded-lg">
-          <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
-            <DialogTitle>Bulk northern denial email</DialogTitle>
-            <DialogDescription>
-              {viewedNorthernBatch
-                ? `${viewedNorthernBatch.memberCount} member(s) · sent ${
-                    viewedNorthernBatch.sentAtIso
-                      ? new Date(viewedNorthernBatch.sentAtIso).toLocaleString()
-                      : '—'
-                  }`
-                : 'Bulk decline email'}
-            </DialogDescription>
-          </DialogHeader>
-          {viewedNorthernBatch ? (
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-sky-200 bg-sky-50 px-3 py-2">
-                <span className="text-sky-950">
-                  Preview of what was sent. Resend with edits, or Undecline all members in this email back onto Create
-                  Application / Northern lists.
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="text-sky-800"
-                    disabled={isUndeclining || !(viewedNorthernBatch.members || []).length}
-                    onClick={() => void undeclineNorthernBatchMembers(viewedNorthernBatch)}
-                  >
-                    <Undo2 className="mr-1.5 h-3.5 w-3.5" />
-                    Undecline all
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={isSendingDeclines}
-                    onClick={() => openResendNorthernBatchComposer(viewedNorthernBatch)}
-                  >
-                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                    Edit text &amp; resend
-                  </Button>
-                </div>
-              </div>
-              <div>
-                <span className="font-medium">To:</span>{' '}
-                {(viewedNorthernBatch.to.length ? viewedNorthernBatch.to : [...ILS_DECISION_TO]).join(', ')}
-              </div>
-              <div>
-                <span className="font-medium">CC:</span>{' '}
-                {(viewedNorthernBatch.cc.length ? viewedNorthernBatch.cc : [...ILS_DECISION_CC]).join(', ')}
-              </div>
-              <div>
-                <span className="font-medium">Subject:</span> {viewedNorthernBatch.subject || '—'}
-              </div>
-              <div className="whitespace-pre-wrap rounded border bg-slate-50 p-3 leading-6">
-                {viewedNorthernBatch.emailBodyText || 'Email body was not stored for this bulk send.'}
-              </div>
-              <div className="max-h-48 overflow-auto rounded border">
-                <table className="min-w-full text-xs">
-                  <thead className="sticky top-0 bg-slate-50 text-left">
-                    <tr>
-                      <th className="px-2 py-1">Member</th>
-                      <th className="px-2 py-1">MRN</th>
-                      <th className="px-2 py-1">County</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {viewedNorthernBatch.members.map((member, index) => (
-                      <tr
-                        key={`${viewedNorthernBatch.id}-${member.memberMrn || index}`}
-                        className="border-t"
-                      >
-                        <td className="px-2 py-1">
-                          {member.memberLastName}, {member.memberFirstName}
-                        </td>
-                        <td className="px-2 py-1">{member.memberMrn || '—'}</td>
-                        <td className="px-2 py-1">{member.memberCounty || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {viewedNorthernBatch.actedByEmail
-                  ? `Sent by ${viewedNorthernBatch.actedByEmail}`
-                  : 'Sender not recorded'}
-              </div>
-            </div>
-          ) : null}
-          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-6 py-4 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setViewedNorthernBatch(null)}>
-              Close
-            </Button>
-            {viewedNorthernBatch ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="text-sky-800"
-                  disabled={isUndeclining || !(viewedNorthernBatch.members || []).length}
-                  onClick={() => void undeclineNorthernBatchMembers(viewedNorthernBatch)}
-                >
-                  <Undo2 className="mr-2 h-4 w-4" />
-                  Undecline all
-                </Button>
-                <Button
-                  type="button"
-                  disabled={isSendingDeclines}
-                  onClick={() => openResendNorthernBatchComposer(viewedNorthernBatch)}
-                >
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit text &amp; resend
-                </Button>
-              </>
-            ) : null}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NorthernBatchEmailDialog
+        viewedNorthernBatch={viewedNorthernBatch}
+        setViewedNorthernBatch={setViewedNorthernBatch}
+        isUndeclining={isUndeclining}
+        undeclineNorthernBatchMembers={undeclineNorthernBatchMembers}
+        isSendingDeclines={isSendingDeclines}
+        openResendNorthernBatchComposer={openResendNorthernBatchComposer}
+      />
 
 
-      <Dialog open={Boolean(authDetailRow)} onOpenChange={(open) => !open && setAuthDetailRow(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>MIF line → Caspio auth fields</DialogTitle>
-            <DialogDescription>
-              {authDetailRow
-                ? `${authDetailRow.memberLastName}, ${authDetailRow.memberFirstName}`
-                : 'Member'}{' '}
-              · values from the MIF line for pasting into Caspio when auth is received.
-            </DialogDescription>
-          </DialogHeader>
-          {authDetailRow ? (
-            <div className="space-y-4 text-sm">
-              <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                Source file:{' '}
-                <span className="font-mono text-slate-900">{authDetailRow.sourceFileName || '—'}</span>
-                {authDetailRow.memberMrn ? (
-                  <>
-                    {' '}
-                    · MRN <span className="font-mono text-slate-900">{authDetailRow.memberMrn}</span>
-                  </>
-                ) : null}
-                {authDetailRow.memberMediCalNum ? (
-                  <>
-                    {' '}
-                    · CIN <span className="font-mono text-slate-900">{authDetailRow.memberMediCalNum}</span>
-                  </>
-                ) : null}
-              </div>
-              <div className="overflow-auto rounded border">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">Caspio field</th>
-                      <th className="px-3 py-2">MIF value</th>
-                      <th className="px-3 py-2">Copy</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      {
-                        caspio: 'Authorization_Number_T038',
-                        label: 'Auth number',
-                        value: authDetailRow.authorizationNumberT2038,
-                      },
-                      {
-                        caspio: 'Authorization_Start_T2038',
-                        label: 'Auth start',
-                        value: authDetailRow.authorizationStartT2038,
-                      },
-                      {
-                        caspio: 'Authorization_End_T2038',
-                        label: 'Auth end',
-                        value: authDetailRow.authorizationEndT2038,
-                      },
-                      {
-                        caspio: 'Date Received Request for Authorization (MIF)',
-                        label: 'Date received request',
-                        value: authDetailRow.dateReceivedRequestForAuthorization,
-                      },
-                      {
-                        caspio: 'Date of Referral Authorization Decision (MIF)',
-                        label: 'Referral decision date',
-                        value: authDetailRow.dateOfReferralAuthorizationDecision,
-                      },
-                      {
-                        caspio: 'connect_tbl_clientnotes',
-                        label: 'Referring organization',
-                        value: authDetailRow.referringOrganization,
-                      },
-                      {
-                        caspio: 'connect_tbl_clientnotes',
-                        label: 'Referring individual',
-                        value: [
-                          authDetailRow.careManagerName,
-                          authDetailRow.careManagerPhone,
-                          authDetailRow.careManagerEmail,
-                        ]
-                          .filter(Boolean)
-                          .join(' · '),
-                      },
-                    ].map((field) => (
-                      <tr key={`${field.caspio}-${field.label}`} className="border-t align-top">
-                        <td className="px-3 py-2">
-                          <div className="font-medium text-slate-900">{field.label}</div>
-                          <div className="font-mono text-[11px] text-slate-500">{field.caspio}</div>
-                        </td>
-                        <td className="px-3 py-2 font-mono text-xs">{field.value || '—'}</td>
-                        <td className="px-3 py-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2"
-                            disabled={!String(field.value || '').trim()}
-                            onClick={() => void copyText(field.label, field.value || '')}
-                          >
-                            <Copy className="mr-1 h-3.5 w-3.5" />
-                            Copy
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Copy these MIF auth values into Caspio and set CalAIM_Status to Authorized there, so the assigned
-                staff are informed. Then use Refresh Caspio on the row to clear it from the update list.
-              </p>
-            </div>
-          ) : null}
-          <DialogFooter>
-            {authDetailRow && canPushAuthToCaspio(authDetailRow) ? (
-              <Button
-                type="button"
-                className="bg-fuchsia-700 hover:bg-fuchsia-800"
-                disabled={Boolean(pushingAuthRowId)}
-                onClick={() => {
-                  const row = authDetailRow;
-                  setAuthDetailRow(null);
-                  void pushAuthFieldsToCaspio(row);
-                }}
-              >
-                <Send className="mr-2 h-4 w-4" />
-                Update Caspio (auth # + dates)
-              </Button>
-            ) : null}
-            <Button type="button" variant="outline" onClick={() => setAuthDetailRow(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AuthDetailDialog
+        authDetailRow={authDetailRow}
+        setAuthDetailRow={setAuthDetailRow}
+        copyText={copyText}
+        canPushAuthToCaspio={canPushAuthToCaspio}
+        pushingAuthRowId={pushingAuthRowId}
+        pushAuthFieldsToCaspio={pushAuthFieldsToCaspio}
+      />
     </div>
   );
 }

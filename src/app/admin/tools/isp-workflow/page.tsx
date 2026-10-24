@@ -17,10 +17,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable, deleteObject } from 'firebase/storage';
-import { AlertTriangle, ArrowDownAZ, ArrowUp, ArrowUpAZ, Ban, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Trash2, Upload } from 'lucide-react';
-import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
-import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
-import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
+import { AlertTriangle, Ban, CheckCircle2, ClipboardList, Database, Loader2, RefreshCw, RotateCcw, Search, Send, Upload } from 'lucide-react';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { Badge } from '@/components/ui/badge';
 import { BackToTop, scrollAdminPageToTop } from '@/components/ui/back-to-top';
@@ -80,18 +77,13 @@ import { buildIspWorkflowActivityEntry } from '@/lib/isp-workflow-activity';
 import {
   type IspLayoutMode,
   readIspLayoutMode,
-  writeIspLayoutMode,
 } from '@/lib/isp-layout-mode';
 import { formatKaiserMembersFetchError } from '@/lib/fetch-kaiser-members';
 import { buildH2022EndWarning } from '@/lib/h2022-end-warning';
 import { resolveEffectiveRnRecommendedTier } from '@/lib/alft-tier-recommendation';
 import {
-  buildDisplaySwAssignmentHistory,
   buildSwAssignmentHistoryEntry,
-  formatSwAssignmentHistoryLabel,
-  resolveLastInvitedSwEmail,
   swEmailsDiffer,
-  type SwAssignmentHistoryEntry,
 } from '@/lib/sw-assignment-history';
 import { appConfirm } from '@/components/AppDialogHost';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
@@ -99,758 +91,55 @@ import {
   isFirestoreWriteRateLimited,
   setDocWithBackoff,
 } from '@/lib/firestore-batch-throttle';
-
-const toIso = (value: unknown): string => {
-  if (!value) return '';
-  if (typeof (value as any)?.toDate === 'function') {
-    try {
-      return (value as any).toDate().toISOString();
-    } catch {
-      return '';
-    }
-  }
-  if (typeof (value as any)?.toMillis === 'function') {
-    try {
-      return new Date((value as any).toMillis()).toISOString();
-    } catch {
-      return '';
-    }
-  }
-  const d = new Date(String(value));
-  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
-};
-
-const formatWhen = (iso?: string) => {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
-};
-
-const isUsableSwEmail = (raw: unknown) => {
-  const email = clean(raw).toLowerCase();
-  if (!email || !email.includes('@')) return false;
-  if (email.endsWith('@example.com') || email.endsWith('@example.org') || email.endsWith('@test.com')) {
-    return false;
-  }
-  return true;
-};
-
-const formatSwEmailBodyPreviewHtml = (value: string) =>
-  String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br />');
-
-const swFirstNameOf = (name: string) => {
-  const raw = clean(name) || 'Social Worker';
-  const part = raw.includes(',') ? raw.split(',', 2)[1] : raw.split(/\s+/, 2)[0];
-  return clean(part).split(/\s+/, 2)[0] || 'Social Worker';
-};
-
-type AnswerValue = string | string[];
-type AnswerMap = Record<string, AnswerValue>;
-
-type KaiserMember = {
-  id?: string;
-  Client_ID2?: string;
-  client_ID2?: string;
-  memberName?: string;
-  memberFirstName?: string;
-  memberLastName?: string;
-  memberMrn?: string;
-  memberCounty?: string;
-  Kaiser_Status?: string;
-  CalAIM_Status?: string;
-  [key: string]: unknown;
-};
-
-type StaffOption = {
-  uid: string;
-  email: string;
-  label: string;
-  role: string;
-  isRn?: boolean;
-  isAlftIspReviewer?: boolean;
-};
-
-type CaspioAssessorRoleInfo = {
-  name: string;
-  email: string;
-  inMswTable: boolean;
-  inRnTable: boolean;
-  caspioRole: 'msw' | 'rn' | 'both' | 'unknown';
-  caspioRoleLabel: string;
-  caspioTableLabel: string;
-};
-
-type ActiveIntake = {
-  id: string;
-  memberName?: string;
-  medicalRecordNumber?: string;
-  workflowStatus?: string;
-  workflowStage?: string;
-  source?: string;
-  sourceLabel?: string;
-  formerSwImportMode?: boolean;
-  departedSwCompletedIsp?: boolean;
-  uploaderName?: string;
-  uploaderEmail?: string;
-  alftStaffName?: string;
-  alftStaffEmail?: string;
-  alftRnName?: string;
-  alftRnEmail?: string;
-  alftForm?: {
-    exactPacketAnswers?: Record<string, AnswerValue>;
-    swSignature?: string | null;
-    swSignedAt?: string | null;
-  };
-  alftSignature?: Record<string, any>;
-};
-
-type DownloadLog = {
-  id: string;
-  downloadName: string;
-  memberName: string;
-  createdAt: string;
-  staffName: string;
-  versionNumber?: number;
-};
-
-type SwPortalSupportFile = {
-  id: string;
-  label: string;
-  fileName: string;
-  downloadURL: string;
-  storagePath: string;
-  uploadedAtLabel: string;
-  /** Full Firestore entry so we can rewrite the array after delete. */
-  raw: Record<string, unknown>;
-};
-
-type ApplicationClinicalFile = {
-  id: string;
-  formName: string;
-  label: string;
-  fileName: string;
-  downloadURL: string;
-  filePath: string;
-  applicationId: string;
-  alreadyPulled: boolean;
-};
-
-const APPLICATION_CLINICAL_FORM_MATCHERS: Array<{
-  label: string;
-  match: (formName: string) => boolean;
-}> = [
-  {
-    label: '602',
-    match: (name) => {
-      const n = name.toLowerCase();
-      return n.includes('602') || n.includes('lic 602');
-    },
-  },
-  {
-    label: 'Medicine List',
-    match: (name) => {
-      const n = name.toLowerCase();
-      return (
-        n.includes('medicine list') ||
-        n.includes('medication list') ||
-        n === 'med list' ||
-        n.includes('med list')
-      );
-    },
-  },
-];
-
-const clinicalLabelForApplicationForm = (formName: string): string | null => {
-  const cleaned = clean(formName);
-  if (!cleaned) return null;
-  for (const entry of APPLICATION_CLINICAL_FORM_MATCHERS) {
-    if (entry.match(cleaned)) return entry.label;
-  }
-  return null;
-};
-
-const extractApplicationClinicalFiles = (
-  applicationId: string,
-  forms: unknown,
-  existingSupportFiles: SwPortalSupportFile[] = []
-): ApplicationClinicalFile[] => {
-  if (!Array.isArray(forms)) return [];
-  const existingKeys = new Set(
-    existingSupportFiles.flatMap((f) =>
-      [clean(f.fileName).toLowerCase(), clean(f.label).toLowerCase(), clean(f.downloadURL)].filter(Boolean)
-    )
-  );
-  const out: ApplicationClinicalFile[] = [];
-
-  forms.forEach((form: any, formIdx: number) => {
-    const formName = clean(form?.name);
-    const label = clinicalLabelForApplicationForm(formName);
-    if (!label) return;
-    const status = clean(form?.status).toLowerCase();
-    const hasFile =
-      Boolean(clean(form?.filePath) || clean(form?.downloadURL) || clean(form?.fileName)) ||
-      (Array.isArray(form?.uploadedFiles) && form.uploadedFiles.length > 0);
-    if (!hasFile && status !== 'completed') return;
-
-    const uploadedFiles = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
-    const entries =
-      uploadedFiles.length > 0
-        ? uploadedFiles
-        : [
-            {
-              fileName: form?.fileName,
-              downloadURL: form?.downloadURL || form?.uploadUrl || form?.url,
-              filePath: form?.filePath || form?.storagePath || form?.path,
-            },
-          ];
-
-    entries.forEach((item: any, fileIdx: number) => {
-      const fileName =
-        clean(item?.fileName) || clean(form?.fileName) || `${label}${entries.length > 1 ? ` ${fileIdx + 1}` : ''}`;
-      const downloadURL = clean(item?.downloadURL || item?.url || item?.uploadUrl);
-      const filePath = clean(item?.filePath || item?.storagePath || item?.path);
-      if (!downloadURL && !filePath) return;
-      const alreadyPulled =
-        existingKeys.has(fileName.toLowerCase()) ||
-        (downloadURL ? existingKeys.has(downloadURL) : false) ||
-        existingSupportFiles.some(
-          (f) =>
-            clean(f.label).toLowerCase() === label.toLowerCase() &&
-            clean(f.fileName).toLowerCase() === fileName.toLowerCase()
-        );
-      out.push({
-        id: `${applicationId}:${formIdx}:${fileIdx}:${fileName}`,
-        formName,
-        label,
-        fileName,
-        downloadURL,
-        filePath,
-        applicationId,
-        alreadyPulled,
-      });
-    });
-  });
-
-  return out;
-};
-
-const AGENCY_NAME = 'Connections Care Home Consultants';
-const DEFAULT_RN_EMAIL = 'leslie@carehomefinders.com';
-
-const REQUIRED_CASPIO_FIELDS: Array<{ id: string; label: string }> = [
-  { id: 'p1_member_name', label: 'Member Name' },
-  { id: 'p1_mrn', label: 'MRN (MCP_CIN)' },
-  { id: 'p1_dob', label: 'Date of Birth' },
-  { id: 'p1_assessor_name', label: 'Social Worker / Assessor' },
-  { id: 'isp_facility', label: 'Facility / ISP Location' },
-  { id: 'isp_address', label: 'ISP Address' },
-  { id: 'isp_city', label: 'ISP City' },
-  { id: 'isp_contact_name', label: 'ISP Contact Name' },
-  { id: 'isp_contact_phone', label: 'ISP Contact Phone (Caspio ISP_Contact_Phone)' },
-];
-
-/** Resolve required checklist values from ISP fields, with RCFE as fallback for location. */
-const resolveRequiredCaspioFieldValue = (
-  fieldId: string,
-  resolvedPreview: Record<string, string>,
-  answers: AnswerMap,
-  caspioSource: Record<string, unknown>,
-  options?: {
-    assessorType?: 'msw' | 'rn';
-    socialWorkerName?: string;
-    socialWorkerEmail?: string;
-  }
-): string => {
-  const fromResolved = (...ids: string[]) => {
-    for (const id of ids) {
-      const v = clean(resolvedPreview[id] || answers[id]);
-      if (v) return v;
-    }
-    return '';
-  };
-  const isp = getIspLocationSnapshot(caspioSource || {});
-  const rcfe = getRcfeLocationSnapshot(caspioSource || {});
-  const assessorType = options?.assessorType === 'rn' ? 'rn' : 'msw';
-  const staffName = clean(options?.socialWorkerName);
-
-  switch (fieldId) {
-    case 'p1_member_name':
-    case 'p1_mrn':
-    case 'p1_dob':
-      return fromResolved(fieldId);
-    case 'p1_assessor_name': {
-      // RN override: do not require Caspio Social_Worker_Assigned — use RN assessor / RN_Assigned.
-      if (assessorType === 'rn') {
-        return (
-          staffName ||
-          fromResolved('p1_assessor_name') ||
-          clean(caspioSource?.RN_Assigned) ||
-          clean(caspioSource?.RN_Name) ||
-          clean(caspioSource?.assignedRnName) ||
-          clean(caspioSource?.Registered_Nurse_Assigned) ||
-          ''
-        );
-      }
-      return (
-        staffName ||
-        fromResolved('p1_assessor_name') ||
-        clean(caspioSource?.Social_Worker_Assigned) ||
-        clean(caspioSource?.social_worker_assigned) ||
-        clean(caspioSource?.assignedSwName) ||
-        ''
-      );
-    }
-    case 'isp_facility':
-      return (
-        fromResolved('p2_facility_name', 'p2_current_type_other') ||
-        isp.name ||
-        isp.type ||
-        rcfe.name ||
-        ''
-      );
-    case 'isp_address':
-      return fromResolved('p2_current_street', 'isp_contact_street') || isp.street || rcfe.street || '';
-    case 'isp_city':
-      return fromResolved('p2_current_city', 'isp_contact_city') || isp.city || rcfe.city || '';
-    case 'isp_contact_name': {
-      const first = fromResolved('isp_contact_first');
-      const last = fromResolved('isp_contact_last');
-      const combined = `${first} ${last}`.trim();
-      return (
-        fromResolved('isp_contact_name', 'p1_other_responder_name') ||
-        combined ||
-        clean(caspioSource?.ISP_Contact_Name || caspioSource?.RCFE_Admin_Name) ||
-        rcfe.name ||
-        ''
-      );
-    }
-    case 'isp_contact_phone':
-      // Must be Caspio ISP_Contact_Phone (RCFE front-desk phone is OK once stored there).
-      return fromResolved('isp_contact_phone') || clean(caspioSource?.ISP_Contact_Phone) || isp.phone || '';
-    default:
-      return fromResolved(fieldId);
-  }
-};
-
-const clean = (value: unknown) => String(value || '').trim();
-const clientIdOf = (member: KaiserMember) => clean(member.Client_ID2 || member.client_ID2);
-
-/** Firestore members cache older than this is treated as stale and auto-synced from Caspio. */
-const MEMBERS_CACHE_STALE_MS = 30 * 60 * 1000;
-
-const parseSyncAtMs = (value: unknown): number => {
-  const raw = clean(value);
-  if (!raw) return 0;
-  const ms = Date.parse(raw);
-  return Number.isFinite(ms) ? ms : 0;
-};
-
-const readMembersCacheLastSyncAt = async (): Promise<string> => {
-  try {
-    const response = await fetch(`/api/caspio/members-cache/status?_=${Date.now()}`, {
-      cache: 'no-store',
-      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-    });
-    const data = await response.json().catch(() => ({} as any));
-    if (!response.ok || !data?.success) return '';
-    return clean(
-      data?.settings?.ilsKaiserLastManualSyncAt ||
-        data?.settings?.ilsKaiserLastSyncAt ||
-        data?.settings?.lastManualSyncAt ||
-        data?.settings?.lastRunAt ||
-        data?.settings?.lastSyncAt ||
-        ''
-    );
-  } catch {
-    return '';
-  }
-};
-
-const isMembersCacheStale = async (): Promise<{ stale: boolean; lastSyncAt: string }> => {
-  const lastSyncAt = await readMembersCacheLastSyncAt();
-  const syncMs = parseSyncAtMs(lastSyncAt);
-  if (!syncMs) return { stale: true, lastSyncAt: '' };
-  return { stale: Date.now() - syncMs > MEMBERS_CACHE_STALE_MS, lastSyncAt };
-};
-const toName = (member: KaiserMember) => {
-  const first = clean(member.memberFirstName);
-  const last = clean(member.memberLastName);
-  if (first || last) return `${first} ${last}`.trim();
-  return clean(member.memberName) || 'Member';
-};
-
-const lastNameOf = (member: KaiserMember) => {
-  const last = clean(member.memberLastName);
-  if (last) return last;
-  const full = clean(member.memberName);
-  if (!full) return '';
-  // "Last, First" or "First Last"
-  if (full.includes(',')) return clean(full.split(',')[0]);
-  const parts = full.split(/\s+/).filter(Boolean);
-  return parts.length > 1 ? parts[parts.length - 1] : parts[0] || '';
-};
-
-const resolveKaiserStatusValue = (row: Record<string, unknown> | KaiserMember): string => {
-  const direct = [
-    row?.Kaiser_Status,
-    (row as any)?.kaiserStatus,
-    (row as any)?.Kaiser_ID_Status,
-    (row as any)?.kaiser_id_status,
-    (row as any)?.KaiserStatus,
-  ]
-    .map((v) => clean(v))
-    .find(Boolean);
-  if (direct) return direct;
-  const keyMatch = Object.keys(row || {}).find(
-    (k) => k.toLowerCase().includes('kaiser') && k.toLowerCase().includes('status')
-  );
-  if (keyMatch) return clean((row as any)?.[keyMatch]);
-  return '';
-};
-
-/** Match Caspio Kaiser_Status for members that still need an RN visit. */
-const isRnVisitNeededStatus = (value: unknown): boolean => {
-  const normalized = clean(value).toLowerCase().replace(/\s+/g, ' ');
-  if (!normalized) return false;
-  return (
-    normalized === 'rn visit needed' ||
-    normalized.includes('rn visit needed') ||
-    normalized.includes('rn visit req') ||
-    (normalized.includes('rn needed') && !normalized.includes('complete'))
-  );
-};
-/** Normalize DOB / dates to MM-DD-YYYY (handles ISO datetimes from member data). */
-const toMmDdYyyy = (value: unknown) => {
-  const raw = clean(value);
-  if (!raw) return '';
-  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (iso) return `${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}-${iso[1]}`;
-  const us = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-  if (us) return `${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}-${us[3]}`;
-  return raw;
-};
-const buildBlankAnswers = (): AnswerMap => {
-  const next = createInitialExactAlftAnswers() as AnswerMap;
-  next.p1_agency = AGENCY_NAME;
-  // ISP defaults (editable): ALWP waitlist + previous unsuccessful placements start as No.
-  next.p2_alwp_waitlist = 'no';
-  next.p2_previous_unsuccessful_placements = 'no';
-  return next;
-};
-
-/**
- * Caspio demographic / location fields safe to refresh onto an existing completed-PDF ISP
- * without wiping clinical answers parsed from the ALFT.
- */
-const CASPIO_REFRESHABLE_FIELD_IDS = new Set([
-  'p1_member_name',
-  'p1_first_name',
-  'p1_last_name',
-  'p1_phone',
-  'p1_dob',
-  'p1_sex',
-  'p1_primary_language',
-  'p1_mrn',
-  'p1_plan_id',
-  'p2_income_ssi',
-  'p2_home_street',
-  'p2_home_city',
-  'p2_home_state',
-  'p2_home_zip',
-  'p2_mail_street',
-  'p2_mail_city',
-  'p2_mail_state',
-  'p2_mail_zip',
-  'p2_current_street',
-  'p2_current_city',
-  'p2_current_state',
-  'p2_current_zip',
-  'p2_current_type',
-  'p2_current_type_other',
-  'p2_facility_name',
-  'p2_assessment_site',
-  'isp_contact_first',
-  'isp_contact_last',
-  'isp_contact_relationship',
-  'isp_contact_email',
-  'isp_contact_phone',
-  'isp_contact_confirm_date',
-  'isp_contact_2_first',
-  'isp_contact_2_last',
-  'isp_contact_2_relationship',
-  'isp_contact_2_email',
-  'isp_contact_2_phone',
-  'isp_location_type',
-  'isp_location_name',
-  'isp_location_address',
-  'isp_location_city',
-  'isp_location_state',
-  'isp_location_zip',
-  'isp_contact_street',
-  'isp_contact_city',
-  'isp_contact_state',
-  'isp_contact_zip',
-  'isp_contact_type',
-  'isp_mcp_cin',
-]);
-
-let pdfJsLoaderPromise: Promise<any> | null = null;
-const loadPdfJs = async () => {
-  if (pdfJsLoaderPromise) return pdfJsLoaderPromise;
-  pdfJsLoaderPromise = (async () => {
-    let pdfjs: any = null;
-    try {
-      const mod: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
-      pdfjs = mod?.getDocument ? mod : mod?.default || mod;
-    } catch (localError) {
-      console.warn('Local pdfjs-dist load failed, trying CDN fallback:', localError);
-      const pdfJsCdnUrl: string = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs';
-      const mod: any = await import(
-        /* webpackIgnore: true */ pdfJsCdnUrl
-      );
-      pdfjs = mod?.getDocument ? mod : mod?.default || mod;
-    }
-    if (pdfjs?.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc =
-        'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.worker.min.mjs';
-    }
-    return pdfjs;
-  })();
-  return pdfJsLoaderPromise;
-};
-
-const renderPdfPagesToBlobs = async (file: File, scale = 2.0): Promise<Blob[]> => {
-  const pdfjs = await loadPdfJs();
-  const bytes = await file.arrayBuffer();
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true });
-  const pdf = await loadingTask.promise;
-  const blobs: Blob[] = [];
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
-    const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('Could not create canvas for PDF page render.');
-    // White background helps scanned pages with transparent/odd PDF backgrounds.
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvasContext: context, viewport }).promise;
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error(`Failed to render PDF page ${pageNum}`))), 'image/png');
-    });
-    blobs.push(blob);
-  }
-  return blobs;
-};
-
-const parseSwPortalSupportFiles = (raw: unknown): SwPortalSupportFile[] => {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((entry: any, index: number) => {
-      const uploadedAtIso = toIso(entry?.uploadedAt || entry?.uploadedAtIso || '');
-      const downloadURL = clean(entry?.downloadURL);
-      const storagePath = clean(entry?.storagePath || entry?.filePath || entry?.path);
-      return {
-        id: clean(entry?.id) || `support_${index}_${downloadURL.slice(-24)}`,
-        label: clean(entry?.label),
-        fileName: clean(entry?.fileName),
-        downloadURL,
-        storagePath,
-        uploadedAtLabel: uploadedAtIso ? formatWhen(uploadedAtIso) : '',
-        raw: entry && typeof entry === 'object' ? { ...(entry as Record<string, unknown>) } : {},
-      };
-    })
-    .filter((entry) => Boolean(entry.downloadURL));
-};
-
-type PriorSwInviteInfo = {
-  memberId: string;
-  memberName: string;
-  invitedAt: string;
-  invitedTo: string;
-  statusLabel: string;
-  hasSubmission: boolean;
-};
-
-const workflowStatusLabel = (ws: string, status: string) => {
-  const raw = `${ws} ${status}`.toLowerCase();
-  if (raw.includes('returned_to_sw')) return 'Returned to SW for resubmission';
-  if (raw.includes('returned_to_staff') || raw.includes('returned_to_admin') || raw.includes('waiting_staff')) {
-    return 'Returned to admin/staff for edits';
-  }
-  if (raw.includes('returned_to_rn') || raw.includes('waiting_rn_revision')) {
-    return 'Returned to RN for edits';
-  }
-  if (raw.includes('completed') || raw.includes('manager_review_complete') || raw.includes('ready_to_send')) {
-    return 'Completed / ready to send';
-  }
-  if (raw.includes('awaiting_rn')) return 'Awaiting RN';
-  if (raw.includes('awaiting_kaiser_manager_final')) return 'Awaiting final review';
-  if (raw.includes('awaiting_manager') || raw.includes('awaiting_sw_signature')) return 'In admin review';
-  if (raw.includes('sw_form')) return 'SW form in progress';
-  if (raw.includes('sw_invited')) return 'Invited — awaiting SW submit';
-  return ws.replace(/_/g, ' ') || status.replace(/_/g, ' ') || 'Already in ISP workflow';
-};
-
-const detectPriorSwInvite = (data: Record<string, unknown> | null | undefined): Omit<
+import {
+  formatWhen,
+  isUsableSwEmail,
+  formatSwEmailBodyPreviewHtml,
+  swFirstNameOf,
+  AnswerMap,
+  KaiserMember,
+  StaffOption,
+  CaspioAssessorRoleInfo,
+  ActiveIntake,
+  DownloadLog,
+  SwPortalSupportFile,
+  ApplicationClinicalFile,
+  extractApplicationClinicalFiles,
+  AGENCY_NAME,
+  DEFAULT_RN_EMAIL,
+  REQUIRED_CASPIO_FIELDS,
+  resolveRequiredCaspioFieldValue,
+  clean,
+  clientIdOf,
+  isMembersCacheStale,
+  toName,
+  lastNameOf,
+  resolveKaiserStatusValue,
+  isRnVisitNeededStatus,
+  toMmDdYyyy,
+  buildBlankAnswers,
+  CASPIO_REFRESHABLE_FIELD_IDS,
+  renderPdfPagesToBlobs,
+  parseSwPortalSupportFiles,
   PriorSwInviteInfo,
-  'memberId' | 'memberName'
-> | null => {
-  if (!data) return null;
-  const ws = clean(data.workflowStatus);
-  const status = clean(data.status);
-  const cancelled =
-    Boolean((data as any)?.workflowInvites?.cancelledAt) ||
-    Boolean((data as any)?.swInviteCancelledAtIso) ||
-    status.toLowerCase().includes('sw_invite_cancelled') ||
-    ws.toLowerCase().includes('sw_invite_cancelled');
-  // Cancelled invites are not active SW requests (unless a newer invite was sent afterward).
-  if (cancelled && !(data as any)?.workflowSteps?.swInviteSent) return null;
-
-  const invitedAt =
-    toIso((data as any)?.workflowInvites?.invitedAt) ||
-    toIso((data as any)?.workflowStepsAt?.swInviteSentAt) ||
-    '';
-  const emailLog = Array.isArray((data as any)?.swEmailDeliveryLog)
-    ? ((data as any).swEmailDeliveryLog as any[])
-    : [];
-  const sentLog = emailLog.find((entry) => clean(entry?.status).toLowerCase() === 'sent');
-  const inviteSent =
-    Boolean((data as any)?.workflowSteps?.swInviteSent) ||
-    Boolean(invitedAt) ||
-    Boolean(sentLog) ||
-    ws.toLowerCase().includes('sw_invited') ||
-    ws.toLowerCase().includes('sw_form') ||
-    status.toLowerCase().includes('sw_invited');
-  if (!inviteSent) return null;
-  if (cancelled && !(data as any)?.workflowSteps?.swInviteSent) return null;
-  const invitedTo =
-    resolveLastInvitedSwEmail(data as any) ||
-    clean(sentLog?.recipientEmail) ||
-    clean((data as any)?.assignedSwEmail) ||
-    '';
-  const hasSubmission = Boolean(
-    toIso((data as any)?.submittedAt) ||
-      toIso((data as any)?.workflowStepsAt?.swSubmittedAt) ||
-      toIso((data as any)?.workflowStepsAt?.swSubmittedSignedAt) ||
-      Boolean((data as any)?.workflowSteps?.swSubmittedSigned)
-  );
-  return {
-    invitedAt: invitedAt || clean(sentLog?.atIso) || '',
-    invitedTo,
-    statusLabel: workflowStatusLabel(ws, status),
-    hasSubmission,
-  };
-};
-
-type AssignmentInviteActivity = {
-  invitedAt?: string;
-  lastInvitedAt?: string;
-  inviteSendCount?: number;
-  invitedTo?: string;
-  viewedAt?: string;
-  viewedBy?: string;
-  submittedAt?: string;
-  signedAt?: string;
-  emailLog?: Array<{ status?: string; recipientEmail?: string; atIso?: string; isResend?: boolean }>;
-  assignmentHistory?: SwAssignmentHistoryEntry[];
-};
-
-const buildAssignmentInviteActivity = (assignment: Record<string, any> | null | undefined): AssignmentInviteActivity => {
-  if (!assignment) return {};
-  const emailLog = Array.isArray(assignment?.swEmailDeliveryLog)
-    ? (assignment.swEmailDeliveryLog as any[])
-        .map((entry) => ({
-          status: clean(entry?.status),
-          recipientEmail: clean(entry?.recipientEmail),
-          atIso: clean(entry?.atIso) || toIso(entry?.at) || '',
-          isResend: Boolean(entry?.isResend),
-        }))
-        .filter((entry) => entry.atIso || entry.status)
-    : [];
-  const sentEntries = emailLog
-    .filter((entry) => clean(entry.status).toLowerCase() === 'sent')
-    .slice()
-    .sort((a, b) => Date.parse(a.atIso || '') - Date.parse(b.atIso || ''));
-  const firstSentAt = sentEntries[0]?.atIso || '';
-  const lastSentAt = sentEntries[sentEntries.length - 1]?.atIso || '';
-  const status = clean(assignment?.status).toLowerCase();
-  const workflowStatus = clean(assignment?.workflowStatus || assignment?.workflowStage).toLowerCase();
-  const inviteCancelled =
-    Boolean(assignment?.workflowInvites?.cancelledAt) ||
-    Boolean(assignment?.swInviteCancelledAtIso) ||
-    status.includes('sw_invite_cancelled') ||
-    workflowStatus.includes('sw_invite_cancelled') ||
-    assignment?.workflowSteps?.swInviteSent === false;
-
-  // Active invite only — cancelled requests clear the "Sent to SW" badge so staff can send again.
-  if (inviteCancelled && !assignment?.workflowSteps?.swInviteSent) {
-    return {
-      emailLog,
-      viewedAt: toIso(assignment.swPortalLastViewedAt),
-      viewedBy: clean(assignment.swPortalLastViewedByName) || clean(assignment.swPortalLastViewedByEmail),
-      submittedAt: toIso(assignment.submittedAt) || toIso(assignment?.workflowStepsAt?.swSubmittedAt) || '',
-      signedAt: toIso(assignment?.workflowStepsAt?.swSubmittedSignedAt) || toIso(assignment.swSignedAt) || '',
-    };
-  }
-
-  const invitedAt =
-    toIso(assignment?.workflowInvites?.firstInvitedAt) ||
-    toIso(assignment?.workflowInvites?.invitedAt) ||
-    firstSentAt ||
-    toIso(assignment?.workflowStepsAt?.swInviteSentAt) ||
-    '';
-  const lastInvitedAt =
-    toIso(assignment?.workflowInvites?.lastInvitedAt) ||
-    lastSentAt ||
-    toIso(assignment?.workflowStepsAt?.swInviteSentAt) ||
-    invitedAt;
-  const inviteSendCountRaw = Number(assignment?.workflowInvites?.inviteSendCount);
-  const inviteSendCount =
-    Number.isFinite(inviteSendCountRaw) && inviteSendCountRaw > 0
-      ? inviteSendCountRaw
-      : Math.max(sentEntries.length, invitedAt ? 1 : 0);
-  return {
-    invitedAt,
-    lastInvitedAt: lastInvitedAt || invitedAt,
-    inviteSendCount,
-    invitedTo:
-      resolveLastInvitedSwEmail(assignment) ||
-      clean(sentEntries[sentEntries.length - 1]?.recipientEmail) ||
-      clean(assignment.assignedSwEmail) ||
-      clean(emailLog.find((e) => e.status === 'sent')?.recipientEmail),
-    viewedAt: toIso(assignment.swPortalLastViewedAt),
-    viewedBy: clean(assignment.swPortalLastViewedByName) || clean(assignment.swPortalLastViewedByEmail),
-    submittedAt: toIso(assignment.submittedAt) || toIso(assignment?.workflowStepsAt?.swSubmittedAt) || '',
-    signedAt: toIso(assignment?.workflowStepsAt?.swSubmittedSignedAt) || toIso(assignment.swSignedAt) || '',
-    emailLog,
-    assignmentHistory: buildDisplaySwAssignmentHistory(assignment),
-  };
-};
-
-const inferClinicalFileLabel = (fileName: string, explicitLabel?: string) => {
-  const label = clean(explicitLabel);
-  if (label) return label;
-  const lower = clean(fileName).toLowerCase();
-  if (/\b602\b/.test(lower)) return '602';
-  if (lower.includes('medicine') || lower.includes('medication') || lower.includes('med list')) {
-    return 'Medicine List';
-  }
-  if (lower.includes('facesheet') || lower.includes('face sheet') || lower.includes('face-sheet')) {
-    return 'Facesheet';
-  }
-  if (lower.includes('h&p') || lower.includes('h and p') || lower.includes('history and physical')) {
-    return 'H&P';
-  }
-  if (lower.includes('mar')) return 'MAR';
-  return '';
-};
+  detectPriorSwInvite,
+  AssignmentInviteActivity,
+  buildAssignmentInviteActivity,
+  inferClinicalFileLabel,
+} from './components/isp-workflow-helpers';
+import { MemberListCard } from './components/MemberListCard';
+import { RequiredCaspioFieldsPanel } from './components/RequiredCaspioFieldsPanel';
+import { ConfirmAssessorStep } from './components/ConfirmAssessorStep';
+import { ConfirmRnStep } from './components/ConfirmRnStep';
+import { RcfeDetailsStep } from './components/RcfeDetailsStep';
+import { IspLocationStep } from './components/IspLocationStep';
+import { MemberUploadsStep } from './components/MemberUploadsStep';
+import { CaspioPrefillStep } from './components/CaspioPrefillStep';
+import { SwInviteActivityLog } from './components/SwInviteActivityLog';
+import { SentToIlsPanel } from './components/SentToIlsPanel';
+import { ActiveIntakeReviewCard } from './components/ActiveIntakeReviewCard';
+import { IspAssessmentFormCard } from './components/IspAssessmentFormCard';
+import { ResendReasonDialog } from './components/ResendReasonDialog';
 
 export default function IspWorkflowToolsPage() {
   return (
@@ -5183,87 +4472,16 @@ function IspWorkflowToolsPageInner() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-base">Members</CardTitle>
-                    <CardDescription>
-                      {filteredMembers.length} results
-                      {statusFilter === 'rn_visit_needed' ? ' · Kaiser Status: RN Visit Needed' : ''}
-                    </CardDescription>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    onClick={() => setMemberSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-                    title={
-                      memberSortDir === 'asc'
-                        ? 'Sorted by last name A–Z — click for Z–A'
-                        : 'Sorted by last name Z–A — click for A–Z'
-                    }
-                  >
-                    {memberSortDir === 'asc' ? (
-                      <ArrowDownAZ className="mr-1.5 h-4 w-4" />
-                    ) : (
-                      <ArrowUpAZ className="mr-1.5 h-4 w-4" />
-                    )}
-                    Last name {memberSortDir === 'asc' ? 'A–Z' : 'Z–A'}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
-                  {filteredMembers.map((member, index) => {
-                    const clientId2 = clientIdOf(member);
-                    const isSelected = clientId2 === clean(selectedClientId);
-                    const kaiserStatus = resolveKaiserStatusValue(member);
-                    const rnVisitNeeded = isRnVisitNeededStatus(kaiserStatus);
-                    return (
-                      <button
-                        type="button"
-                        key={`${clientId2}-${index}`}
-                        onClick={() => void requestSelectMember(member)}
-                        disabled={checkingPriorInvite}
-                        className={`w-full rounded-md border p-3 text-left transition ${
-                          isSelected ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted/40'
-                        }`}
-                      >
-                        <div className="font-medium">{toName(member)}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {clientId2 || 'No Client_ID2'} · MRN {clean(member.memberMrn) || 'N/A'}
-                        </div>
-                        {kaiserStatus ? (
-                          <div className="mt-1.5">
-                            <Badge
-                              variant="outline"
-                              className={
-                                rnVisitNeeded
-                                  ? 'border-red-200 bg-red-50 text-red-800'
-                                  : 'text-muted-foreground'
-                              }
-                            >
-                              {kaiserStatus}
-                            </Badge>
-                          </div>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                  {filteredMembers.length === 0 ? (
-                    <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                      {members.length === 0
-                        ? 'Click Load to resume saved work, or Sync from Caspio for a fresh list.'
-                        : statusFilter === 'rn_visit_needed'
-                          ? 'No members with Kaiser Status “RN Visit Needed”. Try Sync from Caspio.'
-                          : 'No members match this search.'}
-                    </div>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
+            <MemberListCard
+              filteredMembers={filteredMembers}
+              statusFilter={statusFilter}
+              setMemberSortDir={setMemberSortDir}
+              memberSortDir={memberSortDir}
+              selectedClientId={selectedClientId}
+              requestSelectMember={requestSelectMember}
+              checkingPriorInvite={checkingPriorInvite}
+              members={members}
+            />
 
             <Card className="lg:col-span-2">
               <CardHeader className="pb-2">
@@ -5373,589 +4591,56 @@ function IspWorkflowToolsPageInner() {
                       </div>
                     ) : null}
 
-                    <div className="rounded-md border bg-slate-50 p-3 text-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="font-medium">Required Caspio ISP fields</div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            void loadCaspioFieldPreview(clientIdOf(selectedMember), selectedMember, {
-                              preferLive: true,
-                            })
-                          }
-                          disabled={isLoadingPreview}
-                        >
-                          <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isLoadingPreview ? 'animate-spin' : ''}`} />
-                          Refresh from Caspio (live)
-                        </Button>
-                      </div>
-                      {prefillDataSource ? (
-                        <div
-                          className={`mt-1 text-[11px] ${
-                            prefillDataSource === 'caspio-live'
-                              ? 'text-emerald-700'
-                              : 'text-amber-800'
-                          }`}
-                        >
-                          Data source:{' '}
-                          {prefillDataSource === 'caspio-live'
-                            ? 'Live Caspio'
-                            : prefillDataSource === 'firestore-cache'
-                              ? 'Firestore cache (stale risk — click Refresh from Caspio)'
-                              : prefillDataSource}
-                        </div>
-                      ) : null}
-                      {isLoadingPreview ? (
-                        <div className="mt-2 inline-flex items-center gap-2 text-xs text-muted-foreground">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Loading live Caspio field status…
-                        </div>
-                      ) : previewError ? (
-                        <div className="mt-2 text-xs text-red-700">{previewError}</div>
-                      ) : missingRequiredLabels.length > 0 ? (
-                        <div className="mt-2 text-xs text-red-700">
-                          Missing required data in Caspio: {missingRequiredLabels.join(', ')}.
-                          {prefillDataSource === 'firestore-cache'
-                            ? ' If you already updated Caspio, click Refresh from Caspio (live).'
-                            : ''}
-                        </div>
-                      ) : hasPreviewForSelection ? (
-                        <div className="mt-2 text-xs text-green-700">All required fields are present.</div>
-                      ) : (
-                        <div className="mt-2 text-xs text-muted-foreground">Select a member to check Caspio fields.</div>
-                      )}
-                      {hasPreviewForSelection && !isLoadingPreview && !previewError && ispContactPhoneEmpty ? (
-                        <label className="mt-2 flex items-start gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-950">
-                          <Checkbox
-                            checked={overrideIspContactPhone}
-                            onCheckedChange={(checked) => setOverrideIspContactPhone(checked === true)}
-                            className="mt-0.5"
-                          />
-                          <span>
-                            Override missing ISP Contact Phone and continue
-                            <span className="mt-0.5 block text-amber-900/80">
-                              Use when the ISP contact is just a caregiver / front desk at the RCFE and Caspio
-                              has no dedicated phone yet.
-                            </span>
-                          </span>
-                        </label>
-                      ) : null}
-                      {hasPreviewForSelection && !isLoadingPreview && !previewError ? (
-                        <div className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
-                          {requiredFieldStatuses.map((field) => {
-                            if (field.waived) {
-                              return (
-                                <div key={field.id} className="text-amber-800">
-                                  {field.id === 'isp_contact_phone'
-                                    ? `${field.label}: Overridden — caregiver / front desk at RCFE is OK`
-                                    : `${field.label}: Waived — ask for staff on arrival at RCFE`}
-                                  {field.value ? ` (Caspio has: ${field.value})` : ''}
-                                </div>
-                              );
-                            }
-                            const ready = Boolean(field.value);
-                            return (
-                              <div key={field.id} className={ready ? 'text-green-700' : 'text-red-700'}>
-                                {field.label}: {ready ? `Ready (${field.value})` : 'Missing'}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
+                    <RequiredCaspioFieldsPanel
+                      loadCaspioFieldPreview={loadCaspioFieldPreview}
+                      selectedMember={selectedMember}
+                      isLoadingPreview={isLoadingPreview}
+                      prefillDataSource={prefillDataSource}
+                      previewError={previewError}
+                      missingRequiredLabels={missingRequiredLabels}
+                      hasPreviewForSelection={hasPreviewForSelection}
+                      ispContactPhoneEmpty={ispContactPhoneEmpty}
+                      overrideIspContactPhone={overrideIspContactPhone}
+                      setOverrideIspContactPhone={setOverrideIspContactPhone}
+                      requiredFieldStatuses={requiredFieldStatuses}
+                    />
 
                     <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/40 p-3">
                       <div className="text-sm font-semibold text-slate-900">Setup steps (above assessment form)</div>
 
-                      <div
-                        className={`rounded-md border bg-white p-3 ${
-                          confirmedSw ? 'border-green-300' : ''
-                        }`}
-                      >
-                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">1</Badge>
-                          {assessorType === 'rn' ? 'Confirm RN assessor' : 'Confirm social worker'}
-                          {confirmedSw ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          ) : null}
-                          {formerSwImportMode ? (
-                            <Badge className="bg-amber-100 text-amber-950 hover:bg-amber-100">
-                              Departed SW / completed ISP
-                            </Badge>
-                          ) : assessorCaspioRole?.caspioRole === 'msw' ||
-                            assessorCaspioRole?.caspioRole === 'both' ? (
-                            <Badge className="bg-sky-100 text-sky-950 hover:bg-sky-100">
-                              {assessorCaspioRole.caspioRole === 'both' ? 'MSW + RN' : 'MSW'} ·{' '}
-                              {clean(socialWorkerName) || clean(assessorCaspioRole.name) || 'From Caspio'}
-                            </Badge>
-                          ) : assessorCaspioRole?.caspioRole === 'rn' ? (
-                            <Badge className="bg-violet-100 text-violet-950 hover:bg-violet-100">
-                              RN · {clean(socialWorkerName) || clean(assessorCaspioRole.name) || 'From Caspio'}
-                            </Badge>
-                          ) : socialWorkerName || socialWorkerEmail ? (
-                            <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
-                              {assessorType === 'rn' ? 'From RN_ID / roster' : 'From Caspio'}
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <div className="mb-3 flex flex-wrap gap-3 text-sm">
-                          <label className="inline-flex items-center gap-2">
-                            <input
-                              type="radio"
-                              name="isp-assessor-type"
-                              checked={assessorType === 'msw'}
-                              onChange={() => {
-                                setAssessorType('msw');
-                                setConfirmedSw(false);
-                                setConfirmedRn(false);
-                                setFormerSwImportMode(false);
-                                setAssessorCaspioRole(null);
-                                const memberId = selectedMember
-                                  ? clientIdOf(selectedMember)
-                                  : clean(selectedClientId);
-                                if (memberId) {
-                                  void loadCaspioFieldPreview(memberId, selectedMember, {
-                                    preferLive: true,
-                                    assessorTypeOverride: 'msw',
-                                  });
-                                }
-                              }}
-                            />
-                            <span>MSW / Social Worker (default)</span>
-                          </label>
-                          <label className="inline-flex items-center gap-2">
-                            <input
-                              type="radio"
-                              name="isp-assessor-type"
-                              checked={assessorType === 'rn'}
-                              onChange={() => {
-                                setAssessorType('rn');
-                                setConfirmedSw(false);
-                                setConfirmedRn(false);
-                                setFormerSwImportMode(false);
-                                setAssessorCaspioRole(null);
-                                // Same RN does ALFT and final approval after admin review.
-                                if (isUsableSwEmail(socialWorkerEmail)) {
-                                  const match =
-                                    rnOptions.find(
-                                      (r) => clean(r.email).toLowerCase() === clean(socialWorkerEmail).toLowerCase()
-                                    ) || null;
-                                  if (match) setRnUid(match.uid);
-                                }
-                                const memberId = selectedMember
-                                  ? clientIdOf(selectedMember)
-                                  : clean(selectedClientId);
-                                if (memberId) {
-                                  void loadCaspioFieldPreview(memberId, selectedMember, {
-                                    preferLive: true,
-                                    assessorTypeOverride: 'rn',
-                                  });
-                                }
-                              }}
-                            />
-                            <span>Override: RN does ALFT (in-person)</span>
-                          </label>
-                        </div>
-                        {assessorType === 'rn' ? (
-                          <p className="mb-3 text-xs text-violet-900">
-                            RN fills the ALFT on the Social Worker portal, admin does first review, then the{' '}
-                            <span className="font-medium">same RN</span> completes final approval. Enable
-                            portal access in{' '}
-                            <Link href="/admin/rn-user-management" className="underline underline-offset-2">
-                              RN User Management
-                            </Link>
-                            Prefills from member <span className="font-medium">RN_ID</span> (id) and{' '}
-                            <span className="font-medium">RN_Assigned</span> (name) when set in Caspio.
-                          </p>
-                        ) : null}
-                        {assessorType === 'msw' ? (
-                        <label className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-sm">
-                          <Checkbox
-                            checked={formerSwImportMode}
-                            onCheckedChange={(checked) => {
-                              const on = checked === true;
-                              setFormerSwImportMode(on);
-                              setConfirmedSw(false);
-                              if (on) {
-                                setSwPortalActive(null);
-                                setAnswers((prev) => applyMswAdminOverrideToAnswers(prev));
-                              }
-                            }}
-                          />
-                          <span>
-                            <span className="font-medium">SW no longer with us — import completed ISP</span>
-                            <span className="mt-0.5 block text-xs text-muted-foreground">
-                              Use when the social worker already completed and signed the ISP but is no longer active.
-                              Enter their name below (portal access not required), then continue steps and upload the
-                              completed ALFT PDF. MSW admin override lets you Approve → Send to RN without a new SW
-                              e-signature.
-                            </span>
-                          </span>
-                        </label>
-                        ) : null}
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <div>
-                            <label className="mb-1 block text-xs font-medium">
-                              {formerSwImportMode
-                                ? 'Name who did the assessment (required)'
-                                : assessorType === 'rn'
-                                  ? 'RN name'
-                                  : 'Name'}
-                            </label>
-                            <Input
-                              value={socialWorkerName}
-                              onChange={(e) => {
-                                setSocialWorkerName(e.target.value);
-                                setConfirmedSw(false);
-                                if (assessorType === 'rn') setConfirmedRn(false);
-                              }}
-                              placeholder={
-                                formerSwImportMode
-                                  ? 'Social worker who completed / signed the ISP'
-                                  : assessorType === 'rn'
-                                    ? 'RN who will complete the ALFT'
-                                    : 'Social worker name'
-                              }
-                              className={socialWorkerName ? 'border-green-400 bg-green-50/50' : undefined}
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs font-medium">
-                              Email {formerSwImportMode ? '(optional)' : '(invite destination)'}
-                            </label>
-                            <Input
-                              value={socialWorkerEmail}
-                              onChange={(e) => {
-                                setSocialWorkerEmail(e.target.value);
-                                setConfirmedSw(false);
-                                if (assessorType === 'rn') setConfirmedRn(false);
-                                if (!formerSwImportMode) setSwPortalActive(null);
-                              }}
-                              onBlur={() => {
-                                if (!formerSwImportMode && isUsableSwEmail(socialWorkerEmail)) {
-                                  void verifySwPortalAccess(socialWorkerEmail, socialWorkerSwId);
-                                }
-                              }}
-                              placeholder={
-                                formerSwImportMode
-                                  ? 'Optional — not required when importing a completed ISP'
-                                  : assessorType === 'rn'
-                                    ? 'RN email (RN User Management portal)'
-                                    : 'From CalAIM_tbl_Social_Worker.SW_email'
-                              }
-                              className={
-                                isUsableSwEmail(socialWorkerEmail) ? 'border-green-400 bg-green-50/50' : undefined
-                              }
-                            />
-                            {!formerSwImportMode ? (
-                              <>
-                                <div className="mt-1 text-[11px] text-muted-foreground">
-                                  {assessorType === 'rn' ? (
-                                    <>
-                                      Prefer member <span className="font-medium">RN_ID</span> / Caspio RN roster email.
-                                      Portal access is managed in RN User Management.
-                                    </>
-                                  ) : (
-                                    <>
-                                      Pulled from Caspio{' '}
-                                      <span className="font-medium">CalAIM_tbl_Social_Worker.SW_email</span> (same
-                                      email used when activating SW portal access).
-                                    </>
-                                  )}
-                                </div>
-                                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                                  {checkingSwPortal ? (
-                                    <span className="inline-flex items-center gap-1 text-muted-foreground">
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      Checking portal access…
-                                    </span>
-                                  ) : swPortalActive === true ? (
-                                    <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
-                                      Portal On (
-                                      {assessorType === 'rn' ? 'RN User Management' : 'SW User Management'})
-                                    </Badge>
-                                  ) : swPortalActive === false ? (
-                                    <Badge variant="destructive">
-                                      Portal Off — enable in{' '}
-                                      {assessorType === 'rn' ? 'RN User Management' : 'SW User Management'}
-                                    </Badge>
-                                  ) : (
-                                    <Badge variant="outline">Portal access not verified yet</Badge>
-                                  )}
-                                  <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
-                                    <Link
-                                      href={
-                                        assessorType === 'rn'
-                                          ? '/admin/rn-user-management'
-                                          : '/admin/sw-user-management'
-                                      }
-                                      target="_blank"
-                                    >
-                                      Open {assessorType === 'rn' ? 'RN' : 'SW'} User Management
-                                    </Link>
-                                  </Button>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="mt-1 text-[11px] text-muted-foreground">
-                                Portal invite is skipped for departed SWs. After parsing the PDF, use{' '}
-                                <span className="font-medium">Save as ISP intake</span> to continue review / RN / download.
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs font-medium">
-                              {assessorType === 'rn' ? 'RN county' : 'SW county'}
-                            </label>
-                            <Input
-                              value={socialWorkerCounty}
-                              onChange={(e) => {
-                                setSocialWorkerCounty(e.target.value);
-                              }}
-                              placeholder="From CalAIM_tbl_Social_Worker.County"
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs font-medium">Member county</label>
-                            <Input
-                              value={memberCounty}
-                              onChange={(e) => {
-                                setMemberCounty(e.target.value);
-                              }}
-                              placeholder="From CalAIM_tbl_Members.Member_County"
-                            />
-                          </div>
-                        </div>
-                        {!formerSwImportMode && (socialWorkerName || assessorCaspioRole) ? (
-                          <div
-                            className={`mt-3 rounded-md border px-3 py-2.5 ${
-                              assessorType === 'msw' && assessorCaspioRole?.caspioRole === 'rn'
-                                ? 'border-red-300 bg-red-50'
-                                : assessorType === 'rn' && assessorCaspioRole?.caspioRole === 'msw'
-                                  ? 'border-amber-300 bg-amber-50'
-                                  : assessorCaspioRole?.caspioRole === 'msw' ||
-                                      assessorCaspioRole?.caspioRole === 'rn' ||
-                                      assessorCaspioRole?.caspioRole === 'both'
-                                    ? 'border-green-300 bg-green-50/70'
-                                    : 'border-slate-200 bg-slate-50'
-                            }`}
-                          >
-                            <div className="text-xs font-medium text-slate-700">
-                              Confirm this {assessorType === 'rn' ? 'RN' : 'social worker'} (not the other role)
-                            </div>
-                            <div className="mt-1 text-sm font-semibold text-slate-900">
-                              {clean(socialWorkerName) || clean(assessorCaspioRole?.name) || 'Name not set'}
-                            </div>
-                            {clean(socialWorkerEmail) || clean(assessorCaspioRole?.email) ? (
-                              <div className="text-xs text-muted-foreground">
-                                {clean(socialWorkerEmail) || clean(assessorCaspioRole?.email)}
-                              </div>
-                            ) : null}
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              {assessorCaspioRole?.inMswTable ? (
-                                <Badge className="bg-sky-100 text-sky-950 hover:bg-sky-100">
-                                  MSW · CalAIM_tbl_Social_Worker
-                                </Badge>
-                              ) : null}
-                              {assessorCaspioRole?.inRnTable ? (
-                                <Badge className="bg-violet-100 text-violet-950 hover:bg-violet-100">
-                                  RN · CalAIM_tbl_RN
-                                </Badge>
-                              ) : null}
-                              {!assessorCaspioRole?.inMswTable && !assessorCaspioRole?.inRnTable ? (
-                                <Badge variant="outline">
-                                  {assessorCaspioRole?.caspioRoleLabel || 'Unknown'} — not matched in Caspio MSW/RN
-                                  tables yet
-                                </Badge>
-                              ) : null}
-                            </div>
-                            {assessorType === 'msw' && assessorCaspioRole?.caspioRole === 'rn' ? (
-                              <p className="mt-2 text-[11px] text-red-800">
-                                This person is on <span className="font-medium">CalAIM_tbl_RN</span> only — they are an
-                                RN, not an MSW/social worker. Switch to{' '}
-                                <span className="font-medium">Override: RN does ALFT</span>, or pick a social worker from{' '}
-                                <span className="font-medium">CalAIM_tbl_Social_Worker</span>.
-                              </p>
-                            ) : null}
-                            {assessorType === 'rn' && assessorCaspioRole?.caspioRole === 'msw' ? (
-                              <p className="mt-2 text-[11px] text-amber-900">
-                                This person is on <span className="font-medium">CalAIM_tbl_Social_Worker</span> only —
-                                they are MSW, not RN. Switch back to MSW / Social Worker, or assign someone from{' '}
-                                <span className="font-medium">CalAIM_tbl_RN</span>.
-                              </p>
-                            ) : null}
-                            {assessorType === 'msw' &&
-                            (assessorCaspioRole?.caspioRole === 'msw' ||
-                              assessorCaspioRole?.caspioRole === 'both') ? (
-                              <p className="mt-2 text-[11px] text-green-800">
-                                Matched as social worker / MSW
-                                {assessorCaspioRole.caspioRole === 'both' ? ' (also listed on RN table)' : ''}.
-                              </p>
-                            ) : null}
-                            {assessorType === 'rn' &&
-                            (assessorCaspioRole?.caspioRole === 'rn' ||
-                              assessorCaspioRole?.caspioRole === 'both') ? (
-                              <p className="mt-2 text-[11px] text-green-800">
-                                Matched as RN
-                                {assessorCaspioRole.caspioRole === 'both' ? ' (also listed on MSW table)' : ''}.
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="mt-2"
-                          variant={confirmedSw ? 'outline' : 'default'}
-                          onClick={() => {
-                            void (async () => {
-                              if (formerSwImportMode) {
-                                if (!clean(socialWorkerName)) {
-                                  toast({
-                                    variant: 'destructive',
-                                    title: 'Social worker name required',
-                                    description:
-                                      'Enter the name of the social worker who completed the assessment.',
-                                  });
-                                  return;
-                                }
-                                setConfirmedSw(true);
-                                setAnswers((prev) => ({
-                                  ...prev,
-                                  p1_assessor_name: clean(prev.p1_assessor_name) || clean(socialWorkerName),
-                                  p14_print_name: clean(prev.p14_print_name) || clean(socialWorkerName),
-                                }));
-                                toast({
-                                  title: 'Departed SW confirmed',
-                                  description: `${socialWorkerName} recorded as assessor. Continue steps, then upload the completed ALFT PDF.`,
-                                  className: 'bg-green-100 text-green-900 border-green-200',
-                                });
-                                return;
-                              }
-                              if (!clean(socialWorkerName) && !clean(socialWorkerEmail)) {
-                                toast({
-                                  variant: 'destructive',
-                                  title: assessorType === 'rn' ? 'RN required' : 'Social worker required',
-                                  description:
-                                    assessorType === 'rn'
-                                      ? 'Enter the RN name and email, then confirm.'
-                                      : 'Enter the social worker name and email, then confirm.',
-                                });
-                                return;
-                              }
-                              if (!clean(socialWorkerEmail) || !socialWorkerEmail.includes('@')) {
-                                toast({
-                                  variant: 'destructive',
-                                  title: assessorType === 'rn' ? 'Valid RN email required' : 'Valid SW email required',
-                                  description: 'Invite needs a real email address.',
-                                });
-                                return;
-                              }
-                              if (assessorType === 'msw' && assessorCaspioRole?.caspioRole === 'rn') {
-                                toast({
-                                  variant: 'destructive',
-                                  title: 'This staff is RN, not MSW',
-                                  description: `${clean(socialWorkerName) || 'This person'} is on CalAIM_tbl_RN only. Use RN override or choose a social worker from CalAIM_tbl_Social_Worker.`,
-                                });
-                                return;
-                              }
-                              if (assessorType === 'rn' && assessorCaspioRole?.caspioRole === 'msw') {
-                                toast({
-                                  variant: 'destructive',
-                                  title: 'This staff is MSW, not RN',
-                                  description: `${clean(socialWorkerName) || 'This person'} is on CalAIM_tbl_Social_Worker only. Switch to MSW / Social Worker or pick someone from CalAIM_tbl_RN.`,
-                                });
-                                return;
-                              }
-                              const portalOk = await verifySwPortalAccess(
-                                socialWorkerEmail,
-                                socialWorkerSwId
-                              );
-                              if (!portalOk) {
-                                toast({
-                                  variant: 'destructive',
-                                  title: 'Portal access required',
-                                  description:
-                                    assessorType === 'rn'
-                                      ? `Turn on Portal access for ${clean(socialWorkerEmail) || 'this RN'} in Admin → RN User Management before confirming.`
-                                      : `Turn on Portal access for ${clean(socialWorkerEmail) || 'this social worker'} in Admin → SW User Management before confirming. Or check “SW no longer with us” to import a completed ISP.`,
-                                });
-                                return;
-                              }
-                              setConfirmedSw(true);
-                              if (assessorType === 'rn') {
-                                const match =
-                                  rnOptions.find(
-                                    (r) =>
-                                      clean(r.email).toLowerCase() === clean(socialWorkerEmail).toLowerCase()
-                                  ) || null;
-                                if (match) setRnUid(match.uid);
-                                else setRnUid('');
-                                setConfirmedRn(true);
-                              }
-                              const assessorDisplayName = clean(socialWorkerName);
-                              if (assessorDisplayName) {
-                                setAnswers((prev) => ({
-                                  ...prev,
-                                  p1_assessor_name: clean(prev.p1_assessor_name) || assessorDisplayName,
-                                  p14_print_name: clean(prev.p14_print_name) || assessorDisplayName,
-                                }));
-                                setResolvedPreview((prev) => ({
-                                  ...prev,
-                                  p1_assessor_name: clean(prev.p1_assessor_name) || assessorDisplayName,
-                                }));
-                              }
-                              toast({
-                                title: assessorType === 'rn' ? 'RN assessor confirmed' : 'Social worker confirmed',
-                                description: `${socialWorkerName || (assessorType === 'rn' ? 'RN' : 'SW')} · ${socialWorkerEmail}${
-                                  assessorCaspioRole?.caspioRoleLabel &&
-                                  assessorCaspioRole.caspioRole !== 'unknown'
-                                    ? ` · ${assessorCaspioRole.caspioRoleLabel}`
-                                    : ''
-                                } · Portal On`,
-                                className: 'bg-green-100 text-green-900 border-green-200',
-                              });
-                            })();
-                          }}
-                          disabled={checkingSwPortal}
-                        >
-                          {checkingSwPortal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          {confirmedSw
-                            ? 'Confirmed'
-                            : formerSwImportMode
-                              ? 'Confirm departed SW name'
-                              : assessorType === 'rn'
-                                ? 'Confirm RN assessor'
-                                : 'Confirm social worker'}
-                        </Button>
-                        {!formerSwImportMode && swPortalActive === false ? (
-                          <p className="mt-2 text-xs text-red-700">
-                            {clean(socialWorkerEmail) || 'This SW'} does not have portal access in{' '}
-                            <Link
-                              href={
-                                assessorType === 'rn'
-                                  ? '/admin/rn-user-management'
-                                  : '/admin/sw-user-management'
-                              }
-                              className="underline underline-offset-2"
-                            >
-                              {assessorType === 'rn' ? 'RN User Management' : 'SW User Management'}
-                            </Link>
-                            . Enable Portal access there, then confirm again
-                            {assessorType === 'msw' ? (
-                              <>
-                                {' '}
-                                — or check <span className="font-medium">SW no longer with us</span> to import a
-                                completed ISP by name.
-                              </>
-                            ) : (
-                              '.'
-                            )}
-                          </p>
-                        ) : null}
-                      </div>
+                      <ConfirmAssessorStep
+                        confirmedSw={confirmedSw}
+                        assessorType={assessorType}
+                        formerSwImportMode={formerSwImportMode}
+                        assessorCaspioRole={assessorCaspioRole}
+                        socialWorkerName={socialWorkerName}
+                        socialWorkerEmail={socialWorkerEmail}
+                        setAssessorType={setAssessorType}
+                        setConfirmedSw={setConfirmedSw}
+                        setConfirmedRn={setConfirmedRn}
+                        setFormerSwImportMode={setFormerSwImportMode}
+                        setAssessorCaspioRole={setAssessorCaspioRole}
+                        selectedMember={selectedMember}
+                        selectedClientId={selectedClientId}
+                        loadCaspioFieldPreview={loadCaspioFieldPreview}
+                        rnOptions={rnOptions}
+                        setRnUid={setRnUid}
+                        setSwPortalActive={setSwPortalActive}
+                        setAnswers={setAnswers}
+                        applyMswAdminOverrideToAnswers={applyMswAdminOverrideToAnswers}
+                        setSocialWorkerName={setSocialWorkerName}
+                        setSocialWorkerEmail={setSocialWorkerEmail}
+                        verifySwPortalAccess={verifySwPortalAccess}
+                        socialWorkerSwId={socialWorkerSwId}
+                        checkingSwPortal={checkingSwPortal}
+                        swPortalActive={swPortalActive}
+                        socialWorkerCounty={socialWorkerCounty}
+                        setSocialWorkerCounty={setSocialWorkerCounty}
+                        memberCounty={memberCounty}
+                        setMemberCounty={setMemberCounty}
+                        toast={toast}
+                        setResolvedPreview={setResolvedPreview}
+                      />
 
                       <div
                         className={`rounded-md border bg-white p-3 ${
@@ -6015,829 +4700,108 @@ function IspWorkflowToolsPageInner() {
                         </Button>
                       </div>
 
-                      <div
-                        className={`rounded-md border bg-white p-3 ${
-                          confirmedRn ? 'border-green-300' : !confirmedFirstReviewer ? 'opacity-70' : ''
-                        }`}
-                      >
-                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">3</Badge>
-                          Confirm RN
-                          {confirmedRn ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
-                        </div>
-                        <label className="mb-1 block text-xs font-medium">
-                          {assessorType === 'rn'
-                            ? 'Assigned RN (same RN — ALFT + final approval)'
-                            : 'Assigned RN (after SW signature)'}
-                        </label>
-                        {assessorType === 'rn' ? (
-                          <div className="rounded-md border border-violet-200 bg-violet-50/60 px-3 py-2 text-sm">
-                            <div className="font-medium">{assignedRn.label}</div>
-                            <div className="text-xs text-muted-foreground">{assignedRn.email}</div>
-                            <div className="mt-1 text-[11px] text-violet-900">
-                              Locked to the RN assessor from step 1. After admin review, final approval returns to
-                              this same RN.
-                            </div>
-                          </div>
-                        ) : (
-                          <select
-                            className="h-10 w-full rounded border border-input bg-background px-2 text-sm"
-                            value={rnUid}
-                            disabled={!confirmedFirstReviewer}
-                            onChange={(e) => {
-                              setRnUid(e.target.value);
-                              setConfirmedRn(false);
-                            }}
-                          >
-                            {(rnOptions.length ? rnOptions : staffOptions).map((s) => (
-                              <option key={s.uid} value={s.uid}>
-                                {s.label} ({s.email})
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        {assessorType === 'msw' ? (
-                          <div className="mt-1 text-[11px] text-muted-foreground">
-                            Default: leslie@carehomefinders.com
-                          </div>
-                        ) : null}
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="mt-2"
-                          variant={confirmedRn ? 'outline' : 'default'}
-                          disabled={!confirmedFirstReviewer || (assessorType === 'rn' && !isUsableSwEmail(socialWorkerEmail))}
-                          onClick={() => {
-                            if (assessorType === 'rn') {
-                              const match =
-                                rnOptions.find(
-                                  (r) =>
-                                    clean(r.email).toLowerCase() === clean(socialWorkerEmail).toLowerCase()
-                                ) || null;
-                              if (match) setRnUid(match.uid);
-                            }
-                            setConfirmedRn(true);
-                            toast({
-                              title: 'RN confirmed',
-                              description: `${assignedRn.label} · ${assignedRn.email}`,
-                              className: 'bg-green-100 text-green-900 border-green-200',
-                            });
-                          }}
-                        >
-                          {confirmedRn ? 'Confirmed' : 'Confirm RN'}
-                        </Button>
-                      </div>
+                      <ConfirmRnStep
+                        confirmedRn={confirmedRn}
+                        confirmedFirstReviewer={confirmedFirstReviewer}
+                        assessorType={assessorType}
+                        assignedRn={assignedRn}
+                        rnUid={rnUid}
+                        setRnUid={setRnUid}
+                        setConfirmedRn={setConfirmedRn}
+                        rnOptions={rnOptions}
+                        staffOptions={staffOptions}
+                        socialWorkerEmail={socialWorkerEmail}
+                        toast={toast}
+                      />
 
-                      <div
-                        className={`rounded-md border bg-white p-3 ${
-                          confirmedPurpose ? 'border-green-300' : !confirmedRn ? 'opacity-70' : ''
-                        }`}
-                      >
-                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">4</Badge>
-                          Purpose of this assessment
-                          {confirmedPurpose ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
-                        </div>
-                        <p className="mb-2 text-xs text-muted-foreground">
-                          Required — written into the ALFT form and carried through SW, staff, and RN steps.
-                        </p>
-                        <div className="mb-2 flex flex-wrap gap-3 text-sm">
-                          {[
-                            { value: 'initial' as const, label: 'Initial' },
-                            { value: 'change_condition' as const, label: 'Change of Condition' },
-                            { value: 'review' as const, label: 'Review (reassessment)' },
-                          ].map((opt) => (
-                            <label key={opt.value} className="inline-flex items-center gap-2">
-                              <input
-                                type="radio"
-                                name="isp-assessment-purpose"
-                                checked={assessmentPurpose === opt.value}
-                                disabled={!confirmedRn}
-                                onChange={() => {
-                                  setAssessmentPurpose(opt.value);
-                                  setConfirmedPurpose(true);
-                                  setConfirmedIspLocation(false);
-                                  if (opt.value !== 'review' && opt.value !== 'initial') {
-                                    setVisitLocationSource('');
-                                    setAskCaregiverOnArrival(false);
-                                    setOverrideIspContactPhone(false);
-                                    // Restore ISP-location preview defaults when leaving visit-location flow.
-                                    if (Object.keys(caspioSourcePreview).length) {
-                                      setResolvedPreview((prev) =>
-                                        applyVisitLocationToPreview(
-                                          prev,
-                                          caspioSourcePreview,
-                                          'isp_location',
-                                          opt.value
-                                        )
-                                      );
-                                    }
-                                  } else if (
-                                    visitLocationSource &&
-                                    Object.keys(caspioSourcePreview).length
-                                  ) {
-                                    setResolvedPreview((prev) =>
-                                      applyVisitLocationToPreview(
-                                        prev,
-                                        caspioSourcePreview,
-                                        visitLocationSource,
-                                        opt.value
-                                      )
-                                    );
-                                  }
-                                }}
-                                className="h-4 w-4 accent-blue-700"
-                              />
-                              <span>{opt.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                        {reauthH2022Warning?.h2022WarningLabel ? (
-                          <div
-                            className={`mb-2 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
-                              (reauthH2022Warning.h2022DaysUntilEnd ?? 0) < 0
-                                ? 'border-red-300 bg-red-50 text-red-950'
-                                : 'border-amber-300 bg-amber-50 text-amber-950'
-                            }`}
-                            role="status"
-                          >
-                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                            <div>
-                              <div className="font-medium">{reauthH2022Warning.h2022WarningLabel}</div>
-                              {reauthH2022Warning.h2022EndDate ? (
-                                <div className="text-xs opacity-90">
-                                  Authorization end date: {reauthH2022Warning.h2022EndDate}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        ) : null}
-                        {assessmentPurpose === 'review' || assessmentPurpose === 'initial' ? (
-                          <div className="mt-3 space-y-2 rounded border border-sky-200 bg-sky-50/60 p-3">
-                            <div className="text-xs font-medium text-sky-950">
-                              {assessmentPurpose === 'initial'
-                                ? 'Initial visit — is the member already at an RCFE, or at another ISP location (home, SNF, etc.)?'
-                                : 'Reassessment / reauthorization visit — is the member at an RCFE, or still at home / SNF / another ISP location?'}
-                            </div>
-                            <div className="flex flex-wrap gap-3 text-sm">
-                              {[
-                                {
-                                  value: 'rcfe' as const,
-                                  label:
-                                    assessmentPurpose === 'initial' ? 'Already at RCFE' : 'At RCFE',
-                                },
-                                {
-                                  value: 'isp_location' as const,
-                                  label:
-                                    assessmentPurpose === 'initial'
-                                      ? 'Other ISP location (home, SNF, etc.)'
-                                      : 'Still at home / SNF / other ISP location',
-                                },
-                              ].map((opt) => (
-                                <label key={opt.value} className="inline-flex items-center gap-2">
-                                  <input
-                                    type="radio"
-                                    name="isp-visit-location"
-                                    checked={visitLocationSource === opt.value}
-                                    onChange={() => {
-                                      setVisitLocationSource(opt.value);
-                                      if (opt.value !== 'rcfe') {
-                                        setAskCaregiverOnArrival(false);
-                                        setOverrideIspContactPhone(false);
-                                      }
-                                      setConfirmedIspLocation(false);
-                                      if (Object.keys(caspioSourcePreview).length) {
-                                        const nextPreview = applyVisitLocationToPreview(
-                                          resolvedPreview,
-                                          caspioSourcePreview,
-                                          opt.value,
-                                          assessmentPurpose
-                                        );
-                                        setResolvedPreview(nextPreview);
-                                        setAnswers((prev) => {
-                                          const merged = { ...prev };
-                                          for (const key of [
-                                            'p2_facility_name',
-                                            'p2_current_street',
-                                            'p2_current_city',
-                                            'p2_current_state',
-                                            'p2_current_zip',
-                                            'p2_current_type',
-                                            'p2_current_type_other',
-                                            'isp_location_name',
-                                            'isp_location_address',
-                                            'isp_location_city',
-                                            'isp_location_state',
-                                            'isp_location_zip',
-                                            'isp_location_type',
-                                            'isp_contact_street',
-                                            'isp_contact_city',
-                                            'isp_contact_state',
-                                            'isp_contact_zip',
-                                          ] as const) {
-                                            const value = clean(nextPreview[key]);
-                                            if (value) merged[key] = value;
-                                          }
-                                          return merged;
-                                        });
-                                        setCaspioFilledIds((prev) => {
-                                          const next = new Set(prev);
-                                          [
-                                            'p2_facility_name',
-                                            'p2_current_street',
-                                            'p2_current_city',
-                                            'p2_current_state',
-                                            'p2_current_zip',
-                                          ].forEach((id) => {
-                                            if (clean(nextPreview[id])) next.add(id);
-                                          });
-                                          return Array.from(next);
-                                        });
-                                      }
-                                    }}
-                                    className="h-4 w-4 accent-blue-700"
-                                  />
-                                  <span>{opt.label}</span>
-                                </label>
-                              ))}
-                            </div>
-                            {visitLocationSource === 'rcfe' ? (
-                              <div className="space-y-2">
-                                <p className="text-[11px] text-sky-900">
-                                  Form pulls ISP Address from Caspio{' '}
-                                  <span className="font-medium">RCFE_Name</span>,{' '}
-                                  <span className="font-medium">RCFE_Address</span>,{' '}
-                                  <span className="font-medium">RCFE_City</span>,{' '}
-                                  <span className="font-medium">RCFE_State</span>,{' '}
-                                  <span className="font-medium">RCFE_Zip</span> (where the member will go / already
-                                  is). If RCFE and ISP Contact differ, step 5 can sync Caspio.
-                                  {assessmentPurpose === 'initial'
-                                    ? ' SW email: Initial assessment — already at an RCFE.'
-                                    : ' SW email: Reassessment — at an RCFE.'}
-                                </p>
-                                <label className="flex items-start gap-2 rounded border border-sky-200 bg-white/80 px-2 py-1.5 text-[11px] text-slate-800">
-                                  <Checkbox
-                                    checked={askCaregiverOnArrival}
-                                    onCheckedChange={(checked) => setAskCaregiverOnArrival(checked === true)}
-                                    className="mt-0.5"
-                                  />
-                                  <span>
-                                    No single ISP contact person — ask for staff when arriving at RCFE
-                                    <span className="mt-0.5 block text-muted-foreground">
-                                      For large assisted living / RCFEs without a dedicated contact (often just a
-                                      caregiver at the front desk). Waives ISP Contact Name and ISP Contact Phone as
-                                      required. SW invite will tell them to ask for staff on arrival.
-                                    </span>
-                                  </span>
-                                </label>
-                              </div>
-                            ) : null}
-                            {visitLocationSource === 'isp_location' ? (
-                              <p className="text-[11px] text-sky-900">
-                                Form uses Caspio ISP location — verify it in step 5.
-                                {assessmentPurpose === 'review'
-                                  ? ' SW email: may still be at home, SNF, or another ISP location.'
-                                  : ' SW email: member not yet at an RCFE for this initial visit.'}
-                              </p>
-                            ) : null}
-                            {visitLocationSummary ? (
-                              <div className="rounded border bg-white px-2 py-1.5 text-[11px] text-slate-700">
-                                Preview ({visitLocationSummary.label}):{' '}
-                                {[
-                                  visitLocationSummary.name,
-                                  visitLocationSummary.street,
-                                  visitLocationSummary.city,
-                                  visitLocationSummary.phone,
-                                ]
-                                  .filter(Boolean)
-                                  .join(' · ') || 'No values found in Caspio yet'}
-                              </div>
-                            ) : null}
-                            {!visitLocationSource ? (
-                              <p className="text-[11px] text-amber-800">
-                                Select RCFE or ISP location so the SW email includes the correct visit type.
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        {confirmedPurpose && assessmentPurpose ? (
-                          <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            Purpose confirmed (
-                            {assessmentPurpose === 'initial'
-                              ? 'Initial'
-                              : assessmentPurpose === 'change_condition'
-                                ? 'Change of Condition'
-                                : 'Review / reauthorization'}
-                            )
-                            {(assessmentPurpose === 'review' || assessmentPurpose === 'initial') &&
-                            visitLocationSource
-                              ? ` · ${
-                                  visitLocationSource === 'rcfe'
-                                    ? assessmentPurpose === 'initial'
-                                      ? 'Already at RCFE'
-                                      : 'At RCFE'
-                                    : 'Home / SNF / other ISP location'
-                                }`
-                              : ''}
-                          </div>
-                        ) : (
-                          <div className="text-xs text-muted-foreground">Select a purpose to continue.</div>
-                        )}
-                      </div>
+                      <RcfeDetailsStep
+                        confirmedPurpose={confirmedPurpose}
+                        confirmedRn={confirmedRn}
+                        assessmentPurpose={assessmentPurpose}
+                        setAssessmentPurpose={setAssessmentPurpose}
+                        setConfirmedPurpose={setConfirmedPurpose}
+                        setConfirmedIspLocation={setConfirmedIspLocation}
+                        setVisitLocationSource={setVisitLocationSource}
+                        setAskCaregiverOnArrival={setAskCaregiverOnArrival}
+                        setOverrideIspContactPhone={setOverrideIspContactPhone}
+                        caspioSourcePreview={caspioSourcePreview}
+                        setResolvedPreview={setResolvedPreview}
+                        applyVisitLocationToPreview={applyVisitLocationToPreview}
+                        visitLocationSource={visitLocationSource}
+                        reauthH2022Warning={reauthH2022Warning}
+                        resolvedPreview={resolvedPreview}
+                        setAnswers={setAnswers}
+                        setCaspioFilledIds={setCaspioFilledIds}
+                        askCaregiverOnArrival={askCaregiverOnArrival}
+                        visitLocationSummary={visitLocationSummary}
+                      />
 
-                      <div
-                        className={`rounded-md border bg-white p-3 ${
-                          confirmedIspLocation
-                            ? 'border-green-300'
-                            : !confirmedPurpose || !visitLocationReady
-                              ? 'opacity-70'
-                              : ispRcfeSoftMismatch
-                                ? 'border-amber-400'
-                                : ''
-                        }`}
-                      >
-                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">5</Badge>
-                          Verify ISP location
-                          {confirmedIspLocation ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
-                          {ispRcfeSoftMismatch && !confirmedIspLocation ? (
-                            <AlertTriangle className="h-4 w-4 text-amber-600" />
-                          ) : null}
-                        </div>
+                      <IspLocationStep
+                        confirmedIspLocation={confirmedIspLocation}
+                        confirmedPurpose={confirmedPurpose}
+                        visitLocationReady={visitLocationReady}
+                        ispRcfeSoftMismatch={ispRcfeSoftMismatch}
+                        needsVisitLocationChoice={needsVisitLocationChoice}
+                        ispLocationSnapshot={ispLocationSnapshot}
+                        rcfeLocationSnapshot={rcfeLocationSnapshot}
+                        ispLocationUpdating={ispLocationUpdating}
+                        isLoadingPreview={isLoadingPreview}
+                        acceptRcfeAsDefaultIspLocation={acceptRcfeAsDefaultIspLocation}
+                        refreshIspLocationFromCaspio={refreshIspLocationFromCaspio}
+                        visitLocationSource={visitLocationSource}
+                        canConfirmIspLocationStep={canConfirmIspLocationStep}
+                        setConfirmedIspLocation={setConfirmedIspLocation}
+                        toast={toast}
+                      />
 
-                        {!confirmedPurpose || !visitLocationReady ? (
-                          <div className="text-[11px] text-amber-800">
-                            Finish step 4 (purpose
-                            {needsVisitLocationChoice ? ' + RCFE / ISP location' : ''}) first.
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="rounded border bg-muted/20 px-2 py-1.5 text-[11px] text-slate-800">
-                              <div className="font-medium text-slate-900">ISP location</div>
-                              <div>
-                                {[
-                                  ispLocationSnapshot.name,
-                                  ispLocationSnapshot.street,
-                                  ispLocationSnapshot.city,
-                                  ispLocationSnapshot.state,
-                                  ispLocationSnapshot.zip,
-                                ]
-                                  .filter(Boolean)
-                                  .join(' · ') || 'No ISP location in Caspio yet'}
-                              </div>
-                            </div>
+                      <MemberUploadsStep
+                        confirmedClinicalUploads={confirmedClinicalUploads}
+                        confirmedIspLocation={confirmedIspLocation}
+                        loadingApplicationClinical={loadingApplicationClinical}
+                        applicationClinicalFiles={applicationClinicalFiles}
+                        applicationClinicalSourceLabel={applicationClinicalSourceLabel}
+                        storage={storage}
+                        toast={toast}
+                        canUploadClinical={canUploadClinical}
+                        pullingApplicationClinical={pullingApplicationClinical}
+                        pullApplicationClinicalFilesIntoSwPortal={pullApplicationClinicalFilesIntoSwPortal}
+                        selectedMember={selectedMember}
+                        clinicalUploadLabel={clinicalUploadLabel}
+                        setClinicalUploadLabel={setClinicalUploadLabel}
+                        uploadMemberClinicalFiles={uploadMemberClinicalFiles}
+                        clinicalUploading={clinicalUploading}
+                        clinicalUploadProgress={clinicalUploadProgress}
+                        clinicalUploadFiles={clinicalUploadFiles}
+                        swPortalSupportFiles={swPortalSupportFiles}
+                        deletingClinicalFileId={deletingClinicalFileId}
+                        deleteSwPortalClinicalFile={deleteSwPortalClinicalFile}
+                        setConfirmedClinicalUploads={setConfirmedClinicalUploads}
+                      />
 
-                            {ispRcfeSoftMismatch && !confirmedIspLocation ? (
-                              <div className="space-y-2 rounded border border-amber-300 bg-amber-50 px-2 py-2 text-[11px] text-amber-950">
-                                <div className="flex items-start gap-1.5 font-medium">
-                                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                  Name/address differs from RCFE — RCFE is the default when plugged in
-                                </div>
-                                <div>
-                                  RCFE (default): {rcfeLocationSnapshot.name}
-                                  {rcfeLocationSnapshot.street ? ` · ${rcfeLocationSnapshot.street}` : ''}
-                                  {rcfeLocationSnapshot.city ? ` · ${rcfeLocationSnapshot.city}` : ''}
-                                </div>
-                                <div className="flex flex-wrap gap-2 pt-1">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    disabled={ispLocationUpdating || isLoadingPreview}
-                                    onClick={() => void acceptRcfeAsDefaultIspLocation()}
-                                  >
-                                    {ispLocationUpdating ? (
-                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    ) : null}
-                                    Accept RCFE as default
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={ispLocationUpdating || isLoadingPreview}
-                                    onClick={() => void refreshIspLocationFromCaspio()}
-                                  >
-                                    {isLoadingPreview ? (
-                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <RefreshCw className="mr-2 h-4 w-4" />
-                                    )}
-                                    Refresh
-                                  </Button>
-                                </div>
-                              </div>
-                            ) : null}
-
-                            {confirmedIspLocation ? (
-                              <div className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                                ISP location verified
-                                {visitLocationSource === 'rcfe' && rcfeLocationSnapshot.name
-                                  ? ' (RCFE)'
-                                  : ''}
-                              </div>
-                            ) : !ispRcfeSoftMismatch ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={canConfirmIspLocationStep ? 'default' : 'outline'}
-                                disabled={!canConfirmIspLocationStep || ispLocationUpdating}
-                                onClick={() => {
-                                  setConfirmedIspLocation(true);
-                                  toast({
-                                    title: 'ISP location verified',
-                                    description: 'You can continue to clinical uploads.',
-                                    className: 'bg-green-100 text-green-900 border-green-200',
-                                  });
-                                }}
-                              >
-                                Confirm ISP location verified
-                              </Button>
-                            ) : null}
-                          </div>
-                        )}
-                      </div>
-
-                      <div
-                        className={`rounded-md border bg-white p-3 ${
-                          confirmedClinicalUploads
-                            ? 'border-green-300'
-                            : !confirmedIspLocation
-                              ? 'opacity-70'
-                              : ''
-                        }`}
-                      >
-                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">6</Badge>
-                          Member clinical uploads
-                          {confirmedClinicalUploads ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
-                        </div>
-                        <p className="mb-2 text-xs text-muted-foreground">
-                          Choose 602, facesheet, and other clinical documents — they upload automatically to the SW
-                          portal for this member. Labels are inferred from filenames (e.g. “602”) when left blank.
-                          Unlocks after ISP location is verified (step 5). If this member has an application in the
-                          portal, Medicine List and LIC 602A uploads are offered below when available.
-                        </p>
-                        {loadingApplicationClinical ? (
-                          <div className="mb-2 flex items-center gap-2 rounded border border-sky-200 bg-sky-50/70 px-2 py-1.5 text-[11px] text-sky-900">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Checking application portal for Medicine List / 602…
-                          </div>
-                        ) : applicationClinicalFiles.length > 0 ? (
-                          <div className="mb-2 space-y-2 rounded border border-emerald-200 bg-emerald-50/60 p-2">
-                            <div className="text-[11px] font-medium text-emerald-950">
-                              From application portal
-                              {applicationClinicalSourceLabel ? (
-                                <span className="font-normal text-emerald-800"> · {applicationClinicalSourceLabel}</span>
-                              ) : null}
-                            </div>
-                            <div className="space-y-1">
-                              {applicationClinicalFiles.map((file) => (
-                                <div
-                                  key={file.id}
-                                  className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-800"
-                                >
-                                  <span>
-                                    <span className="font-medium">{file.label}</span>
-                                    {file.fileName ? ` · ${file.fileName}` : ''}
-                                    {file.alreadyPulled ? (
-                                      <span className="ml-1 text-emerald-700">(already on SW portal)</span>
-                                    ) : null}
-                                  </span>
-                                  {file.downloadURL || file.filePath ? (
-                                    <button
-                                      type="button"
-                                      className="text-blue-700 hover:underline"
-                                      onClick={() => {
-                                        void (async () => {
-                                          try {
-                                            const url =
-                                              clean(file.downloadURL) ||
-                                              (file.filePath && storage
-                                                ? await getDownloadURL(ref(storage, file.filePath))
-                                                : '');
-                                            if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                                          } catch {
-                                            toast({
-                                              variant: 'destructive',
-                                              title: 'Could not open file',
-                                              description: file.fileName || file.label,
-                                            });
-                                          }
-                                        })();
-                                      }}
-                                    >
-                                      Preview
-                                    </button>
-                                  ) : null}
-                                </div>
-                              ))}
-                            </div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="h-8"
-                              disabled={
-                                !canUploadClinical ||
-                                pullingApplicationClinical ||
-                                applicationClinicalFiles.every((f) => f.alreadyPulled)
-                              }
-                              onClick={() => void pullApplicationClinicalFilesIntoSwPortal()}
-                            >
-                              {pullingApplicationClinical ? (
-                                <>
-                                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                                  Pulling…
-                                </>
-                              ) : (
-                                'Pull Medicine List & 602 into SW portal'
-                              )}
-                            </Button>
-                          </div>
-                        ) : selectedMember && !loadingApplicationClinical ? (
-                          <div className="mb-2 rounded border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground">
-                            No Medicine List or LIC 602A found on an application for this member (by MRN / Client_ID2).
-                            Upload manually below if needed.
-                          </div>
-                        ) : null}
-                        <div className="space-y-2 rounded border bg-muted/20 p-2">
-                          <div className="space-y-1">
-                            <Label htmlFor="isp-clinical-upload-label" className="text-[11px]">
-                              File label (optional — applies to next upload)
-                            </Label>
-                            <Input
-                              id="isp-clinical-upload-label"
-                              value={clinicalUploadLabel}
-                              onChange={(e) => setClinicalUploadLabel(e.target.value)}
-                              placeholder="Example: 602 or Facesheet"
-                              className="h-8 text-xs"
-                              disabled={!canUploadClinical}
-                            />
-                            <input
-                              id="isp-clinical-upload-input"
-                              type="file"
-                              multiple
-                              disabled={!canUploadClinical}
-                              onChange={(e) => {
-                                const files = Array.from(e.target.files || []);
-                                e.target.value = '';
-                                if (!files.length || !confirmedIspLocation) return;
-                                void uploadMemberClinicalFiles(files, clinicalUploadLabel);
-                              }}
-                              className="text-xs"
-                            />
-                            {!confirmedIspLocation ? (
-                              <div className="text-[11px] text-amber-800">Verify ISP location (step 5) to enable clinical uploads.</div>
-                            ) : null}
-                            {clinicalUploading ? (
-                              <div className="flex items-center gap-2 text-[11px] text-blue-800">
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Uploading to SW portal
-                                {clinicalUploadProgress ? ` (${clinicalUploadProgress}%)` : '…'}
-                              </div>
-                            ) : clinicalUploadFiles.length ? (
-                              <div className="text-[11px] text-muted-foreground">
-                                Selected {clinicalUploadFiles.length} file
-                                {clinicalUploadFiles.length > 1 ? 's' : ''}:{' '}
-                                {clinicalUploadFiles
-                                  .slice(0, 2)
-                                  .map((f) => f.name)
-                                  .join(', ')}
-                                {clinicalUploadFiles.length > 2 ? ` +${clinicalUploadFiles.length - 2} more` : ''}
-                              </div>
-                            ) : (
-                              <div className="text-[11px] text-muted-foreground">
-                                Files upload as soon as you choose them.
-                              </div>
-                            )}
-                          </div>
-                          {swPortalSupportFiles.length ? (
-                            <div className="space-y-1 border-t pt-2">
-                              <div className="text-[11px] font-medium text-slate-800">Uploaded for this member</div>
-                              {swPortalSupportFiles.slice(0, 12).map((file, idx) => (
-                                <div
-                                  key={file.id || `${file.fileName}-${idx}`}
-                                  className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground"
-                                >
-                                  <span className="min-w-0 flex-1">
-                                    <a
-                                      href={file.downloadURL}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="font-medium text-blue-700 hover:underline"
-                                    >
-                                      {file.label || file.fileName || 'Clinical file'}
-                                    </a>
-                                    {file.label && file.fileName && file.label !== file.fileName
-                                      ? ` (${file.fileName})`
-                                      : ''}
-                                    {file.uploadedAtLabel ? ` · uploaded ${file.uploadedAtLabel}` : ''}
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 shrink-0 px-2 text-red-700 hover:bg-red-50 hover:text-red-800"
-                                    disabled={deletingClinicalFileId === file.id || clinicalUploading}
-                                    onClick={() => void deleteSwPortalClinicalFile(file)}
-                                    title="Delete clinical file"
-                                  >
-                                    {deletingClinicalFileId === file.id ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    )}
-                                    <span className="ml-1">Delete</span>
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="border-t pt-2 text-[11px] text-muted-foreground">
-                              No clinical files uploaded for this member yet.
-                            </div>
-                          )}
-                        </div>
-                        {!confirmedClinicalUploads ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="mt-2"
-                            disabled={!canUploadClinical}
-                            onClick={() => {
-                              setConfirmedClinicalUploads(true);
-                              toast({
-                                title: 'Continuing without clinical files',
-                                description: 'You can upload later from ALFT Tracker or by choosing files above.',
-                                className: 'bg-green-100 text-green-900 border-green-200',
-                              });
-                            }}
-                          >
-                            Continue without clinical files
-                          </Button>
-                        ) : null}
-                      </div>
-
-                      <div
-                        className={`rounded-md border bg-white p-3 ${
-                          showForm ? 'border-green-300' : !confirmedClinicalUploads ? 'opacity-70' : ''
-                        }`}
-                      >
-                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">7</Badge>
-                          Prefill ISP form
-                          {showForm ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
-                          {completedPdfImportDone ? (
-                            <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">
-                              Completed PDF import
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <p className="mb-2 text-xs text-muted-foreground">
-                          {completedPdfImportDone
-                            ? 'Completed ALFT PDF imported — Prefill is complete. Use Refresh Caspio fields to pull updated home address / contact data without erasing the ISP. Full Caspio Prefill stays disabled.'
-                            : formerSwImportMode
-                              ? 'For a departed SW, upload the completed/signed ALFT PDF here after steps 1–6. That parses the form so you can edit it and Save as ISP intake (no SW portal invite).'
-                              : 'Unlocks after steps 1–6 and all required Caspio fields are ready. “Besides client answering” stays blank for the SW to complete. Or upload a completed ALFT PDF instead of Caspio Prefill.'}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            onClick={() => void prefillIspForm()}
-                            disabled={
-                              prefillLockedByCompletedPdf ||
-                              isPrefilling ||
-                              isRefreshingCaspioFields ||
-                              isParsingCompletedPdf ||
-                              isLoadingPreview ||
-                              !canPrefillIspForm
-                            }
-                            title={
-                              prefillLockedByCompletedPdf
-                                ? 'Disabled — completed PDF already imported for this member'
-                                : undefined
-                            }
-                          >
-                            {isPrefilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            {prefillLockedByCompletedPdf ? 'Prefill complete (PDF)' : 'Prefill ISP Form'}
-                          </Button>
-                          {completedPdfImportDone ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => void refreshCaspioFieldsOntoExistingIsp()}
-                              disabled={
-                                isRefreshingCaspioFields ||
-                                isPrefilling ||
-                                isParsingCompletedPdf ||
-                                isLoadingPreview ||
-                                !showForm ||
-                                !(selectedMember || clean(selectedClientId))
-                              }
-                              title="Pull home address, mailing, ISP location, and contact fields from Caspio while keeping the imported ISP answers"
-                            >
-                              {isRefreshingCaspioFields ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                              )}
-                              Refresh Caspio fields
-                            </Button>
-                          ) : null}
-                          <label className="inline-flex cursor-pointer">
-                            <input
-                              type="file"
-                              accept="application/pdf,.pdf"
-                              className="sr-only"
-                              disabled={
-                                isParsingCompletedPdf ||
-                                isPrefilling ||
-                                isRefreshingCaspioFields ||
-                                !(selectedMember || clean(selectedClientId))
-                              }
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) void importCompletedAlftPdf(file);
-                                e.currentTarget.value = '';
-                              }}
-                            />
-                            <span
-                              className={`inline-flex h-10 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium ${
-                                isParsingCompletedPdf ||
-                                isPrefilling ||
-                                isRefreshingCaspioFields ||
-                                !(selectedMember || clean(selectedClientId))
-                                  ? 'pointer-events-none opacity-50'
-                                  : 'hover:bg-accent'
-                              }`}
-                            >
-                              {isParsingCompletedPdf ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <Upload className="mr-2 h-4 w-4" />
-                              )}
-                              {completedPdfImportDone ? 'Re-upload completed ALFT PDF' : 'Upload completed ALFT PDF'}
-                            </span>
-                          </label>
-                          {completedPdfImportDone || completedPdfFileName ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-10 text-red-700 hover:bg-red-50 hover:text-red-800"
-                              disabled={isParsingCompletedPdf || isPrefilling || isRefreshingCaspioFields}
-                              onClick={() => clearCompletedAlftPdfImport()}
-                              title="Remove completed PDF import"
-                            >
-                              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                              Delete PDF import
-                            </Button>
-                          ) : null}
-                        </div>
-                        {isParsingCompletedPdf || completedPdfFileName ? (
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {isParsingCompletedPdf
-                              ? completedPdfParseProgress || 'Reading completed ALFT PDF…'
-                              : isRefreshingCaspioFields
-                                ? 'Refreshing Caspio home address / contact fields…'
-                                : `Imported: ${completedPdfFileName}${
-                                    completedPdfImportDone
-                                      ? ' — Prefill locked (use Refresh Caspio fields for address updates)'
-                                      : ''
-                                  }`}
-                          </p>
-                        ) : (
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            Upload a completed ALFT PDF (not created in-app) to fill the form and skip Caspio Prefill.
-                          </p>
-                        )}
-                        {!completedPdfImportDone && !canPrefillIspForm && prefillBlockedReasons.length > 0 ? (
-                          <div className="mt-2 space-y-2 text-xs text-amber-800">
-                            <div className="space-y-0.5">
-                              <div className="font-medium">Still needed to unlock Caspio prefill:</div>
-                              {prefillBlockedReasons.map((reason) => (
-                                <div key={reason}>• {reason}</div>
-                              ))}
-                            </div>
-                            {ispContactPhoneEmpty ? (
-                              <label className="flex items-start gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-950">
-                                <Checkbox
-                                  checked={overrideIspContactPhone}
-                                  onCheckedChange={(checked) => setOverrideIspContactPhone(checked === true)}
-                                  className="mt-0.5"
-                                />
-                                <span>
-                                  Override missing ISP Contact Phone and continue
-                                  <span className="mt-0.5 block text-amber-900/80">
-                                    Use when the ISP contact is just a caregiver / front desk at the RCFE.
-                                  </span>
-                                </span>
-                              </label>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
+                      <CaspioPrefillStep
+                        showForm={showForm}
+                        confirmedClinicalUploads={confirmedClinicalUploads}
+                        completedPdfImportDone={completedPdfImportDone}
+                        formerSwImportMode={formerSwImportMode}
+                        prefillIspForm={prefillIspForm}
+                        prefillLockedByCompletedPdf={prefillLockedByCompletedPdf}
+                        isPrefilling={isPrefilling}
+                        isRefreshingCaspioFields={isRefreshingCaspioFields}
+                        isParsingCompletedPdf={isParsingCompletedPdf}
+                        isLoadingPreview={isLoadingPreview}
+                        canPrefillIspForm={canPrefillIspForm}
+                        refreshCaspioFieldsOntoExistingIsp={refreshCaspioFieldsOntoExistingIsp}
+                        selectedMember={selectedMember}
+                        selectedClientId={selectedClientId}
+                        importCompletedAlftPdf={importCompletedAlftPdf}
+                        completedPdfFileName={completedPdfFileName}
+                        clearCompletedAlftPdfImport={clearCompletedAlftPdfImport}
+                        completedPdfParseProgress={completedPdfParseProgress}
+                        prefillBlockedReasons={prefillBlockedReasons}
+                        ispContactPhoneEmpty={ispContactPhoneEmpty}
+                        overrideIspContactPhone={overrideIspContactPhone}
+                        setOverrideIspContactPhone={setOverrideIspContactPhone}
+                      />
 
                       <div
                         className={`rounded-md border bg-white p-3 ${
@@ -6920,87 +4884,12 @@ function IspWorkflowToolsPageInner() {
                       </div>
                     </div>
 
-                    <div className="rounded-md border bg-slate-50 p-3 text-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="font-medium">SW invite / assessment activity log</div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => void refreshAssignmentActivity(clientIdOf(selectedMember))}
-                        >
-                          <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                          Refresh log
-                        </Button>
-                      </div>
-                      <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
-                        <li>
-                          <span className="font-medium">Invite sent:</span>{' '}
-                          {assignmentActivity.invitedAt
-                            ? `${formatWhen(assignmentActivity.invitedAt)}${
-                                assignmentActivity.invitedTo ? ` → ${assignmentActivity.invitedTo}` : ''
-                              }${
-                                (assignmentActivity.inviteSendCount || 0) > 1
-                                  ? ` · ${assignmentActivity.inviteSendCount} sends (latest ${formatWhen(
-                                      assignmentActivity.lastInvitedAt || assignmentActivity.invitedAt
-                                    )})`
-                                  : ''
-                              }`
-                            : 'Not sent yet'}
-                        </li>
-                        <li>
-                          <span className="font-medium">SW viewed portal:</span>{' '}
-                          {assignmentActivity.viewedAt
-                            ? `${formatWhen(assignmentActivity.viewedAt)}${
-                                assignmentActivity.viewedBy ? ` · ${assignmentActivity.viewedBy}` : ''
-                              }`
-                            : 'Not viewed yet'}
-                        </li>
-                        <li>
-                          <span className="font-medium">SW submitted / signed:</span>{' '}
-                          {assignmentActivity.signedAt || assignmentActivity.submittedAt
-                            ? formatWhen(assignmentActivity.signedAt || assignmentActivity.submittedAt)
-                            : 'Not submitted yet'}
-                        </li>
-                        <li>
-                          <span className="font-medium">Next after SW submit:</span> email + Action Item for{' '}
-                          {firstReviewer?.label || 'first review staff'} (members needing review)
-                        </li>
-                      </ul>
-                      {assignmentActivity.assignmentHistory &&
-                      assignmentActivity.assignmentHistory.length > 0 ? (
-                        <div className="mt-2 border-t pt-2">
-                          <div className="text-xs font-medium text-slate-800">
-                            Social worker assignment history
-                          </div>
-                          <ul className="mt-1 max-h-28 space-y-1 overflow-y-auto text-[11px] text-slate-600">
-                            {[...assignmentActivity.assignmentHistory].reverse().map((entry, idx) => (
-                              <li key={`${entry.atIso}-${entry.toEmail}-${idx}`}>
-                                {formatSwAssignmentHistoryLabel(entry)}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                      {assignmentActivity.emailLog && assignmentActivity.emailLog.length > 0 ? (
-                        <div className="mt-2 border-t pt-2">
-                          <div className="text-xs font-medium text-slate-800">Email delivery history</div>
-                          <div className="mt-1 max-h-28 space-y-1 overflow-y-auto text-[11px] text-slate-600">
-                            {[...assignmentActivity.emailLog]
-                              .slice()
-                              .reverse()
-                              .map((entry, idx) => (
-                                <div key={`${entry.atIso}-${idx}`}>
-                                  {entry.status || '—'}
-                                  {entry.recipientEmail ? ` · ${entry.recipientEmail}` : ''}
-                                  {entry.atIso ? ` · ${formatWhen(entry.atIso)}` : ''}
-                                  {entry.isResend ? ' · re-send' : ''}
-                                </div>
-                              ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
+                    <SwInviteActivityLog
+                      refreshAssignmentActivity={refreshAssignmentActivity}
+                      selectedMember={selectedMember}
+                      assignmentActivity={assignmentActivity}
+                      firstReviewer={firstReviewer}
+                    />
 
                     <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-700">
                       <div className="font-medium text-sm text-slate-900">Flow after invite</div>
@@ -7031,86 +4920,21 @@ function IspWorkflowToolsPageInner() {
                       </ol>
                     </div>
 
-                    <div className="rounded-md border border-teal-200 bg-teal-50/60 p-3 space-y-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-semibold text-teal-950">Sent to ILS</div>
-                          <p className="text-xs text-teal-900/80 mt-0.5">
-                            Select the staff member verifying Sent to ILS, confirm, and enter the date sent. This
-                            archives the packet on ISP Tracker.
-                          </p>
-                        </div>
-                        {sentToIlsSource === 'cover_package' ? (
-                          <Badge className="bg-teal-700">From cover package send</Badge>
-                        ) : sentToIlsManual ? (
-                          <Badge variant="outline" className="border-teal-600 text-teal-800">
-                            Manual
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap items-end gap-3">
-                        <div className="space-y-1">
-                          <div className="text-xs text-teal-900/80">Verified by (staff)</div>
-                          <select
-                            className="h-9 min-w-[220px] rounded-md border border-teal-200 bg-white px-2 text-sm"
-                            value={sentToIlsVerifierUid}
-                            disabled={sentToIlsSaving || !selectedMember}
-                            onChange={(e) => setSentToIlsVerifierUid(e.target.value)}
-                          >
-                            <option value="">Select staff…</option>
-                            {ilsVerifierStaffOptions.map((s) => (
-                              <option key={s.uid} value={s.uid}>
-                                {s.label} · {s.email}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="flex items-center gap-2 rounded-md border border-teal-200 bg-white px-3 py-2">
-                          <Checkbox
-                            id="sent-to-ils-manual"
-                            checked={sentToIlsManual}
-                            disabled={sentToIlsSaving || !selectedMember || !sentToIlsVerifierUid}
-                            onCheckedChange={(checked) => {
-                              void saveSentToIlsManual(Boolean(checked));
-                            }}
-                          />
-                          <Label htmlFor="sent-to-ils-manual" className="text-sm cursor-pointer">
-                            I confirm Sent to ILS
-                          </Label>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs text-teal-900/80">Date sent</div>
-                          <Input
-                            type="date"
-                            className="h-9 w-[170px] bg-white"
-                            value={sentToIlsDate}
-                            disabled={sentToIlsSaving || !selectedMember}
-                            onChange={(e) => setSentToIlsDate(e.target.value)}
-                            onBlur={() => {
-                              if (sentToIlsManual && sentToIlsDate && sentToIlsVerifierUid) {
-                                void saveSentToIlsManual(true, sentToIlsDate);
-                              }
-                            }}
-                          />
-                        </div>
-                        {sentToIlsSaving ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-teal-700" />
-                        ) : null}
-                      </div>
-                      {sentToIlsManual && (sentToIlsVerifiedByName || sentToIlsVerifiedAtIso) ? (
-                        <div className="rounded border border-teal-200 bg-white/80 px-3 py-2 text-xs text-teal-950">
-                          Verified by{' '}
-                          <span className="font-medium">
-                            {sentToIlsVerifiedByName || sentToIlsVerifiedByEmail || 'Staff'}
-                          </span>
-                          {sentToIlsVerifiedByEmail ? ` · ${sentToIlsVerifiedByEmail}` : ''}
-                          {sentToIlsVerifiedAtIso
-                            ? ` · ${new Date(sentToIlsVerifiedAtIso).toLocaleString()}`
-                            : ''}
-                          {sentToIlsDate ? ` · Sent date ${sentToIlsDate}` : ''}
-                        </div>
-                      ) : null}
-                    </div>
+                    <SentToIlsPanel
+                      sentToIlsSource={sentToIlsSource}
+                      sentToIlsManual={sentToIlsManual}
+                      sentToIlsVerifierUid={sentToIlsVerifierUid}
+                      sentToIlsSaving={sentToIlsSaving}
+                      selectedMember={selectedMember}
+                      setSentToIlsVerifierUid={setSentToIlsVerifierUid}
+                      ilsVerifierStaffOptions={ilsVerifierStaffOptions}
+                      saveSentToIlsManual={saveSentToIlsManual}
+                      sentToIlsDate={sentToIlsDate}
+                      setSentToIlsDate={setSentToIlsDate}
+                      sentToIlsVerifiedByName={sentToIlsVerifiedByName}
+                      sentToIlsVerifiedAtIso={sentToIlsVerifiedAtIso}
+                      sentToIlsVerifiedByEmail={sentToIlsVerifiedByEmail}
+                    />
 
                     <div className="flex flex-wrap items-center gap-3">
                       <Link
@@ -7152,498 +4976,77 @@ function IspWorkflowToolsPageInner() {
         </CardContent>
       </Card>
 
-      {activeIntake ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Active intake review</CardTitle>
-            <CardDescription>
-              {activeIntake.memberName || 'Member'} · Status:{' '}
-              <span className="font-medium">{activeIntake.workflowStatus || '—'}</span>
-              {activeIntake.alftStaffEmail ? ` · Staff: ${activeIntake.alftStaffName || activeIntake.alftStaffEmail}` : ''}
-              {activeIntake.alftRnEmail ? ` · RN: ${activeIntake.alftRnName || activeIntake.alftRnEmail}` : ''}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Confirm edits at the bottom of the ALFT form before Approve / Send / Final Review.
-            </p>
-            {importedCompletedIsp || adminOverrideMsw ? (
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
-                <span className="font-medium">MSW signature bypass:</span> this ISP was imported as already signed
-                {adminOverrideMsw ? ' (admin override on)' : ''}. Use{' '}
-                <span className="font-medium">Approve → Send to RN</span> — the social worker will not be asked to
-                e-sign again.
-              </div>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => void saveFormEdits()} disabled={Boolean(busyAction)}>
-                {busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Save Form Edits
-              </Button>
-              {canFirstReview ? (
-                <Button
-                  onClick={() => void acceptAndSendForSignature()}
-                  disabled={!confirmEdits || Boolean(busyAction)}
-                >
-                  {busyAction === 'accept' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  {swAlreadySigned ? 'Approve → Send to RN' : 'Accept → SW Signature'}
-                </Button>
-              ) : null}
-              {awaitingRnSignature ? (
-                <Button
-                  className="bg-green-600 text-white hover:bg-green-700"
-                  disabled
-                  title="Packet already sent — awaiting RN electronic signature"
-                >
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  {sentToRnLabel}
-                </Button>
-              ) : null}
-              {rnAlreadySigned && !canFirstReview && !awaitingRnSignature ? (
-                <Button className="bg-emerald-600 text-white hover:bg-emerald-700" disabled>
-                  {adminOverrideRn ? 'RN signed (admin override)' : 'RN signed'}
-                </Button>
-              ) : null}
-              {canResendToRnForNewSignature ? (
-                <Button
-                  variant="outline"
-                  onClick={() => openResendRnDialog()}
-                  disabled={!confirmEdits || Boolean(busyAction)}
-                  title={
-                    !confirmEdits
-                      ? 'Confirm edits required before resending'
-                      : rnAlreadySigned
-                        ? 'Clear prior RN signature and request a new one'
-                        : 'Re-send RN signature request email'
-                  }
-                >
-                  {busyAction === 'resend-rn' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="mr-2 h-4 w-4" />
-                  )}
-                  {rnAlreadySigned ? 'Resend → RN (new signature)' : 'Resend → RN'}
-                </Button>
-              ) : null}
-              {canFinalReview || canDownloadPacket ? (
-                <Button
-                  variant="outline"
-                  onClick={() => void completeFinalReview()}
-                  disabled={!confirmEdits || Boolean(busyAction)}
-                >
-                  {busyAction === 'final' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Complete Final Review
-                </Button>
-              ) : null}
-              {canDownloadPacket ? (
-                <Button onClick={() => void downloadAndLog()} disabled={Boolean(busyAction)}>
-                  {busyAction === 'download' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                  {lastDownloadName ? 'Download again & Log' : 'Download & Log'}
-                </Button>
-              ) : null}
-            </div>
-            {lastDownloadName ? (
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
-                <div className="font-medium">Downloaded on this page</div>
-                <div className="mt-0.5 truncate" title={lastDownloadName}>
-                  {lastDownloadName}
-                </div>
-                {lastDownloadedAt ? (
-                  <div className="mt-0.5 text-emerald-900">
-                    {new Date(lastDownloadedAt).toLocaleString()}
-                  </div>
-                ) : null}
-                <Button variant="link" size="sm" className="mt-1 h-auto p-0" asChild>
-                  <Link href="/admin/tools/isp-downloads">Open ISP Download Archive</Link>
-                </Button>
-              </div>
-            ) : null}
+      <ActiveIntakeReviewCard
+        activeIntake={activeIntake}
+        importedCompletedIsp={importedCompletedIsp}
+        adminOverrideMsw={adminOverrideMsw}
+        saveFormEdits={saveFormEdits}
+        busyAction={busyAction}
+        canFirstReview={canFirstReview}
+        acceptAndSendForSignature={acceptAndSendForSignature}
+        confirmEdits={confirmEdits}
+        swAlreadySigned={swAlreadySigned}
+        awaitingRnSignature={awaitingRnSignature}
+        sentToRnLabel={sentToRnLabel}
+        rnAlreadySigned={rnAlreadySigned}
+        adminOverrideRn={adminOverrideRn}
+        canResendToRnForNewSignature={canResendToRnForNewSignature}
+        openResendRnDialog={openResendRnDialog}
+        canFinalReview={canFinalReview}
+        canDownloadPacket={canDownloadPacket}
+        completeFinalReview={completeFinalReview}
+        downloadAndLog={downloadAndLog}
+        lastDownloadName={lastDownloadName}
+        lastDownloadedAt={lastDownloadedAt}
+        rejectReason={rejectReason}
+        setRejectReason={setRejectReason}
+        requestChanges={requestChanges}
+        downloadLogs={downloadLogs}
+        redownloadLog={redownloadLog}
+      />
 
-            {canFirstReview ? (
-              <div className="space-y-2 rounded-md border p-3">
-                <div className="text-sm font-medium">Request changes (return to SW)</div>
-                <p className="text-xs text-muted-foreground">
-                  {swAlreadySigned
-                    ? 'SW already signed on submit. Use Approve → Send to RN if the form is good (or after your edits). Only send back when the SW must revise and re-sign.'
-                    : 'Return with comments so the SW can revise, sign, and re-submit.'}
-                </p>
-                <Textarea
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Describe what the social worker needs to fix…"
-                  rows={3}
-                />
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => void requestChanges()}
-                  disabled={!confirmEdits || Boolean(busyAction)}
-                >
-                  {busyAction === 'reject' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Send Back to Social Worker
-                </Button>
-              </div>
-            ) : null}
-
-            {downloadLogs.length > 0 ? (
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-medium">Archived versions (this intake)</div>
-                  <Button variant="link" size="sm" className="h-auto p-0" asChild>
-                    <Link href="/admin/tools/isp-downloads">
-                      View ISP Download Archive
-                      <ExternalLink className="ml-1 h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
-                </div>
-                <div className="space-y-1">
-                  {downloadLogs.map((log) => (
-                    <div key={log.id} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5 text-xs">
-                      <div>
-                        <div className="font-medium">
-                          {log.downloadName || 'ALFT packet'}
-                          {Number(log.versionNumber) > 0 ? (
-                            <span className="ml-1.5 text-[10px] font-semibold text-emerald-800">
-                              v{Number(log.versionNumber)}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="text-muted-foreground">
-                          {log.staffName || 'Staff'}
-                          {log.createdAt ? ` · ${new Date(log.createdAt).toLocaleString()}` : ''}
-                        </div>
-                      </div>
-                      <Button size="sm" variant="outline" onClick={() => void redownloadLog(log.id)}>
-                        Re-download
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground">
-                No archived versions for this intake yet.{' '}
-                <Link href="/admin/tools/isp-downloads" className="underline underline-offset-2">
-                  Open ISP Download Archive
-                </Link>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {showForm ? (
-        <Card className={ispLayoutMode === 'mobile' ? 'max-w-xl mx-auto' : undefined}>
-          <CardHeader>
-            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Assessment type
-              </span>
-              {assessmentPurpose === 'initial' ? (
-                <Badge className="bg-blue-100 text-blue-900 hover:bg-blue-100">Initial</Badge>
-              ) : assessmentPurpose === 'review' ? (
-                <Badge className="bg-violet-100 text-violet-900 hover:bg-violet-100">Reauth</Badge>
-              ) : assessmentPurpose === 'change_condition' ? (
-                <Badge className="bg-amber-100 text-amber-950 hover:bg-amber-100">
-                  Change of condition
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-muted-foreground">
-                  Not selected yet
-                </Badge>
-              )}
-              <span className="text-xs text-muted-foreground">
-                {assessmentPurpose === 'initial'
-                  ? 'Initial ISP / ALFT assessment'
-                  : assessmentPurpose === 'review'
-                    ? 'Reassessment / reauthorization'
-                    : assessmentPurpose === 'change_condition'
-                      ? 'Change of condition assessment'
-                      : 'Confirm purpose in step 4 above'}
-              </span>
-              {reauthH2022Warning?.h2022WarningLabel ? (
-                <Badge
-                  variant="outline"
-                  className={`gap-1 text-xs ${
-                    (reauthH2022Warning.h2022DaysUntilEnd ?? 0) < 0
-                      ? 'border-red-400 bg-red-50 text-red-900'
-                      : 'border-amber-400 bg-amber-50 text-amber-950'
-                  }`}
-                  title={
-                    reauthH2022Warning.h2022EndDate
-                      ? `H2022 end ${reauthH2022Warning.h2022EndDate}`
-                      : reauthH2022Warning.h2022WarningLabel
-                  }
-                >
-                  <AlertTriangle className="h-3 w-3" aria-hidden />
-                  {reauthH2022Warning.h2022WarningLabel}
-                </Badge>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <CardTitle>ISP / ALFT Assessment Form</CardTitle>
-                <CardDescription>
-                  ALFT tool preview for the selected member. Green fields come from Caspio. Complete steps 1–7 and
-                  Prefill to finalize before the SW invite. Use Mobile to preview the SW phone-friendly layout.
-                </CardDescription>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <IspLayoutModeToggle
-                  mode={ispLayoutMode}
-                  onChange={(mode) => {
-                    setIspLayoutMode(mode);
-                    writeIspLayoutMode(mode);
-                  }}
-                />
-                <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
-                  {caspioFilledIds.length} prefilled fields
-                </Badge>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <SwStyleAlftEditor
-              answers={answers}
-              onChange={(id, value) => {
-                if (isIspAlftLockedField(id)) return;
-                if (
-                  id === 'p1_purpose' &&
-                  normalizeIspAssessmentPurpose(assessmentPurpose) &&
-                  normalizeIspAssessmentPurpose(answers.p1_purpose)
-                ) {
-                  return;
-                }
-                setConfirmEdits(false);
-                if (id === 'p1_purpose') {
-                  const purpose = normalizeIspAssessmentPurpose(value);
-                  setAnswers((prev) => ({ ...prev, [id]: purpose || String(value || '') }));
-                  return;
-                }
-                setAnswers((prev) => {
-                  const next = { ...prev, [id]: value };
-                  if (id === 'p1_mrn' || id === 'p1_plan_id') {
-                    return applyAlftPlanIdFromMrn(
-                      next,
-                      clean(selectedMember?.memberMrn) || clean(activeIntake?.medicalRecordNumber)
-                    );
-                  }
-                  return next;
-                });
-              }}
-              memberName={clean(answers.p1_member_name)}
-              memberMrn={clean(answers.p1_mrn)}
-              highlightedFieldIds={caspioFilledIds}
-              disabledFieldIds={
-                normalizeIspAssessmentPurpose(assessmentPurpose) &&
-                normalizeIspAssessmentPurpose(answers.p1_purpose)
-                  ? [...ISP_ALFT_LOCKED_FIELD_IDS, 'p1_purpose']
-                  : [...ISP_ALFT_LOCKED_FIELD_IDS]
-              }
-              layoutMode={ispLayoutMode}
-              memberId={selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId) || undefined}
-              medListAttachment={medListAttachment}
-              onMedListAttachmentChange={(next) => {
-                setConfirmEdits(false);
-                setMedListAttachment(next);
-              }}
-              allowAdminSignatureOverride
-            />
-
-            {/* Sticky bottom actions — visible after Page 14 / completed PDF import */}
-            <div className="sticky bottom-0 z-30 -mx-1 space-y-3 border-t bg-background/95 px-1 py-3 backdrop-blur">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-semibold">ISP review actions</div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => scrollAdminPageToTop()}
-                >
-                  <ArrowUp className="h-3.5 w-3.5" />
-                  Top of page
-                </Button>
-              </div>
-              {!activeIntake?.id ? (
-                <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/80 p-3">
-                  <p className="text-sm text-amber-950">
-                    No ISP intake is linked yet (common after uploading a completed PDF). Create one to unlock{' '}
-                    <span className="font-medium">Approve → Send to RN</span>, Final Review, and Download
-                    {formerSwImportMode
-                      ? `. Assessor will be saved as ${clean(socialWorkerName) || 'the name you entered'}.`
-                      : '.'}
-                  </p>
-                  <Button onClick={() => void createIntakeFromForm()} disabled={Boolean(busyAction)}>
-                    {busyAction === 'create-intake' ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : null}
-                    Save as ISP intake &amp; unlock actions
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <div className="text-xs text-muted-foreground">
-                    Intake status: <span className="font-medium text-foreground">{activeIntake.workflowStatus || '—'}</span>
-                    {adminOverrideMsw || adminOverrideRn
-                      ? ` · Admin override${adminOverrideMsw && adminOverrideRn ? 's' : ''} on`
-                      : ''}
-                  </div>
-                  {canFinalReview && !/^[1-5]$/.test(clean(answers?.p14_rn_recommended_tier)) ? (
-                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-                      Select <span className="font-semibold">RN agree / suggest tier (1–5)</span> in the signature section,
-                      then Complete Final Review. Admin override alone is not enough without a tier.
-                    </div>
-                  ) : null}
-                  {awaitingRnSignature ? (
-                    <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-950">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
-                      <div>
-                        <div className="font-medium">{sentToRnLabel}</div>
-                        <div className="text-xs text-green-900">
-                          Awaiting RN electronic signature
-                          {clean(activeIntake?.alftRnEmail) || clean(assignedRn?.email)
-                            ? ` · ${clean(activeIntake?.alftRnEmail) || clean(assignedRn?.email)}`
-                            : ''}
-                          . Use Resend only if they need another email.
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2">
-                    <Checkbox
-                      id="isp-workflow-confirm-edits-bottom"
-                      checked={confirmEdits}
-                      onCheckedChange={(v) => setConfirmEdits(Boolean(v))}
-                      disabled={Boolean(busyAction)}
-                    />
-                    <Label htmlFor="isp-workflow-confirm-edits-bottom" className="text-sm leading-relaxed">
-                      I confirm these edits are complete and accurate before submitting to the next step.
-                    </Label>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={() => void saveFormEdits()} disabled={Boolean(busyAction)}>
-                      {busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Save Form Edits
-                    </Button>
-                    {canFirstReview ? (
-                      <Button
-                        onClick={() => void acceptAndSendForSignature()}
-                        disabled={!confirmEdits || Boolean(busyAction)}
-                      >
-                        {busyAction === 'accept' ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Send className="mr-2 h-4 w-4" />
-                        )}
-                        {swAlreadySigned ? 'Approve → Send to RN' : 'Accept → SW Signature'}
-                      </Button>
-                    ) : null}
-                    {awaitingRnSignature ? (
-                      <Button
-                        className="bg-green-600 text-white hover:bg-green-700"
-                        disabled
-                        title="Packet already sent — awaiting RN electronic signature"
-                      >
-                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                        {sentToRnLabel}
-                      </Button>
-                    ) : null}
-                    {rnAlreadySigned && !canFirstReview && !awaitingRnSignature ? (
-                      <Button className="bg-emerald-600 text-white hover:bg-emerald-700" disabled>
-                        {adminOverrideRn ? 'RN signed (admin override)' : 'RN signed'}
-                      </Button>
-                    ) : null}
-                    {canResendToRnForNewSignature ? (
-                      <Button
-                        variant="outline"
-                        onClick={() => openResendRnDialog()}
-                        disabled={!confirmEdits || Boolean(busyAction)}
-                        title={
-                          !confirmEdits
-                            ? 'Confirm edits required before resending'
-                            : rnAlreadySigned
-                              ? 'Clear prior RN signature and request a new one'
-                              : 'Re-send RN signature request email'
-                        }
-                      >
-                        {busyAction === 'resend-rn' ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Send className="mr-2 h-4 w-4" />
-                        )}
-                        {rnAlreadySigned ? 'Resend → RN (new signature)' : 'Resend → RN'}
-                      </Button>
-                    ) : null}
-                    {canFinalReview ? (
-                      <Button
-                        variant="outline"
-                        onClick={() => void completeFinalReview()}
-                        disabled={!confirmEdits || Boolean(busyAction)}
-                      >
-                        {busyAction === 'final' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Complete Final Review
-                      </Button>
-                    ) : null}
-                    {canDownloadPacket ? (
-                      <Button onClick={() => requestIspDownloadConfirm()} disabled={Boolean(busyAction)}>
-                        {busyAction === 'download' ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Download className="mr-2 h-4 w-4" />
-                        )}
-                        {lastDownloadName ? 'Download again & Log' : 'Download & Log'}
-                      </Button>
-                    ) : null}
-                    <Button variant="outline" asChild>
-                      <Link
-                        href={`/admin/alft-tracker?managerActions=1&edit=${encodeURIComponent(activeIntake.id)}`}
-                      >
-                        Open in ISP Tracker
-                      </Link>
-                    </Button>
-                  </div>
-                  {canBypassRnSignaturesForDownload && !rnAlreadySigned && !canFinalReview ? (
-                    <p className="text-xs text-muted-foreground">
-                      Imported / departed-SW ISP — new signatures are optional. Use{' '}
-                      <span className="font-medium">Download &amp; Log</span> after edits, or still send to RN if
-                      you need a fresh RN signature.
-                    </p>
-                  ) : null}
-                  {lastDownloadName ? (
-                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
-                      <div className="font-medium">Downloaded on this page</div>
-                      <div className="mt-0.5 truncate" title={lastDownloadName}>
-                        {lastDownloadName}
-                      </div>
-                      {lastDownloadedAt ? (
-                        <div className="mt-0.5 text-emerald-900">
-                          {new Date(lastDownloadedAt).toLocaleString()}
-                        </div>
-                      ) : null}
-                      <div className="mt-1 flex flex-wrap gap-2">
-                        <Button variant="link" size="sm" className="h-auto p-0" asChild>
-                          <Link href="/admin/tools/isp-downloads">Open ISP Download Archive</Link>
-                        </Button>
-                        {downloadLogs[0]?.id ? (
-                          <Button
-                            variant="link"
-                            size="sm"
-                            className="h-auto p-0"
-                            onClick={() => void redownloadLog(downloadLogs[0].id)}
-                          >
-                            Re-download last file
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+      <IspAssessmentFormCard
+        showForm={showForm}
+        ispLayoutMode={ispLayoutMode}
+        assessmentPurpose={assessmentPurpose}
+        reauthH2022Warning={reauthH2022Warning}
+        setIspLayoutMode={setIspLayoutMode}
+        caspioFilledIds={caspioFilledIds}
+        answers={answers}
+        setConfirmEdits={setConfirmEdits}
+        setAnswers={setAnswers}
+        selectedMember={selectedMember}
+        activeIntake={activeIntake}
+        selectedClientId={selectedClientId}
+        medListAttachment={medListAttachment}
+        setMedListAttachment={setMedListAttachment}
+        formerSwImportMode={formerSwImportMode}
+        socialWorkerName={socialWorkerName}
+        createIntakeFromForm={createIntakeFromForm}
+        busyAction={busyAction}
+        adminOverrideMsw={adminOverrideMsw}
+        adminOverrideRn={adminOverrideRn}
+        canFinalReview={canFinalReview}
+        awaitingRnSignature={awaitingRnSignature}
+        sentToRnLabel={sentToRnLabel}
+        assignedRn={assignedRn}
+        confirmEdits={confirmEdits}
+        saveFormEdits={saveFormEdits}
+        canFirstReview={canFirstReview}
+        acceptAndSendForSignature={acceptAndSendForSignature}
+        swAlreadySigned={swAlreadySigned}
+        rnAlreadySigned={rnAlreadySigned}
+        canResendToRnForNewSignature={canResendToRnForNewSignature}
+        openResendRnDialog={openResendRnDialog}
+        completeFinalReview={completeFinalReview}
+        canDownloadPacket={canDownloadPacket}
+        requestIspDownloadConfirm={requestIspDownloadConfirm}
+        lastDownloadName={lastDownloadName}
+        canBypassRnSignaturesForDownload={canBypassRnSignaturesForDownload}
+        lastDownloadedAt={lastDownloadedAt}
+        downloadLogs={downloadLogs}
+        redownloadLog={redownloadLog}
+      />
 
       <Dialog open={invitePreviewOpen} onOpenChange={setInvitePreviewOpen}>
         <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden">
@@ -7761,82 +5164,19 @@ function IspWorkflowToolsPageInner() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog
-        open={resendRnDialogOpen}
-        onOpenChange={(open) => {
-          setResendRnDialogOpen(open);
-          if (!open) {
-            setResendRnNote('');
-            setConfirmResendRnSendOpen(false);
-          }
-        }}
-      >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>
-              {rnAlreadySigned ? 'Resend → RN for new signature' : 'Resend → RN'}
-            </DialogTitle>
-            <DialogDescription>
-              {rnAlreadySigned
-                ? 'This clears the prior RN electronic signature and emails a fresh signature link. Enter why you are requesting a new signature.'
-                : 'This re-notifies the RN with another signature link. Enter why you are resending.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="rounded-md border p-3 text-sm">
-              <div className="font-medium">
-                {clean(activeIntake?.memberName) || clean(answers?.p1_member_name) || 'Member'}
-              </div>
-              <div className="font-mono text-muted-foreground">
-                {clean(activeIntake?.medicalRecordNumber) || clean(answers?.p1_mrn) || '—'}
-              </div>
-              <div className="mt-2 text-muted-foreground">
-                RN:{' '}
-                {clean(assignedRn?.label) || clean(activeIntake?.alftRnName) || 'Assigned RN'}
-                {clean(assignedRn?.email) || clean(activeIntake?.alftRnEmail)
-                  ? ` (${clean(assignedRn?.email) || clean(activeIntake?.alftRnEmail)})`
-                  : ''}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="isp-workflow-resend-rn-note">Why are you resending? (required)</Label>
-              <Textarea
-                id="isp-workflow-resend-rn-note"
-                value={resendRnNote}
-                onChange={(e) => setResendRnNote(e.target.value)}
-                rows={4}
-                placeholder="e.g. Form updated after RN signed / need Leslie to re-sign after corrections."
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setResendRnDialogOpen(false)}
-              disabled={Boolean(busyAction)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!clean(resendRnNote)) {
-                  toast({
-                    variant: 'destructive',
-                    title: 'Resend note required',
-                    description: 'Explain why you are requesting a new RN signature.',
-                  });
-                  return;
-                }
-                setConfirmResendRnSendOpen(true);
-              }}
-              disabled={Boolean(busyAction) || !clean(resendRnNote)}
-            >
-              <Send className="mr-2 h-4 w-4" />
-              Continue to confirm…
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ResendReasonDialog
+        resendRnDialogOpen={resendRnDialogOpen}
+        setResendRnDialogOpen={setResendRnDialogOpen}
+        setResendRnNote={setResendRnNote}
+        setConfirmResendRnSendOpen={setConfirmResendRnSendOpen}
+        rnAlreadySigned={rnAlreadySigned}
+        activeIntake={activeIntake}
+        answers={answers}
+        assignedRn={assignedRn}
+        resendRnNote={resendRnNote}
+        busyAction={busyAction}
+        toast={toast}
+      />
 
       <AlertDialog open={confirmResendRnSendOpen} onOpenChange={setConfirmResendRnSendOpen}>
         <AlertDialogContent>
