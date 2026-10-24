@@ -39,7 +39,7 @@ interface TwoFactorStatus {
   requiresVerification: boolean;
   pendingCode?: boolean;
   pendingCodeExpiresAt?: string;
-  preferredMethod: 'email' | 'sms' | 'totp';
+  preferredMethod: 'email' | 'totp';
   totpEnabled?: boolean;
   email?: string;
   phone?: string;

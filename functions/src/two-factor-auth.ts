@@ -3,12 +3,8 @@ import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { Resend } from "resend";
-import twilio = require("twilio");
 
 const resendApiKey = defineSecret("RESEND_API_KEY");
-const twilioAccountSid = defineSecret("TWILIO_ACCOUNT_SID");
-const twilioAuthToken = defineSecret("TWILIO_AUTH_TOKEN");
-const twilioFromNumber = defineSecret("TWILIO_FROM_NUMBER");
 
 /** Browser callable CORS — without this, localhost gets HTTP status 0 → FirebaseError internal. */
 const CALLABLE_CORS = [
@@ -30,7 +26,7 @@ const TOTP_TIME_STEP_SECONDS = 30;
 const TOTP_DIGITS = 6;
 const TOTP_WINDOW_STEPS = 1;
 
-type TwoFactorMethod = 'email' | 'sms' | 'totp';
+type TwoFactorMethod = 'email' | 'totp';
 type TwoFactorCodeDoc = {
   codeHash: string;
   codeSalt: string;
@@ -51,18 +47,10 @@ function nowTs() {
 
 function normalizeMethod(value: unknown): TwoFactorMethod {
   const method = String(value || '').trim().toLowerCase();
-  if (method === 'email' || method === 'sms' || method === 'totp') return method;
+  if (method === 'email' || method === 'totp') return method;
+  // SMS codes were retired; older user docs may still store 'sms' as their preference.
+  if (method === 'sms') return 'email';
   throw new HttpsError('invalid-argument', 'Invalid 2FA method');
-}
-
-function normalizePhoneNumber(value: unknown): string {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const cleaned = raw.replace(/[^\d+]/g, '');
-  if (cleaned.startsWith('+')) return cleaned;
-  if (/^\d{10}$/.test(cleaned)) return `+1${cleaned}`;
-  if (/^\d{11,15}$/.test(cleaned)) return `+${cleaned}`;
-  return '';
 }
 
 function maskContact(contact: string): string {
@@ -166,12 +154,10 @@ function verifyTotpCode(secret: string, submittedCode: string): boolean {
 }
 
 // Generate and send 2FA code
-export const send2FACode = onCall({ cors: CALLABLE_CORS, secrets: [resendApiKey, twilioAccountSid, twilioAuthToken, twilioFromNumber] }, async (request) => {
+export const send2FACode = onCall({ cors: CALLABLE_CORS, secrets: [resendApiKey] }, async (request) => {
   try {
     const method = normalizeMethod(request.data?.method);
-    const contact = method === 'sms'
-      ? normalizePhoneNumber(request.data?.contact)
-      : String(request.data?.contact || '').trim();
+    const contact = String(request.data?.contact || '').trim();
     
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -232,12 +218,7 @@ export const send2FACode = onCall({ cors: CALLABLE_CORS, secrets: [resendApiKey,
       }, { merge: true });
     });
     
-    // Send code based on method
-    if (method === 'sms') {
-      await sendSmsCode(contact, code, request.auth.uid);
-    } else {
-      await sendEmailCode(contact, code, request.auth.uid);
-    }
+    await sendEmailCode(contact, code, request.auth.uid);
     
     console.log(`✅ 2FA code sent via ${method}`);
     
@@ -446,7 +427,6 @@ export const check2FAStatus = onCall({ cors: CALLABLE_CORS }, async (request) =>
 export const update2FAPreferences = onCall({ cors: CALLABLE_CORS }, async (request) => {
   try {
     const preferredMethod = request.data?.preferredMethod ? normalizeMethod(request.data.preferredMethod) : undefined;
-    const phone = normalizePhoneNumber(request.data?.phone);
     
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -457,12 +437,6 @@ export const update2FAPreferences = onCall({ cors: CALLABLE_CORS }, async (reque
     
     if (preferredMethod) {
       updateData['2faPreferredMethod'] = preferredMethod;
-    }
-    if (preferredMethod === 'sms') {
-      if (!phone) {
-        throw new HttpsError('invalid-argument', 'A valid cell phone number is required for SMS verification.');
-      }
-      updateData.phone = phone;
     }
     
     await db.collection('users').doc(request.auth.uid).set(updateData, { merge: true });
@@ -529,30 +503,6 @@ export const setup2FATOTP = onCall({ cors: CALLABLE_CORS }, async (request) => {
     throw new HttpsError('internal', `Failed to initialize authenticator setup: ${error.message}`);
   }
 });
-
-// Helper function to send SMS code
-async function sendSmsCode(phone: string, code: string, userId: string): Promise<void> {
-  void userId;
-  const accountSid = String(process.env.TWILIO_ACCOUNT_SID || '').trim();
-  const authToken = String(process.env.TWILIO_AUTH_TOKEN || '').trim();
-  const fromNumber = normalizePhoneNumber(process.env.TWILIO_FROM_NUMBER || '');
-  const toNumber = normalizePhoneNumber(phone);
-
-  if (!accountSid || !authToken || !fromNumber) {
-    throw new Error('Twilio SMS is not configured. Missing TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, or TWILIO_FROM_NUMBER.');
-  }
-  if (!toNumber) {
-    throw new Error('A valid cell phone number is required for SMS verification.');
-  }
-
-  console.log(`📱 Sending 2FA SMS code to: ${maskContact(toNumber)}`);
-  const client = twilio(accountSid, authToken);
-  await client.messages.create({
-    from: fromNumber,
-    to: toNumber,
-    body: `Your CalAIM Tracker verification code is ${code}. It expires in 10 minutes.`,
-  });
-}
 
 // Helper function to send email code
 async function sendEmailCode(email: string, code: string, userId: string): Promise<void> {

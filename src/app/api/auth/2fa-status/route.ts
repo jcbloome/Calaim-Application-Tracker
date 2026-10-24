@@ -12,9 +12,9 @@ function toDate(value: any): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function normalizePreferredMethod(value: unknown): 'email' | 'sms' | 'totp' {
+function normalizePreferredMethod(value: unknown): 'email' | 'totp' {
   const method = String(value || '').trim().toLowerCase();
-  if (method === 'sms' || method === 'totp') return method;
+  if (method === 'totp') return method;
   return 'email';
 }
 

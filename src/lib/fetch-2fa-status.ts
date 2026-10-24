@@ -7,7 +7,7 @@ export type TwoFactorStatusResponse = {
   requiresVerification?: boolean;
   pendingCode?: boolean;
   pendingCodeExpiresAt?: string | null;
-  preferredMethod?: 'email' | 'sms' | 'totp';
+  preferredMethod?: 'email' | 'totp';
   totpEnabled?: boolean;
   email?: string;
   phone?: string | null;
