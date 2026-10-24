@@ -24,7 +24,7 @@
   - Commit: `b0d289ab`.
 - **Removed Twilio / SMS 2FA.** SMS codes were unused (app 2FA goes through `/api/auth/2fa-send`, email only; UI already mapped `sms` → email). `send2FACode` no longer binds `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER`, so `firebase deploy --only functions` no longer prompts for them. Stored `2faPreferredMethod: 'sms'` is read as email. Dropped the `twilio` package from functions.
   - Files: `functions/src/two-factor-auth.ts`, `functions/package.json`, `functions/package-lock.json`, `src/app/api/auth/2fa-status/route.ts`, `src/lib/fetch-2fa-status.ts`, `src/components/TwoFactorAuth.tsx`.
-  - Commit: _pending_.
+  - Commit: `15261d19`.
 - **Still open:** split the largest pages (`applications/create`, `ils-mif-consolidator`, `isp-workflow`, `alft-tracker`, `applications/[applicationId]`); deploy the CORS changes in `functions/` after `firebase login --reauth`.
 
 ## Changes 2026-10-22
