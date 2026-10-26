@@ -8,6 +8,13 @@
 
 ---
 
+## Changes 2026-10-26
+
+- **Health Net LA ZIP counts datapage.** New admin tool that counts authorized Health Net members in Los Angeles County by ZIP only (no names or IDs). ZIP prefers `RCFE_Zip`, then member/home ZIP fields. CSV export included.
+  - Files: `src/lib/health-net-la-zip-counts.ts`, `src/app/api/admin/tools/health-net-la-zip-counts/route.ts`, `src/app/admin/tools/health-net-la-zip-counts/page.tsx`, nav + DataPage Tools links in `src/app/admin/layout.tsx` and `src/app/admin/tools/datapage-tools/page.tsx`.
+  - Open at `/admin/tools/health-net-la-zip-counts`.
+  - Commit: _pending_.
+
 ## Changes 2026-10-23
 
 - **TypeScript clean + build type checking on.** Fixed all 12 `tsc` errors and set `typescript.ignoreBuildErrors: false`, so `next build` now fails on type errors. ESLint is still skipped during builds (~1,270 existing lint errors to work through separately).

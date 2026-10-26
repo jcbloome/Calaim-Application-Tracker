@@ -60,6 +60,7 @@ import {
   UserX,
   Moon,
   Flag,
+  MapPin,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -198,6 +199,7 @@ const adminNavLinks: AdminNavLink[] = [
       { href: '/admin/tools/kaiser-alft', label: 'Kaiser ALFT Hub', icon: ClipboardList },
       { isDivider: true, label: 'Health Net', icon: Building2 },
       { href: '/admin/tools/health-net-active-members', label: 'Health Net Members', icon: FileSpreadsheet },
+      { href: '/admin/tools/health-net-la-zip-counts', label: 'Health Net LA ZIP Counts', icon: MapPin },
       { href: '/admin/rcfe-bulk-email', label: 'RCFE Bulk Email', icon: Mail },
       { href: '/admin/tools/alw-waitlist', label: 'ALW Waitlist (Sierra CCA)', icon: FileSpreadsheet },
       { href: '/admin/health-net-auth-requests', label: 'Health Net Auth Requests', icon: BellRing },

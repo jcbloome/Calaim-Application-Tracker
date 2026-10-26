@@ -197,6 +197,13 @@ const UPDATED_PAGES: UpdatedPage[] = [
     icon: FileSpreadsheet,
   },
   {
+    title: 'Health Net LA ZIP Counts',
+    href: '/admin/tools/health-net-la-zip-counts',
+    description: 'Authorized Health Net members in Los Angeles County counted by ZIP (no names)',
+    dataSource: 'members-cache',
+    icon: BarChart3,
+  },
+  {
     title: 'SW Proximity (EFT setup)',
     href: '/admin/tools/sw-proximity',
     description: 'Closest members + SW directory from night caches',
