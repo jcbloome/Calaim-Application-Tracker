@@ -13,7 +13,7 @@
 - **Health Net LA ZIP counts datapage.** New admin tool that counts authorized Health Net members in Los Angeles County by ZIP only (no names or IDs). ZIP prefers `RCFE_Zip`, then member/home ZIP fields. CSV export included.
   - Files: `src/lib/health-net-la-zip-counts.ts`, `src/app/api/admin/tools/health-net-la-zip-counts/route.ts`, `src/app/admin/tools/health-net-la-zip-counts/page.tsx`, nav + DataPage Tools links in `src/app/admin/layout.tsx` and `src/app/admin/tools/datapage-tools/page.tsx`.
   - Open at `/admin/tools/health-net-la-zip-counts`.
-  - Commit: _pending_.
+  - Commit: `56a61461`.
 
 ## Changes 2026-10-23
 
