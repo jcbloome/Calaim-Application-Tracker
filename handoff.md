@@ -8,6 +8,16 @@
 
 ---
 
+## Changes 2026-10-27
+
+- **ILS MIF consolidator — old and new MIF formats both load via "1) Upload MIFs".** The new ILS workbook (tabs `Lists, Instructions, CS_MIF, CS_RTF, Change Log, Validation Reference`) has the same headers as the old MIF, so no separate header-compare section is needed. Members load from the `CS_MIF` tab; `CS_RTF` is kept as a companion sheet for the later status send-back.
+  - **Stale Excel `!ref` fix:** ILS `CS_MIF` sheets can store member cells beyond a header-only dimension (`A1:BO1` while data is on rows 2–26). `repairWorksheetUsedRange` in `src/lib/ils-mif-parse.ts` expands `!ref` from actual cell addresses before `sheet_to_json` (main parse + companion sheets). `1508537325_20261027_MIF_CS (2).xlsx` now loads 25 members.
+  - Clearer empty-sheet error: when the MIF tab has headers but 0 member rows, the error names the tab and any other tabs that do have rows (replaces "spreadsheet has no data rows").
+  - First/Last name ingest aliases added (`First Name`/`MemberFirstName`, `Last Name`/`MemberLastName`).
+  - A trial header-compare panel was built and then removed at the user's request (never committed).
+- **ILS MIF consolidator — collapsible logs.** "Caspio update log" (`components/CaspioUpdateLog.tsx`) and "MIF audit log" (`page.tsx`) now start collapsed; click the title to open. Collapsed headers still show counts (updated/skipped/failed, recent event count). Caspio log CSV/Refresh buttons show only when open; the log still loads in the background so counts stay current.
+  - Commit: _pending_.
+
 ## Changes 2026-10-26
 
 - **Health Net LA ZIP counts datapage.** New admin tool that counts authorized Health Net members in Los Angeles County by ZIP only (no names or IDs). ZIP prefers `RCFE_Zip`, then member/home ZIP fields. CSV export included.

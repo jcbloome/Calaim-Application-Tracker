@@ -981,6 +981,53 @@ export const pickIlsSheetName = (sheetNames: string[]): string => {
 const companionSheetKey = (sheetName: string) =>
   normalizeLookupToken(sheetName) || String(sheetName || '').trim().toLowerCase();
 
+/**
+ * Some ILS Excel exports leave a stale worksheet dimension (e.g. !ref = A1:BO1)
+ * while member cells exist further down. Expand !ref from actual cell addresses
+ * so sheet_to_json does not drop those rows.
+ */
+export function repairWorksheetUsedRange(
+  ws: import('xlsx').WorkSheet | null | undefined,
+  XLSX: typeof import('xlsx')
+): void {
+  if (!ws || typeof ws !== 'object') return;
+  const keys = Object.keys(ws).filter((key) => !key.startsWith('!'));
+  if (!keys.length) return;
+  let minR = Number.POSITIVE_INFINITY;
+  let minC = Number.POSITIVE_INFINITY;
+  let maxR = 0;
+  let maxC = 0;
+  for (const addr of keys) {
+    const cell = XLSX.utils.decode_cell(addr);
+    if (!Number.isFinite(cell.r) || !Number.isFinite(cell.c)) continue;
+    if (cell.r < minR) minR = cell.r;
+    if (cell.c < minC) minC = cell.c;
+    if (cell.r > maxR) maxR = cell.r;
+    if (cell.c > maxC) maxC = cell.c;
+  }
+  if (!Number.isFinite(minR) || !Number.isFinite(minC)) return;
+  const repaired = XLSX.utils.encode_range({
+    s: { r: minR, c: minC },
+    e: { r: maxR, c: maxC },
+  });
+  const current = String(ws['!ref'] || '').trim();
+  if (!current) {
+    ws['!ref'] = repaired;
+    return;
+  }
+  try {
+    const decoded = XLSX.utils.decode_range(current);
+    const coversAll =
+      decoded.s.r <= minR &&
+      decoded.s.c <= minC &&
+      decoded.e.r >= maxR &&
+      decoded.e.c >= maxC;
+    if (!coversAll) ws['!ref'] = repaired;
+  } catch {
+    ws['!ref'] = repaired;
+  }
+}
+
 const formatCompanionCell = (value: unknown): string => {
   if (value == null) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -1032,10 +1079,11 @@ export function extractIlsMifCompanionSheets(
   return (wb.SheetNames || [])
     .filter((name) => companionSheetKey(name) && companionSheetKey(name) !== primaryKey)
     .map((sheetName) => {
-      const ws = wb.Sheets[sheetName];
+      const ws = wb.Sheets[sheetName] as import('xlsx').WorkSheet | undefined;
       if (!ws) {
         return { sheetName, matrix: [] as string[][], sourceFileNames: source ? [source] : [] };
       }
+      repairWorksheetUsedRange(ws, XLSX);
       const rawMatrix = XLSX.utils.sheet_to_json<unknown[]>(ws as any, {
         header: 1,
         defval: '',
@@ -1460,8 +1508,14 @@ const mapRawRowToMasterRow = (
   sourceSheetName = '',
   sourceHeaders: string[] = []
 ): IlsMifMasterRow | null => {
-  const memberFirstName = toNameCase(getSpreadsheetValue(raw, ['Member First Name']));
-  const memberLastName = toNameCase(stripTrailingNonNameTokens(getSpreadsheetValue(raw, ['Member Last Name'])));
+  const memberFirstName = toNameCase(
+    getSpreadsheetValue(raw, ['Member First Name', 'First Name', 'MemberFirstName'])
+  );
+  const memberLastName = toNameCase(
+    stripTrailingNonNameTokens(
+      getSpreadsheetValue(raw, ['Member Last Name', 'Last Name', 'MemberLastName'])
+    )
+  );
   if (!memberFirstName || !memberLastName) return null;
 
   const memberMrn = extractSpreadsheetMrn(raw);
@@ -1757,6 +1811,49 @@ function sheetRowsFromHeaderIndex(
   return out;
 }
 
+function countSheetDataRowsBelowHeader(ws: unknown, XLSX: typeof import('xlsx')): number {
+  try {
+    const sheet = ws as import('xlsx').WorkSheet;
+    repairWorksheetUsedRange(sheet, XLSX);
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      defval: '',
+      raw: false,
+      blankrows: false,
+    }) as unknown[][];
+    if (!matrix.length) return 0;
+    const headerIdx = findIlsMifHeaderRowIndex(matrix);
+    return sheetRowsFromHeaderIndex(matrix, headerIdx).length;
+  } catch {
+    return 0;
+  }
+}
+
+function describeEmptyMifSheetError(params: {
+  fileName: string;
+  sheetName: string;
+  headerCount: number;
+  sheetNames: string[];
+  wb: import('xlsx').WorkBook;
+  XLSX: typeof import('xlsx');
+}): string {
+  const otherHints: string[] = [];
+  for (const name of params.sheetNames) {
+    if (name === params.sheetName) continue;
+    const count = countSheetDataRowsBelowHeader(params.wb.Sheets[name], params.XLSX);
+    if (count > 0) otherHints.push(`${name} (${count} row(s))`);
+  }
+  const headerPart = params.headerCount
+    ? `Found ${params.headerCount} header column(s) on “${params.sheetName}”, but 0 member data rows under them.`
+    : `Worksheet “${params.sheetName}” has no member data rows.`;
+  const otherPart = otherHints.length
+    ? ` Other tab(s) do have rows: ${otherHints.slice(0, 4).join(', ')}${
+        otherHints.length > 4 ? '…' : ''
+      }. Those are not used as the MIF member list — ask ILS for a file with members filled on the CS_MIF / CSMIF tab.`
+    : ' Ask ILS for a MIF where the CS_MIF tab includes member rows (not headers only).';
+  return `${params.fileName}: ${headerPart}${otherPart}`;
+}
+
 export async function parseIlsMifSpreadsheetWorkbook(file: File): Promise<IlsMifParseResult> {
   const XLSX = await import('xlsx');
   const buffer = await file.arrayBuffer();
@@ -1764,6 +1861,7 @@ export async function parseIlsMifSpreadsheetWorkbook(file: File): Promise<IlsMif
   const sheetName = pickIlsSheetName(wb.SheetNames);
   if (!sheetName) throw new Error(`${file.name}: no worksheet found.`);
   const ws = wb.Sheets[sheetName];
+  repairWorksheetUsedRange(ws, XLSX);
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, {
     header: 1,
     defval: '',
@@ -1775,7 +1873,18 @@ export async function parseIlsMifSpreadsheetWorkbook(file: File): Promise<IlsMif
     .map((cell) => String(cell || '').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
   const rows = sheetRowsFromHeaderIndex(matrix, headerIdx);
-  if (!rows.length) throw new Error(`${file.name}: spreadsheet has no data rows.`);
+  if (!rows.length) {
+    throw new Error(
+      describeEmptyMifSheetError({
+        fileName: file.name,
+        sheetName,
+        headerCount: sourceHeaders.length,
+        sheetNames: wb.SheetNames,
+        wb,
+        XLSX,
+      })
+    );
+  }
   const sourceFileName = String(file.name || '').trim() || 'upload.xlsx';
   const members = rows
     .map((raw, idx) => mapRawRowToMasterRow(raw, idx, sourceFileName, sheetName, sourceHeaders))

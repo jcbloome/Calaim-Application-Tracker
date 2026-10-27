@@ -265,6 +265,7 @@ export default function IlsMifConsolidatorPage() {
       details: Record<string, unknown>;
     }>
   >([]);
+  const [auditLogOpen, setAuditLogOpen] = useState(false);
   const [selectedAuditEvent, setSelectedAuditEvent] = useState<{
     id: string;
     action: string;
@@ -5428,11 +5429,27 @@ export default function IlsMifConsolidatorPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">MIF audit log</CardTitle>
-          <CardDescription>
-            Recent declines, Create App loads, removals, exports, and run saves. Click a row for details.
-          </CardDescription>
+          <button
+            type="button"
+            className="flex w-full items-start gap-2 text-left"
+            onClick={() => setAuditLogOpen((open) => !open)}
+            aria-expanded={auditLogOpen}
+          >
+            <ChevronRight
+              className={`mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition-transform${auditLogOpen ? ' rotate-90' : ''}`}
+              aria-hidden
+            />
+            <div>
+              <CardTitle className="text-base">MIF audit log</CardTitle>
+              <CardDescription>
+                {auditLogOpen
+                  ? 'Recent declines, Create App loads, removals, exports, and run saves. Click a row for details.'
+                  : `Click to open. ${auditEvents.length} recent event(s).`}
+              </CardDescription>
+            </div>
+          </button>
         </CardHeader>
+        {auditLogOpen ? (
         <CardContent>
           {auditEvents.length === 0 ? (
             <div className="text-sm text-muted-foreground">No audit events yet.</div>
@@ -5464,6 +5481,7 @@ export default function IlsMifConsolidatorPage() {
             </ul>
           )}
         </CardContent>
+        ) : null}
       </Card>
 
       <Dialog

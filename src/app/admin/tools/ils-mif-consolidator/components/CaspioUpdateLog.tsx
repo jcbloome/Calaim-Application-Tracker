@@ -94,6 +94,7 @@ export function CaspioUpdateLog({ user, refreshKey }: { user: User | null | unde
   const [search, setSearch] = useState('');
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | Outcome>('all');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const [isOpen, setIsOpen] = useState(false);
 
   const toggleExpanded = (id: string) =>
     setExpandedIds((prev) => {
@@ -178,16 +179,29 @@ export function CaspioUpdateLog({ user, refreshKey }: { user: User | null | unde
     <Card id="mif-caspio-update-log">
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Caspio update log</CardTitle>
-            <CardDescription>
-              Every Caspio member update made from the MIF consolidator, with before → after values and who made it.
-              {entries.length
-                ? ` ${counts.updated} updated · ${counts.skipped} skipped · ${counts.failed} failed.`
-                : ''}
-            </CardDescription>
-          </div>
-          <div className="flex gap-2">
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-start gap-2 text-left"
+            onClick={() => setIsOpen((open) => !open)}
+            aria-expanded={isOpen}
+          >
+            <ChevronRight
+              className={cn('mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition-transform', isOpen && 'rotate-90')}
+              aria-hidden
+            />
+            <div>
+              <CardTitle className="text-base">Caspio update log</CardTitle>
+              <CardDescription>
+                {isOpen
+                  ? 'Every Caspio member update made from the MIF consolidator, with before → after values and who made it.'
+                  : 'Click to open.'}
+                {entries.length
+                  ? ` ${counts.updated} updated · ${counts.skipped} skipped · ${counts.failed} failed.`
+                  : ''}
+              </CardDescription>
+            </div>
+          </button>
+          <div className={cn('flex gap-2', !isOpen && 'hidden')}>
             <Button size="sm" variant="outline" onClick={exportCsv} disabled={!visible.length}>
               <Download className="mr-1 h-3.5 w-3.5" />
               CSV
@@ -203,6 +217,7 @@ export function CaspioUpdateLog({ user, refreshKey }: { user: User | null | unde
           </div>
         </div>
       </CardHeader>
+      {isOpen ? (
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <Input
@@ -237,7 +252,7 @@ export function CaspioUpdateLog({ user, refreshKey }: { user: User | null | unde
         {visible.length ? (
           <ul className="max-h-[280px] divide-y overflow-auto rounded border text-xs">
             {visible.map((entry) => {
-              const isOpen = expandedIds.has(entry.id);
+              const isEntryOpen = expandedIds.has(entry.id);
               const changeLines = describeChange(entry);
               const sourceFileName = text(entry.details?.sourceFileName);
               return (
@@ -245,11 +260,11 @@ export function CaspioUpdateLog({ user, refreshKey }: { user: User | null | unde
                   <button
                     type="button"
                     onClick={() => toggleExpanded(entry.id)}
-                    aria-expanded={isOpen}
+                    aria-expanded={isEntryOpen}
                     className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none"
                   >
                     <ChevronRight
-                      className={cn('h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform', isOpen && 'rotate-90')}
+                      className={cn('h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform', isEntryOpen && 'rotate-90')}
                       aria-hidden
                     />
                     <span className="w-[120px] shrink-0 whitespace-nowrap text-muted-foreground">
@@ -269,7 +284,7 @@ export function CaspioUpdateLog({ user, refreshKey }: { user: User | null | unde
                       {entry.staff || '—'}
                     </span>
                   </button>
-                  {isOpen ? (
+                  {isEntryOpen ? (
                     <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1 bg-slate-50 px-8 py-2">
                       <dt className="text-slate-500">Member</dt>
                       <dd>
@@ -316,6 +331,7 @@ export function CaspioUpdateLog({ user, refreshKey }: { user: User | null | unde
           </ul>
         ) : null}
       </CardContent>
+      ) : null}
     </Card>
   );
 }
