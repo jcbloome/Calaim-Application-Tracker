@@ -16,7 +16,7 @@
   - First/Last name ingest aliases added (`First Name`/`MemberFirstName`, `Last Name`/`MemberLastName`).
   - A trial header-compare panel was built and then removed at the user's request (never committed).
 - **ILS MIF consolidator — collapsible logs.** "Caspio update log" (`components/CaspioUpdateLog.tsx`) and "MIF audit log" (`page.tsx`) now start collapsed; click the title to open. Collapsed headers still show counts (updated/skipped/failed, recent event count). Caspio log CSV/Refresh buttons show only when open; the log still loads in the background so counts stay current.
-  - Commit: _pending_.
+  - Commit: `1acd8611`.
 
 ## Changes 2026-10-26
 
