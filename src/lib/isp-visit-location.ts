@@ -131,7 +131,100 @@ export function getRcfeLocationSnapshot(source: Record<string, unknown>): IspLoc
   };
 }
 
-/** Caspio field payload to set ISP_Contact_* from RCFE_* (member at RCFE). */
+/** ISP_Contact_Confirm_Date older than this is treated as stale when the member is at an RCFE. */
+export const ISP_CONFIRM_MAX_AGE_DAYS = 30;
+
+/** Today's date in Pacific time as a Caspio DATE/TIME value (`YYYY-MM-DDT00:00:00`). */
+export function todayCaspioConfirmDate(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  return `${parts}T00:00:00`;
+}
+
+export function getIspConfirmDate(source: Record<string, unknown>): {
+  raw: string;
+  ms: number;
+  ageDays: number | null;
+} {
+  const raw = pick(source, [
+    'ISP_Contact_Confirm_Date',
+    'ISP_Contact_Confirm_Field',
+    'ISP_Contact_Confirm',
+    'ISP_Confirm_Date',
+  ]);
+  if (!raw) return { raw: '', ms: 0, ageDays: null };
+  const ms = Date.parse(raw);
+  if (!Number.isFinite(ms)) return { raw, ms: 0, ageDays: null };
+  const ageDays = Math.max(0, Math.floor((Date.now() - ms) / 86_400_000));
+  return { raw, ms, ageDays };
+}
+
+export function formatIspConfirmDate(raw: string): string {
+  const ms = Date.parse(raw);
+  if (!Number.isFinite(ms)) return raw;
+  return new Date(ms).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+}
+
+export type IspLocationReadiness = {
+  ok: boolean;
+  reasons: string[];
+  confirmDateRaw: string;
+  confirmAgeDays: number | null;
+  locationMatchesRcfe: boolean;
+  confirmDateFresh: boolean;
+};
+
+/**
+ * Member at RCFE: ISP_Contact_* must match RCFE_* and ISP_Contact_Confirm_Date must be recent,
+ * otherwise stale pre-placement ISP data flows into the ALFT form and SW invite.
+ */
+export function evaluateIspLocationReadiness(
+  source: Record<string, unknown>,
+  visitLocationSource?: IspVisitLocationSource | string | null
+): IspLocationReadiness {
+  const confirm = getIspConfirmDate(source);
+  const confirmDateFresh = confirm.ageDays !== null && confirm.ageDays <= ISP_CONFIRM_MAX_AGE_DAYS;
+  if (clean(visitLocationSource).toLowerCase() !== 'rcfe') {
+    return {
+      ok: true,
+      reasons: [],
+      confirmDateRaw: confirm.raw,
+      confirmAgeDays: confirm.ageDays,
+      locationMatchesRcfe: true,
+      confirmDateFresh,
+    };
+  }
+  const comparison = compareIspLocationToRcfe(source);
+  const reasons: string[] = [];
+  if (!comparison.hasRcfeData) {
+    reasons.push('Member is marked at RCFE but RCFE_Name is empty in Caspio');
+  } else if (!comparison.matches) {
+    reasons.push(
+      `ISP location does not match RCFE (${comparison.mismatches.map((m) => m.label).join(', ')})`
+    );
+  }
+  if (!confirm.raw) {
+    reasons.push('ISP_Contact_Confirm_Date is empty in Caspio');
+  } else if (!confirmDateFresh) {
+    reasons.push(
+      `ISP_Contact_Confirm_Date ${formatIspConfirmDate(confirm.raw)} is older than ${ISP_CONFIRM_MAX_AGE_DAYS} days`
+    );
+  }
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    confirmDateRaw: confirm.raw,
+    confirmAgeDays: confirm.ageDays,
+    locationMatchesRcfe: comparison.hasRcfeData && comparison.matches,
+    confirmDateFresh,
+  };
+}
+
+/** Caspio field payload to set ISP_Contact_* from RCFE_* (member at RCFE) and stamp today's confirm date. */
 export function buildIspContactUpdatesFromRcfe(source: Record<string, unknown>): Record<string, string> {
   const rcfe = getRcfeLocationSnapshot(source);
   const updates: Record<string, string> = {};
@@ -142,6 +235,7 @@ export function buildIspContactUpdatesFromRcfe(source: Record<string, unknown>):
   if (rcfe.zip) updates.ISP_Contact_Zip = rcfe.zip;
   if (rcfe.phone) updates.ISP_Contact_Phone = rcfe.phone;
   updates.ISP_Location_Type = 'RCFE';
+  updates.ISP_Contact_Confirm_Date = todayCaspioConfirmDate();
   return updates;
 }
 

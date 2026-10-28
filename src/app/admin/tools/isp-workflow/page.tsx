@@ -57,6 +57,7 @@ import { useAuth, useFirestore, useStorage, useUser } from '@/firebase';
 import {
   applyIspVisitLocationFromCaspio,
   compareIspLocationToRcfe,
+  evaluateIspLocationReadiness,
   formatIspContactBlockForSwEmail,
   formatIspVisitTypeForSwEmail,
   getIspLocationSnapshot,
@@ -500,12 +501,27 @@ function IspWorkflowToolsPageInner() {
     () => compareIspLocationToRcfe(caspioSourcePreview || {}),
     [caspioSourcePreview]
   );
-  /** At RCFE with RCFE_Name filled: soft mismatch only — RCFE is the default; staff can accept it without a hard block. */
-  const ispRcfeSoftMismatch =
-    visitLocationSource === 'rcfe' &&
-    Boolean(rcfeLocationSnapshot.name) &&
-    !ispRcfeComparison.matches;
-  const canConfirmIspLocationStep = Boolean(assessmentPurpose) && visitLocationReady;
+  const ispLocationReadiness = useMemo(
+    () => evaluateIspLocationReadiness(caspioSourcePreview || {}, visitLocationSource),
+    [caspioSourcePreview, visitLocationSource]
+  );
+  /** At RCFE: ISP fields must match RCFE with a recent ISP_Contact_Confirm_Date before step 5 can be verified. */
+  const ispRcfeSoftMismatch = visitLocationSource === 'rcfe' && !ispLocationReadiness.ok;
+  const canConfirmIspLocationStep =
+    Boolean(assessmentPurpose) && visitLocationReady && ispLocationReadiness.ok;
+  // Saved setups restore step 5 as verified; re-check against live Caspio once the preview loads.
+  useEffect(() => {
+    if (!confirmedIspLocation || !hasPreviewForSelection || isLoadingPreview) return;
+    if (visitLocationSource === 'rcfe' && !ispLocationReadiness.ok) {
+      setConfirmedIspLocation(false);
+    }
+  }, [
+    confirmedIspLocation,
+    hasPreviewForSelection,
+    isLoadingPreview,
+    visitLocationSource,
+    ispLocationReadiness.ok,
+  ]);
   const stepsConfirmedForPrefill =
     confirmedSw &&
     confirmedFirstReviewer &&
@@ -555,7 +571,7 @@ function IspWorkflowToolsPageInner() {
     if (!confirmedIspLocation) {
       reasons.push(
         ispRcfeSoftMismatch
-          ? 'Accept RCFE as default (or confirm ISP location) in step 5'
+          ? `Fix ISP location in step 5 — ${ispLocationReadiness.reasons.join('; ')}`
           : 'Verify ISP location (step 5)'
       );
     }
@@ -590,6 +606,7 @@ function IspWorkflowToolsPageInner() {
     missingRequiredLabels,
     needsVisitLocationChoice,
     ispRcfeSoftMismatch,
+    ispLocationReadiness,
     socialWorkerEmail,
     socialWorkerName,
     swPortalActive,
@@ -2899,7 +2916,8 @@ function IspWorkflowToolsPageInner() {
     setConfirmedIspLocation(true);
     toast({
       title: 'RCFE accepted as default',
-      description: 'ISP location set from RCFE and verified. You can continue to clinical uploads.',
+      description:
+        'ISP location set from RCFE and ISP confirm date set to today in Caspio. You can continue to clinical uploads.',
       className: 'bg-green-100 text-green-900 border-green-200',
     });
   };
@@ -4741,6 +4759,7 @@ function IspWorkflowToolsPageInner() {
                         confirmedPurpose={confirmedPurpose}
                         visitLocationReady={visitLocationReady}
                         ispRcfeSoftMismatch={ispRcfeSoftMismatch}
+                        ispLocationReadiness={ispLocationReadiness}
                         needsVisitLocationChoice={needsVisitLocationChoice}
                         ispLocationSnapshot={ispLocationSnapshot}
                         rcfeLocationSnapshot={rcfeLocationSnapshot}

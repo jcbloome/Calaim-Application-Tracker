@@ -3,6 +3,7 @@ import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { sendAlftWorkflowStartEmail } from '@/app/actions/send-email';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
+import { evaluateIspLocationReadiness } from '@/lib/isp-visit-location';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -769,6 +770,19 @@ export async function POST(req: NextRequest) {
     if (missingIspFields.length > 0) {
       return NextResponse.json(
         { success: false, error: `Missing required ISP contact fields: ${missingIspFields.join(', ')}` },
+        { status: 409 }
+      );
+    }
+
+    const ispLocationReadiness = evaluateIspLocationReadiness(caspioSource, visitLocationSource);
+    if (!ispLocationReadiness.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `ISP location is not current for a member at RCFE: ${ispLocationReadiness.reasons.join(
+            '; '
+          )}. Fix it in ISP Workflow step 5 (Use RCFE as ISP location & confirm today), then resend.`,
+        },
         { status: 409 }
       );
     }

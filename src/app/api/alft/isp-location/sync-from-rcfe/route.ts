@@ -66,6 +66,7 @@ async function fetchMemberSource(memberId: string, token: string, baseUrl: strin
     'ISP_Contact_Zip',
     'ISP_Contact_Phone',
     'ISP_Location_Type',
+    'ISP_Contact_Confirm_Date',
     'RCFE_Name',
     'RCFE_Address',
     'RCFE_City',
@@ -90,7 +91,7 @@ async function fetchMemberSource(memberId: string, token: string, baseUrl: strin
 }
 
 /**
- * Copy RCFE_* into Caspio ISP_Contact_* for a member, then refresh cache.
+ * Copy RCFE_* into Caspio ISP_Contact_* for a member, stamp ISP_Contact_Confirm_Date = today, then refresh cache.
  * Used when Review/Initial says member is at RCFE but ISP location is stale/mismatched.
  */
 export async function POST(req: NextRequest) {
