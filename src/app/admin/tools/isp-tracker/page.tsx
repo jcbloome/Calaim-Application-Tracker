@@ -875,6 +875,12 @@ const isIspPacketComplete = (row: IspRow): boolean =>
 
 const isSentToIlsRow = (row: IspRow) => Boolean(row.sentToIls) || isIspPacketComplete(row);
 
+/** Admin approved + downloaded the final ISP. */
+const isFinalCompleteRow = (row: IspRow) => getStepStatus(row, 'final_download') === 'Completed';
+
+/** Completed ISPs leave the active tracker but stay reachable via Global / search / Completed view. */
+const isCompletedRow = (row: IspRow) => isSentToIlsRow(row) || isFinalCompleteRow(row);
+
 const sentToIlsSortMs = (row: IspRow) => {
   const iso = clean(row.sentToIlsAtIso);
   if (!iso) return 0;
@@ -1725,7 +1731,7 @@ export default function IspTrackerPage() {
         if (
           invite &&
           existing.source === 'intake' &&
-          (isSentToIlsRow(existing) || !existing.mswSigned)
+          (isCompletedRow(existing) || !existing.mswSigned)
         ) {
           byMember.set(mid, invite);
           continue;
@@ -1734,7 +1740,7 @@ export default function IspTrackerPage() {
           existing.source === 'invite' &&
           row.source === 'intake' &&
           row.mswSigned &&
-          !isSentToIlsRow(row)
+          !isCompletedRow(row)
         ) {
           byMember.set(mid, row);
         }
@@ -2504,8 +2510,8 @@ export default function IspTrackerPage() {
     };
     for (const step of ISP_TRACKER_STEPS) counts[step.key] = 0;
     for (const row of rows) {
-      if (isSentToIlsRow(row)) {
-        counts.sent_to_ils += 1;
+      if (isCompletedRow(row)) {
+        if (isSentToIlsRow(row)) counts.sent_to_ils += 1;
         counts.completed += 1;
         continue;
       }
@@ -2528,7 +2534,7 @@ export default function IspTrackerPage() {
     const counts: Record<string, number> = {};
     for (const step of ISP_TRACKER_STEPS) {
       counts[step.key] = rows.filter(
-        (row) => !isSentToIlsRow(row) && getStepStatus(row, step.key) === 'Completed'
+        (row) => !isCompletedRow(row) && getStepStatus(row, step.key) === 'Completed'
       ).length;
     }
     return counts;
@@ -2537,7 +2543,7 @@ export default function IspTrackerPage() {
   const actionCounts = useMemo(() => {
     const counts = { msw: 0, admin: 0, rn: 0, none: 0 };
     for (const row of rows) {
-      if (isSentToIlsRow(row)) continue;
+      if (isCompletedRow(row)) continue;
       const action = actionNeededForRow(row);
       counts[action] += 1;
     }
@@ -2578,16 +2584,15 @@ export default function IspTrackerPage() {
         return true;
       }
       if (showIlsArchive) {
-        // Explicit Sent to ILS archive view.
-        return isSentToIlsRow(row);
+        return stepFilter === 'completed' ? isCompletedRow(row) : isSentToIlsRow(row);
       }
       if (showGlobal) {
-        // All ISPs including Sent to ILS; still allow action filter.
+        // All ISPs including Completed / Sent to ILS; still allow action filter.
         if (actionFilter !== 'all' && actionNeededForRow(row) !== actionFilter) return false;
         return true;
       }
-      // Default tracker: hide packets already sent to ILS.
-      if (isSentToIlsRow(row)) return false;
+      // Default tracker: hide completed (Final done) and Sent to ILS packets.
+      if (isCompletedRow(row)) return false;
       if (showPendingOnly && isIspPacketComplete(row)) return false;
       if (stepFilter === 'returned') {
         if (!ISP_TRACKER_STEPS.some((step) => getStepStatus(row, step.key) === 'Returned')) return false;
@@ -2657,6 +2662,7 @@ export default function IspTrackerPage() {
   ]);
 
   const stepFilterLabel = useMemo(() => {
+    if (stepFilter === 'completed') return 'Completed';
     if (viewingSentToIls) return 'Sent to ILS';
     if (stepFilter === 'global' || clean(search)) return 'Global';
     if (stepFilter === 'all') return 'Active';
@@ -2693,6 +2699,15 @@ export default function IspTrackerPage() {
 
   const showGlobalIspList = () => {
     setStepFilter('global');
+    setShowPendingOnly(false);
+    setActionFilter('all');
+    if (listSort === 'ils_newest' || listSort === 'ils_oldest') {
+      setListSort('name_asc');
+    }
+  };
+
+  const showCompletedList = () => {
+    setStepFilter('completed');
     setShowPendingOnly(false);
     setActionFilter('all');
     if (listSort === 'ils_newest' || listSort === 'ils_oldest') {
@@ -2859,10 +2874,22 @@ export default function IspTrackerPage() {
           <span className="text-slate-300">·</span>
           <button
             type="button"
+            title="Final approved + downloaded (hidden from active tracker)"
+            onClick={showCompletedList}
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-green-800 hover:bg-green-50 ${
+              stepFilter === 'completed' ? 'bg-green-50 font-semibold' : ''
+            }`}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+            Completed <span className="tabular-nums">{stageCounts.completed}</span>
+          </button>
+          <span className="text-slate-300">·</span>
+          <button
+            type="button"
             title="Completed ISPs sent to ILS (archive — hidden from default tracker)"
             onClick={() => showSentToIlsArchive('ils_newest')}
             className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-teal-800 hover:bg-teal-50 ${
-              viewingSentToIls ? 'bg-teal-50 font-semibold' : ''
+              viewingSentToIls && stepFilter !== 'completed' ? 'bg-teal-50 font-semibold' : ''
             }`}
           >
             <CheckCircle2 className="h-3.5 w-3.5 text-teal-600" />
@@ -2933,6 +2960,8 @@ export default function IspTrackerPage() {
                       : 'Global'
                     : stepFilter === 'all' && !viewingSentToIls
                     ? 'Active'
+                    : stepFilter === 'completed'
+                    ? 'Completed'
                     : viewingSentToIls
                       ? 'Sent to ILS'
                       : stepFilter === 'returned'
@@ -2979,8 +3008,18 @@ export default function IspTrackerPage() {
                 ))}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
+                  onClick={showCompletedList}
+                  className={stepFilter === 'completed' ? 'bg-accent' : ''}
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4 text-green-600" />
+                  Completed (Final done)
+                  <span className="ml-auto tabular-nums text-muted-foreground">
+                    {stageCounts.completed}
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   onClick={() => showSentToIlsArchive('ils_newest')}
-                  className={viewingSentToIls ? 'bg-accent' : ''}
+                  className={viewingSentToIls && stepFilter !== 'completed' ? 'bg-accent' : ''}
                 >
                   <CheckCircle2 className="mr-2 h-4 w-4 text-teal-600" />
                   Sent to ILS (archive)
@@ -3049,7 +3088,7 @@ export default function IspTrackerPage() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => {
-                    if (viewingSentToIls) clearStageFilters();
+                    if (viewingSentToIls && stepFilter !== 'completed') clearStageFilters();
                     setListSort('name_asc');
                   }}
                   className={listSort === 'name_asc' ? 'bg-accent' : ''}
@@ -3059,7 +3098,7 @@ export default function IspTrackerPage() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
-                    if (viewingSentToIls) clearStageFilters();
+                    if (viewingSentToIls && stepFilter !== 'completed') clearStageFilters();
                     setListSort('name_desc');
                   }}
                   className={listSort === 'name_desc' ? 'bg-accent' : ''}
@@ -3070,7 +3109,7 @@ export default function IspTrackerPage() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => {
-                    if (viewingSentToIls) clearStageFilters();
+                    if (viewingSentToIls && stepFilter !== 'completed') clearStageFilters();
                     setListSort('requested_newest');
                   }}
                   className={listSort === 'requested_newest' ? 'bg-accent' : ''}
@@ -3080,7 +3119,7 @@ export default function IspTrackerPage() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
-                    if (viewingSentToIls) clearStageFilters();
+                    if (viewingSentToIls && stepFilter !== 'completed') clearStageFilters();
                     setListSort('requested_oldest');
                   }}
                   className={listSort === 'requested_oldest' ? 'bg-accent' : ''}
@@ -3109,7 +3148,7 @@ export default function IspTrackerPage() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => {
-                    if (viewingSentToIls) clearStageFilters();
+                    if (viewingSentToIls && stepFilter !== 'completed') clearStageFilters();
                     setListSort('none');
                   }}
                   className={listSort === 'none' ? 'bg-accent' : ''}
@@ -3150,14 +3189,18 @@ export default function IspTrackerPage() {
               {filteredRows.length}{' '}
               {clean(search)
                 ? 'matching packets'
-                : viewingSentToIls
+                : stepFilter === 'completed'
+                  ? 'completed ISPs'
+                  : viewingSentToIls
                   ? 'Sent to ILS packets'
                   : stepFilter === 'global'
                     ? 'ISPs (global)'
                     : 'active ISP packets'}
               {viewingGlobal && !viewingSentToIls ? (
                 <span className="ml-1 text-sky-800">
-                  {clean(search) ? '· global search includes Sent to ILS' : '· includes Sent to ILS'}
+                  {clean(search)
+                    ? '· global search includes Completed / Sent to ILS'
+                    : '· includes Completed / Sent to ILS'}
                 </span>
               ) : null}
             </span>
@@ -3289,7 +3332,7 @@ export default function IspTrackerPage() {
                 Complete
               </button>
               <span className="text-muted-foreground">
-                Active hides Sent to ILS · Global / name search shows everyone
+                Active hides Completed (Final done) and Sent to ILS · Global / name search shows everyone
               </span>
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -3311,7 +3354,9 @@ export default function IspTrackerPage() {
                 title="Show Sent to ILS archive (sorted by newest ILS date)"
                 onClick={() => showSentToIlsArchive('ils_newest')}
                 className={`rounded px-1 py-0.5 hover:bg-white/80 ${
-                  viewingSentToIls ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
+                  viewingSentToIls && stepFilter !== 'completed'
+                    ? 'bg-white font-semibold text-slate-800 shadow-sm'
+                    : ''
                 }`}
               >
                 <strong className="font-mono">ILS:</strong> Sent to ILS
@@ -3323,7 +3368,9 @@ export default function IspTrackerPage() {
                 title="Show Sent to ILS archive"
                 onClick={() => showSentToIlsArchive('ils_newest')}
                 className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white/80 ${
-                  viewingSentToIls ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
+                  viewingSentToIls && stepFilter !== 'completed'
+                    ? 'bg-white font-semibold text-slate-800 shadow-sm'
+                    : ''
                 }`}
               >
                 <CheckCircle2 className="h-4 w-4 text-teal-600" /> Sent to ILS
@@ -3368,9 +3415,11 @@ export default function IspTrackerPage() {
             <p className="py-10 text-center text-sm text-muted-foreground">
               {clean(search)
                 ? `No packets match “${clean(search)}”.`
-                : viewingSentToIls
-                  ? 'No Sent to ILS packets yet. Mark completed ISPs as Sent to ILS to archive them here.'
-                  : 'No active ISP packets. Sent to ILS items are archived — open Sent to ILS to view them.'}
+                : stepFilter === 'completed'
+                  ? 'No completed ISPs yet. ISPs appear here once Final is approved and downloaded.'
+                  : viewingSentToIls
+                    ? 'No Sent to ILS packets yet. Mark completed ISPs as Sent to ILS to archive them here.'
+                    : 'No active ISP packets. Completed ISPs are hidden — open Completed or use Global search to view them.'}
             </p>
           ) : (
             <div>
@@ -3386,16 +3435,18 @@ export default function IspTrackerPage() {
                       Stages
                     </button>
                     <span className="ml-2">
-                      {viewingSentToIls
+                      {stepFilter === 'completed'
+                        ? 'Completed ISPs (Final approved + downloaded)'
+                        : viewingSentToIls
                         ? `Sent to ILS archive · sorted ${
                             listSort === 'ils_oldest' ? 'oldest first' : 'newest first'
                           }`
                         : viewingGlobal
                           ? clean(search)
-                            ? `Global search “${clean(search)}” · Sent to ILS included`
-                            : 'All ISPs (global) · Sent to ILS included'
+                            ? `Global search “${clean(search)}” · Completed included`
+                            : 'All ISPs (global) · Completed included'
                         : stepFilter === 'all' || !ISP_TRACKER_STEPS.some((s) => s.key === stepFilter)
-                          ? 'Active packets (Sent to ILS hidden)'
+                          ? 'Active packets (Completed hidden)'
                           : `Filter: ${
                               stageIconFilterMode === 'action_needed' ? 'action needed' : 'complete'
                             } · ${ISP_TRACKER_STEPS.find((s) => s.key === stepFilter)?.abbreviation}`}
@@ -3477,7 +3528,7 @@ export default function IspTrackerPage() {
                     <div className="flex items-start gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
-                          {isIspPacketComplete(row) ? (
+                          {isCompletedRow(row) ? (
                             <CheckCircle2
                               className="h-5 w-5 shrink-0 text-green-500"
                               aria-label="ISP complete"
@@ -3490,8 +3541,10 @@ export default function IspTrackerPage() {
                           >
                             {row.memberName}
                           </Link>
-                          {viewingGlobal && isSentToIlsRow(row) ? (
+                          {(viewingGlobal || viewingSentToIls) && isSentToIlsRow(row) ? (
                             <Badge className="shrink-0 bg-teal-700 text-xs">Sent to ILS</Badge>
+                          ) : (viewingGlobal || viewingSentToIls) && isCompletedRow(row) ? (
+                            <Badge className="shrink-0 bg-green-700 text-xs">Completed</Badge>
                           ) : null}
                           <Badge
                             variant={badge.className ? 'outline' : 'secondary'}

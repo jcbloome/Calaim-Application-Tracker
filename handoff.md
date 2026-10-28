@@ -10,6 +10,9 @@
 
 ## Changes 2026-10-28
 
+- **ISP Tracker — Final done = Completed, hidden from active tracker.** Once Final is approved + downloaded (`final_download` step Completed), the member leaves the active tracker, stage counts, and action counts. Previously rows only left when marked Sent to ILS. Completed ISPs remain findable via Global / name search (green **Completed** badge, or teal **Sent to ILS** if marked), and via a new **Completed** filter (counts bar + Stage dropdown). Sent to ILS archive and Mark ILS / Send to ILS links are unchanged.
+  - Files: `src/app/admin/tools/isp-tracker/page.tsx` (`isFinalCompleteRow`, `isCompletedRow`, `showCompletedList`).
+  - Commit: _pending_.
 - **ISP Tracker — soft-delete stickiness.** Invite-only members (e.g. Cedric Brown / Marilynn Brown) could be deleted, then immediately reappear. The list treated any historical `swEmailDeliveryLog` status `sent` as “invite still active,” so soft-removed rows came back on the next Firestore refresh. Loader now keeps soft-deletes hidden unless a **new** invite was sent after removal. Remove API also sets `ispTrackerSoftDeleted`, deactivates `workflowInvites`, and records cancel timestamps; restore clears those flags.
   - Files: `src/app/admin/tools/isp-tracker/page.tsx`, `src/app/api/alft/assignment/remove-from-tracker/route.ts`, `src/app/api/alft/assignment/restore-to-tracker/route.ts`.
   - Commit: `0057911a`.
