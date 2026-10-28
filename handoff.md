@@ -12,7 +12,7 @@
 
 - **ISP Tracker — soft-delete stickiness.** Invite-only members (e.g. Cedric Brown / Marilynn Brown) could be deleted, then immediately reappear. The list treated any historical `swEmailDeliveryLog` status `sent` as “invite still active,” so soft-removed rows came back on the next Firestore refresh. Loader now keeps soft-deletes hidden unless a **new** invite was sent after removal. Remove API also sets `ispTrackerSoftDeleted`, deactivates `workflowInvites`, and records cancel timestamps; restore clears those flags.
   - Files: `src/app/admin/tools/isp-tracker/page.tsx`, `src/app/api/alft/assignment/remove-from-tracker/route.ts`, `src/app/api/alft/assignment/restore-to-tracker/route.ts`.
-  - Commit: _pending_.
+  - Commit: `0057911a`.
 
 ## Changes 2026-10-27
 
