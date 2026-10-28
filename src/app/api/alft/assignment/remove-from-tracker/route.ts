@@ -48,15 +48,29 @@ export async function POST(req: NextRequest) {
       removedAtIso: new Date().toISOString(),
     };
 
+    const removedAtIso = new Date().toISOString();
+    const priorInvites =
+      data.workflowInvites && typeof data.workflowInvites === 'object' ? data.workflowInvites : {};
+
     await assignmentRef.set(
       {
         status: 'removed_from_isp_tracker',
         workflowStatus: 'removed_from_isp_tracker',
         workflowStage: 'removed_from_isp_tracker',
+        ispTrackerSoftDeleted: true,
         removedFromIspTrackerAt: admin.firestore.FieldValue.serverTimestamp(),
+        removedFromIspTrackerAtIso: removedAtIso,
         removedFromIspTrackerByUid: authCheck.uid,
         removedFromIspTrackerByEmail: authCheck.email || null,
         ispTrackerRestoreSnapshot: restoreSnapshot,
+        workflowInvites: {
+          ...priorInvites,
+          active: false,
+          cancelledAt: removedAtIso,
+          cancelledByUid: authCheck.uid,
+          cancelledByEmail: authCheck.email || null,
+        },
+        swInviteCancelledAtIso: removedAtIso,
         workflowSteps: {
           ...(data.workflowSteps && typeof data.workflowSteps === 'object' ? data.workflowSteps : {}),
           swInviteSent: false,
@@ -65,7 +79,7 @@ export async function POST(req: NextRequest) {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion({
           event: 'removed_from_tracker',
-          atIso: new Date().toISOString(),
+          atIso: removedAtIso,
           byName: authCheck.email || 'Admin',
           byEmail: authCheck.email || null,
           details: 'Removed from ISP Tracker (soft delete)',

@@ -1399,21 +1399,32 @@ export default function IspTrackerPage() {
         const ws = clean(data.workflowStatus).toLowerCase();
         const stage = clean(data.workflowStage).toLowerCase();
         const status = clean(data.status).toLowerCase();
-        if (
+        const removedAtMs = Math.max(
+          toMs(data.removedFromIspTrackerAt),
+          toMs(data.removedFromIspTrackerAtIso)
+        );
+        const softRemovedFromTracker =
+          removedAtMs > 0 ||
+          Boolean(data.ispTrackerSoftDeleted) ||
           ws.includes('removed_from_isp_tracker') ||
-          status.includes('removed_from_isp_tracker') ||
+          status.includes('removed_from_isp_tracker');
+        const inviteCancelled =
           ws.includes('sw_invite_cancelled') ||
           status.includes('sw_invite_cancelled') ||
-          Boolean(data.removedFromIspTrackerAt) ||
-          Boolean(data.swInviteCancelledAtIso || data?.workflowInvites?.cancelledAt)
-        ) {
-          // Still show if a newer invite is active / email was sent after a prior remove/cancel.
+          Boolean(data.swInviteCancelledAtIso || data?.workflowInvites?.cancelledAt);
+
+        if (softRemovedFromTracker) {
+          // Soft-delete must stick. Only re-show after a NEW invite sent after removal.
+          // Do not treat historical swEmailDeliveryLog "sent" rows as still-active — that
+          // was bringing deleted members (e.g. Invite pending) right back on refresh.
+          const reinvitedAfterRemove =
+            (data?.workflowInvites?.active === true || Boolean(data?.workflowSteps?.swInviteSent)) &&
+            (removedAtMs === 0 || inviteFallbackMs > removedAtMs);
+          if (!reinvitedAfterRemove) continue;
+        } else if (inviteCancelled) {
           const inviteStillActive =
             data?.workflowInvites?.active === true ||
-            Boolean(data?.workflowSteps?.swInviteSent && !data?.workflowSteps?.swSubmittedSigned) ||
-            (Array.isArray(data.swEmailDeliveryLog) ? data.swEmailDeliveryLog : []).some(
-              (entry: any) => clean(entry?.status).toLowerCase() === 'sent'
-            );
+            Boolean(data?.workflowSteps?.swInviteSent && !data?.workflowSteps?.swSubmittedSigned);
           if (!inviteStillActive) continue;
         }
         const invitePending =

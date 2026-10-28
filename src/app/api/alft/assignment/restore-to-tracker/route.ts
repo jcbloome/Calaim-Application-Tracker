@@ -60,9 +60,21 @@ export async function POST(req: NextRequest) {
         workflowStatus: restoredWorkflowStatus,
         workflowStage: restoredWorkflowStage,
         workflowSteps: restoredSteps,
+        ispTrackerSoftDeleted: false,
         removedFromIspTrackerAt: admin.firestore.FieldValue.delete(),
+        removedFromIspTrackerAtIso: admin.firestore.FieldValue.delete(),
         removedFromIspTrackerByUid: admin.firestore.FieldValue.delete(),
         removedFromIspTrackerByEmail: admin.firestore.FieldValue.delete(),
+        swInviteCancelledAtIso: admin.firestore.FieldValue.delete(),
+        workflowInvites: {
+          ...(data.workflowInvites && typeof data.workflowInvites === 'object'
+            ? data.workflowInvites
+            : {}),
+          active: true,
+          cancelledAt: admin.firestore.FieldValue.delete(),
+          cancelledByUid: admin.firestore.FieldValue.delete(),
+          cancelledByEmail: admin.firestore.FieldValue.delete(),
+        },
         restoredToIspTrackerAt: admin.firestore.FieldValue.serverTimestamp(),
         restoredToIspTrackerByUid: authCheck.uid,
         restoredToIspTrackerByEmail: authCheck.email || null,

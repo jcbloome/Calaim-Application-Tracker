@@ -8,6 +8,12 @@
 
 ---
 
+## Changes 2026-10-28
+
+- **ISP Tracker — soft-delete stickiness.** Invite-only members (e.g. Cedric Brown / Marilynn Brown) could be deleted, then immediately reappear. The list treated any historical `swEmailDeliveryLog` status `sent` as “invite still active,” so soft-removed rows came back on the next Firestore refresh. Loader now keeps soft-deletes hidden unless a **new** invite was sent after removal. Remove API also sets `ispTrackerSoftDeleted`, deactivates `workflowInvites`, and records cancel timestamps; restore clears those flags.
+  - Files: `src/app/admin/tools/isp-tracker/page.tsx`, `src/app/api/alft/assignment/remove-from-tracker/route.ts`, `src/app/api/alft/assignment/restore-to-tracker/route.ts`.
+  - Commit: _pending_.
+
 ## Changes 2026-10-27
 
 - **ILS MIF consolidator — old and new MIF formats both load via "1) Upload MIFs".** The new ILS workbook (tabs `Lists, Instructions, CS_MIF, CS_RTF, Change Log, Validation Reference`) has the same headers as the old MIF, so no separate header-compare section is needed. Members load from the `CS_MIF` tab; `CS_RTF` is kept as a companion sheet for the later status send-back.
