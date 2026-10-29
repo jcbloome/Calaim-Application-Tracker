@@ -393,7 +393,12 @@ export const EXACT_ALFT_PAGES: ExactAlftPage[] = [
         { value: 'severe', label: 'Severe' },
       ] },
       { id: 'p7_smi_specify', label: 'Q28: SMI specify', type: 'text' },
-      { id: 'p7_sud_specify', label: 'Q28: SUD specify', type: 'text' },
+      {
+        id: 'p7_sud_specify',
+        label: 'Q28: Substance use disorder — specify type of substance abuse (if indicated)',
+        type: 'text',
+        placeholder: 'e.g. alcohol, opioids, methamphetamine',
+      },
       { id: 'p7_other_dx_specify', label: 'Q28: Other diagnosis specify', type: 'text' },
       { id: 'p8_catheter_type', label: 'Q29 Catheter type', type: 'select', options: [
         { value: 'na_none', label: 'N/A or None' },
