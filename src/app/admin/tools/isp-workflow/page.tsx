@@ -253,6 +253,13 @@ function IspWorkflowToolsPageInner() {
   const assessmentPurposeRef = useRef(assessmentPurpose);
   const autoStaleSyncInFlightRef = useRef(false);
   const syncMembersCacheFromCaspioRef = useRef<() => Promise<void>>(async () => undefined);
+  const loadCaspioFieldPreviewRef = useRef<
+    (
+      memberIdRaw: string,
+      memberOverride?: KaiserMember | null,
+      options?: { preferLive?: boolean; assessorTypeOverride?: 'msw' | 'rn' }
+    ) => Promise<void>
+  >(async () => undefined);
   const formWorkInProgressRef = useRef(false);
   visitLocationSourceRef.current = visitLocationSource;
   assessmentPurposeRef.current = assessmentPurpose;
@@ -1077,14 +1084,25 @@ function IspWorkflowToolsPageInner() {
       if (!response.ok || !data?.success) {
         throw new Error(String(data?.error || `HTTP ${response.status}`));
       }
+      await fetchMembers({ source: 'cache', skipStaleCheck: true });
+      // Selected member checklist / SW must come from live Caspio, not the cache we just wrote.
+      const selectedId = clean(selectedClientId);
+      if (selectedId) {
+        setAssessorType('msw');
+        await loadCaspioFieldPreviewRef.current(selectedId, selectedMember, {
+          preferLive: true,
+          assessorTypeOverride: 'msw',
+        });
+      }
       toast({
-        title: 'Firestore cache updated',
-        description: `Fetched ${Number(data?.fetched || 0)} Kaiser records, updated ${Number(
-          data?.upserted || 0
-        )} cache records. Loading from Firestore…`,
+        title: 'Synced from Caspio',
+        description: `Updated ${Number(data?.upserted || 0)} member records${
+          selectedId
+            ? '. Selected member fields refreshed from live Caspio (MSW default).'
+            : '.'
+        }`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
-      await fetchMembers({ source: 'cache', skipStaleCheck: true });
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -1324,20 +1342,20 @@ function IspWorkflowToolsPageInner() {
               clean(assignment.assessorRole || assignment.ispAssessorType).toLowerCase() === 'rn'
                 ? 'rn'
                 : 'msw';
-            // Never re-force RN from a prior Firestore assignment when the user (or refresh)
-            // explicitly asked for MSW — that was wiping Caspio Social_Worker / SW_email.
-            const userChoseMsw = options?.assessorTypeOverride === 'msw';
+            // Step 1 default is always MSW from live Caspio Social_Worker / SW_email.
+            // Only switch to RN when the user explicitly picks "Override: RN does ALFT".
             const userChoseRn = options?.assessorTypeOverride === 'rn';
-            if (savedAssessor === 'rn' && !userChoseMsw) {
+            const effectiveIsRn = userChoseRn;
+            if (effectiveIsRn) {
               setAssessorType('rn');
               const rnName =
                 clean(assignedRnFromCaspio.name) ||
-                clean(assignment.assignedSwName) ||
-                clean(assignment.alftRnName);
+                clean(assignment.alftRnName) ||
+                clean(assignment.assignedSwName);
               const rnEmail =
                 (isUsableSwEmail(assignedRnFromCaspio.email) && clean(assignedRnFromCaspio.email)) ||
-                (isUsableSwEmail(assignment.assignedSwEmail) && clean(assignment.assignedSwEmail)) ||
                 (isUsableSwEmail(assignment.alftRnEmail) && clean(assignment.alftRnEmail)) ||
+                (isUsableSwEmail(assignment.assignedSwEmail) && clean(assignment.assignedSwEmail)) ||
                 '';
               if (rnName) setSocialWorkerName(rnName);
               if (rnEmail) setSocialWorkerEmail(rnEmail);
@@ -1349,14 +1367,17 @@ function IspWorkflowToolsPageInner() {
                   rnOptions.find((r) => clean(r.email).toLowerCase() === rnEmail.toLowerCase()) || null;
                 if (match) setRnUid(match.uid);
               }
+            } else {
+              setAssessorType('msw');
             }
-            // Persist explicit MSW/RN choice so the next open/refresh does not flip back.
-            if ((userChoseMsw && savedAssessor === 'rn') || (userChoseRn && savedAssessor === 'msw')) {
+            // Keep assignment assessorRole aligned with the explicit choice (or MSW default).
+            const nextAssessorRole = effectiveIsRn ? 'rn' : 'msw';
+            if (savedAssessor !== nextAssessorRole) {
               void setDoc(
                 doc(firestore, 'alft_assignments', memberId),
                 {
-                  assessorRole: userChoseMsw ? 'msw' : 'rn',
-                  ispAssessorType: userChoseMsw ? 'msw' : 'rn',
+                  assessorRole: nextAssessorRole,
+                  ispAssessorType: nextAssessorRole,
                   updatedAt: serverTimestamp(),
                 },
                 { merge: true }
@@ -1441,6 +1462,7 @@ function IspWorkflowToolsPageInner() {
     },
     [applyVisitLocationToPreview, assessorType, firestore, getIdToken]
   );
+  loadCaspioFieldPreviewRef.current = loadCaspioFieldPreview;
 
   const verifySwPortalAccess = useCallback(
     async (emailRaw: string, swIdRaw?: string): Promise<boolean> => {
@@ -1752,6 +1774,7 @@ function IspWorkflowToolsPageInner() {
       setConfirmedSw(false);
       setConfirmedFirstReviewer(false);
       setConfirmedRn(false);
+      setAssessorType('msw');
       setAssessmentPurpose('');
       setConfirmedPurpose(false);
       setVisitLocationSource('');
@@ -1770,7 +1793,10 @@ function IspWorkflowToolsPageInner() {
       setMemberCounty('');
       setRoutingAutosaveLabel('');
       lastAutosavedRoutingKey.current = '';
-      void loadCaspioFieldPreview(selectedMemberId, selectedMember);
+      void loadCaspioFieldPreview(selectedMemberId, selectedMember, {
+        preferLive: true,
+        assessorTypeOverride: 'msw',
+      });
       void refreshAssignmentActivity(selectedMemberId);
     }
     // selectedMember object identity changes often; key off member id.

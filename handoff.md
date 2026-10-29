@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-29
 
+- **ISP Workflow — Sync from Caspio pulls live SW; MSW is always the default.** Step 1 no longer restores RN from a prior Firestore `alft_assignments` record. Opening a member, Sync from Caspio, and member change all default to **MSW / Social Worker** and load `Social_Worker` / `SW_email` from **live Caspio**. RN only applies when staff explicitly picks **Override: RN does ALFT**. Sync from Caspio still updates the members cache, then refreshes the selected member checklist from live Caspio.
+  - Files: `src/app/admin/tools/isp-workflow/page.tsx`, `src/app/admin/tools/isp-workflow/components/RequiredCaspioFieldsPanel.tsx`.
+  - Commit: _pending_.
+
 - **ISP Workflow — MSW / Social Worker no longer flipped back to RN by Firestore.** After live Caspio load, a prior `alft_assignments.assessorRole=rn` was re-applied on every refresh, wiping Caspio `Social_Worker` / `SW_email` and leaving step 1 stuck on “Override: RN does ALFT” (e.g. Javier Delgadillo). Choosing **MSW / Social Worker** (or Refresh while on MSW) now keeps MSW and loads SW from Caspio; the choice is soft-persisted so the next open does not flip back. Refresh from Caspio passes the current assessor type and labels which Caspio fields step 1 uses.
   - Files: `src/app/admin/tools/isp-workflow/page.tsx`, `src/app/admin/tools/isp-workflow/components/RequiredCaspioFieldsPanel.tsx`.
   - Commit: `4bcde4d8`.
