@@ -39,6 +39,10 @@ export default function KaiserIspCoverDownloadsPage() {
   const [viewingLogId, setViewingLogId] = useState('');
   const [deletingLogId, setDeletingLogId] = useState('');
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState<DownloadLogEntry | null>(null);
+  /** In-page PDF viewer — avoids Chrome turning blob: URLs into a Google search. */
+  const [viewerUrl, setViewerUrl] = useState('');
+  const [viewerTitle, setViewerTitle] = useState('');
+  const [viewerLogId, setViewerLogId] = useState('');
   const [search, setSearch] = useState('');
   const [staff, setStaff] = useState('');
   const [member, setMember] = useState('');
@@ -154,16 +158,26 @@ export default function KaiserIspCoverDownloadsPage() {
     return { blob, fileName };
   };
 
+  useEffect(() => {
+    return () => {
+      setViewerUrl((prev) => {
+        if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return '';
+      });
+    };
+  }, []);
+
   const handleRedownloadArchivedCopy = async (entry: DownloadLogEntry) => {
     if (!entry?.id) return;
     setRedownloadingLogId(entry.id);
     try {
       const { blob, fileName } = await fetchArchiveBlob(entry, 'file');
-      const objectUrl = URL.createObjectURL(blob);
+      const pdfBlob =
+        blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' });
+      const objectUrl = URL.createObjectURL(pdfBlob);
       const anchor = document.createElement('a');
       anchor.href = objectUrl;
-      anchor.download = fileName;
-      anchor.rel = 'noopener noreferrer';
+      anchor.download = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -183,32 +197,34 @@ export default function KaiserIspCoverDownloadsPage() {
     }
   };
 
+  const closePdfViewer = () => {
+    setViewerUrl((prev) => {
+      if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return '';
+    });
+    setViewerTitle('');
+    setViewerLogId('');
+  };
+
   const handleViewArchivedCopy = async (entry: DownloadLogEntry) => {
     if (!entry?.id) return;
     setViewingLogId(entry.id);
     try {
       const { blob, fileName } = await fetchArchiveBlob(entry, 'view');
-      const objectUrl = URL.createObjectURL(blob);
-      const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
-      if (!opened) {
-        // Popup blocked — fall back to download.
-        const anchor = document.createElement('a');
-        anchor.href = objectUrl;
-        anchor.download = fileName;
-        document.body.appendChild(anchor);
-        anchor.click();
-        document.body.removeChild(anchor);
-        toast({
-          title: 'Popup blocked',
-          description: 'Opened as a download instead so you can still view the PDF.',
-        });
-      } else {
-        toast({
-          title: 'Opening PDF',
-          description: fileName,
-        });
-      }
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+      // Force PDF MIME so the browser viewer opens the cover sheet, not a search/download guess.
+      const pdfBlob =
+        blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' });
+      const objectUrl = URL.createObjectURL(pdfBlob);
+      setViewerUrl((prev) => {
+        if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return objectUrl;
+      });
+      setViewerTitle(fileName);
+      setViewerLogId(entry.id);
+      toast({
+        title: 'Opening cover sheet',
+        description: fileName,
+      });
     } catch (error: any) {
       toast({
         title: 'View failed',
@@ -524,6 +540,44 @@ export default function KaiserIspCoverDownloadsPage() {
                 Delete
               </Button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {viewerUrl ? (
+        <div className="fixed inset-0 z-[280] flex flex-col bg-black/70 p-3 sm:p-6">
+          <div className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-lg border bg-background shadow-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{viewerTitle || 'Kaiser cover sheet'}</div>
+                <div className="text-xs text-muted-foreground">Cover sheet PDF preview</div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!viewerLogId || redownloadingLogId === viewerLogId}
+                  onClick={() => {
+                    const entry = logs.find((row) => row.id === viewerLogId);
+                    if (entry) void handleRedownloadArchivedCopy(entry);
+                  }}
+                >
+                  {redownloadingLogId === viewerLogId ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Download
+                </Button>
+                <Button type="button" variant="secondary" size="sm" onClick={closePdfViewer}>
+                  Close
+                </Button>
+              </div>
+            </div>
+            <iframe
+              title={viewerTitle || 'Kaiser cover sheet PDF'}
+              src={viewerUrl}
+              className="h-full w-full flex-1 bg-slate-100"
+            />
           </div>
         </div>
       ) : null}
