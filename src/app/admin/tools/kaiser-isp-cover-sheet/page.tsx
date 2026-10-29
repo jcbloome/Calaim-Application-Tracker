@@ -438,13 +438,28 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
 
 const buildIspCoverSheetUrl = (
   member: KaiserMember,
-  opts?: { assessmentDoneByRn?: boolean; assessmentAdminName?: string }
+  opts?: {
+    assessmentDoneByRn?: boolean;
+    assessmentAdminName?: string;
+    departedSwName?: string;
+    departedSwEmail?: string;
+  }
 ) => {
   const query = buildIspCoverSheetParams(member);
   if (opts?.assessmentDoneByRn) {
     query.set('Assessment_Admin_Is_RN', '1');
     const adminName = clean(opts.assessmentAdminName);
     if (adminName) query.set('Assessment_Admin_Name', adminName);
+  }
+  const departedName = ensureMswTitle(normalizePersonName(opts?.departedSwName));
+  if (departedName) {
+    query.set('ISP_Social_Worker', departedName);
+    query.set('Departed_SW', '1');
+  }
+  const departedEmail = clean(opts?.departedSwEmail).toLowerCase();
+  if (departedEmail) {
+    query.set('SW_email', departedEmail);
+    query.set('ISP_Social_Worker_Email', departedEmail);
   }
   return `/admin/tools/kaiser-isp-cover-sheet/kaiser-isp-cover-sheet?${query.toString()}`;
 };
@@ -466,6 +481,10 @@ export default function KaiserIspCoverSheetToolPage() {
   const [selectedMemberSource, setSelectedMemberSource] = useState<'cache' | 'caspio' | ''>('');
   const [assessmentDoneByRn, setAssessmentDoneByRn] = useState(false);
   const [assessmentAdminName, setAssessmentAdminName] = useState('');
+  /** SW completed ISP but is no longer active — manual name + email to proceed. */
+  const [departedSwMode, setDepartedSwMode] = useState(false);
+  const [departedSwName, setDepartedSwName] = useState('');
+  const [departedSwEmail, setDepartedSwEmail] = useState('');
 
   const getIdToken = async () => {
     const tokenUser = user || auth.currentUser;
@@ -618,13 +637,27 @@ export default function KaiserIspCoverSheetToolPage() {
   );
   const canRefreshSelectedMember = Boolean(clean(selectedClientId));
 
+  const departedSwReady =
+    departedSwMode &&
+    Boolean(clean(departedSwName)) &&
+    Boolean(clean(departedSwEmail)) &&
+    clean(departedSwEmail).includes('@');
+  const rnOverrideReady = assessmentDoneByRn && Boolean(clean(assessmentAdminName));
   const requiredFieldStatuses = useMemo(() => {
     if (!selectedMember) return [];
     const base = getRequiredFieldStatuses(selectedMember);
-    if (!(assessmentDoneByRn && clean(assessmentAdminName))) return base;
-    const rnAdminLabel = clean(assessmentAdminName);
+    if (!rnOverrideReady && !departedSwReady) return base;
     return base.map((field) => {
       if (field.label !== 'ISP Social Worker') return field;
+      if (departedSwReady) {
+        const name = ensureMswTitle(normalizePersonName(departedSwName));
+        const email = clean(departedSwEmail).toLowerCase();
+        return {
+          label: 'ISP Social Worker',
+          value: `${name} · ${email} (SW no longer with us — manual)`,
+        };
+      }
+      const rnAdminLabel = clean(assessmentAdminName);
       return {
         label: 'ISP Social Worker',
         value: rnAdminLabel
@@ -632,7 +665,16 @@ export default function KaiserIspCoverSheetToolPage() {
           : field.value,
       };
     });
-  }, [selectedMember, assessmentDoneByRn, assessmentAdminName]);
+  }, [
+    selectedMember,
+    assessmentDoneByRn,
+    assessmentAdminName,
+    departedSwMode,
+    departedSwName,
+    departedSwEmail,
+    rnOverrideReady,
+    departedSwReady,
+  ]);
   const optionalFieldStatuses = useMemo(
     () => (selectedMember ? getOptionalFieldStatuses(selectedMember) : []),
     [selectedMember]
@@ -641,27 +683,29 @@ export default function KaiserIspCoverSheetToolPage() {
     () =>
       requiredFieldStatuses
         .filter((field) => {
-          if (
-            field.label === 'ISP Social Worker' &&
-            assessmentDoneByRn &&
-            clean(assessmentAdminName)
-          ) {
+          if (field.label === 'ISP Social Worker' && (rnOverrideReady || departedSwReady)) {
             return false;
           }
           return !clean(field.value);
         })
         .map((field) => field.label),
-    [requiredFieldStatuses, assessmentDoneByRn, assessmentAdminName]
+    [requiredFieldStatuses, rnOverrideReady, departedSwReady]
   );
   const hasAllRequiredData = missingRequiredLabels.length === 0;
   const canOpenPrintable = Boolean(
-    selectedMember && hasAllRequiredData && (!assessmentDoneByRn || clean(assessmentAdminName))
+    selectedMember &&
+      hasAllRequiredData &&
+      (!assessmentDoneByRn || rnOverrideReady) &&
+      (!departedSwMode || departedSwReady)
   );
   const printableHref =
-    selectedMember && hasAllRequiredData && (!assessmentDoneByRn || clean(assessmentAdminName))
+    selectedMember && canOpenPrintable
       ? buildIspCoverSheetUrl(selectedMember as KaiserMember, {
           assessmentDoneByRn,
           assessmentAdminName,
+          ...(departedSwReady
+            ? { departedSwName, departedSwEmail }
+            : {}),
         })
       : '';
 
@@ -682,6 +726,24 @@ export default function KaiserIspCoverSheetToolPage() {
         description: 'Enter the RN who administered the initial assessment, or uncheck that option.',
       });
       return;
+    }
+    if (departedSwMode) {
+      if (!clean(departedSwName)) {
+        toast({
+          variant: 'destructive',
+          title: 'Social worker name required',
+          description: 'Enter the name of the social worker who completed the assessment.',
+        });
+        return;
+      }
+      if (!clean(departedSwEmail) || !clean(departedSwEmail).includes('@')) {
+        toast({
+          variant: 'destructive',
+          title: 'Social worker email required',
+          description: 'Enter a valid email for the social worker who completed the assessment.',
+        });
+        return;
+      }
     }
     if (!printableHref) return;
     const popup = window.open(printableHref, '_blank', 'noopener,noreferrer');
@@ -828,6 +890,9 @@ export default function KaiserIspCoverSheetToolPage() {
                           setSelectedClientId(clientId2);
                           setAssessmentDoneByRn(false);
                           setAssessmentAdminName('');
+                          setDepartedSwMode(false);
+                          setDepartedSwName('');
+                          setDepartedSwEmail('');
                           // Open Cover Sheet Flow: pull this member live from Caspio so required
                           // fields (ISP Assessment Date, RN, etc.) are not stale Firestore values.
                           if (clientId2) {
@@ -917,18 +982,21 @@ export default function KaiserIspCoverSheetToolPage() {
                       {missingRequiredLabels.length > 0 ? (
                         <div className="mt-2 text-xs text-red-700">
                           Missing required data in Caspio: {missingRequiredLabels.join(', ')}.
-                          {!assessmentDoneByRn ? (
+                          {!assessmentDoneByRn && !departedSwMode ? (
                             <span className="mt-1 block text-amber-800">
-                              If an RN did the assessment and Caspio has no ISP Social Worker, check “Initial assessment
-                              done by RN” below and enter their name to continue.
+                              If the social worker is no longer with us, check “SW no longer with us” below and enter
+                              their name and email. If an RN did the assessment, use “Initial assessment done by RN”
+                              instead.
                             </span>
                           ) : null}
                         </div>
                       ) : (
                         <div className="mt-2 text-xs text-green-700">
-                          {assessmentDoneByRn && clean(assessmentAdminName)
-                            ? 'Required fields ready (ISP Social Worker satisfied by manual RN assessor name).'
-                            : 'All required fields are present.'}
+                          {departedSwReady
+                            ? 'Required fields ready (ISP Social Worker entered manually — SW no longer with us).'
+                            : rnOverrideReady
+                              ? 'Required fields ready (ISP Social Worker satisfied by manual RN assessor name).'
+                              : 'All required fields are present.'}
                         </div>
                       )}
                       <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
@@ -948,15 +1016,68 @@ export default function KaiserIspCoverSheetToolPage() {
                         )})}
                       </div>
                     </div>
-                    <div className="rounded-md border border-dashed bg-slate-50 p-3 space-y-2">
+                    <div className="rounded-md border border-dashed bg-slate-50 p-3 space-y-3">
+                      <label className="flex items-start gap-2 text-sm">
+                        <Checkbox
+                          checked={departedSwMode}
+                          onCheckedChange={(checked) => {
+                            const on = checked === true;
+                            setDepartedSwMode(on);
+                            if (on) {
+                              setAssessmentDoneByRn(false);
+                              setAssessmentAdminName('');
+                            }
+                          }}
+                        />
+                        <span>
+                          <span className="font-medium">SW no longer with us — enter name and email</span>
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            Use when the social worker already completed the ISP but is no longer active and Caspio
+                            has no ISP Social Worker. Enter their name and email to satisfy the requirement and open
+                            the cover sheet.
+                          </span>
+                        </span>
+                      </label>
+                      {departedSwMode ? (
+                        <div className="grid gap-2 pl-6 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium" htmlFor="departed-sw-name">
+                              Social worker name
+                            </label>
+                            <Input
+                              id="departed-sw-name"
+                              value={departedSwName}
+                              onChange={(e) => setDepartedSwName(e.target.value)}
+                              placeholder="First Last"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-medium" htmlFor="departed-sw-email">
+                              Social worker email
+                            </label>
+                            <Input
+                              id="departed-sw-email"
+                              type="email"
+                              value={departedSwEmail}
+                              onChange={(e) => setDepartedSwEmail(e.target.value)}
+                              placeholder="name@example.com"
+                            />
+                          </div>
+                        </div>
+                      ) : null}
                       <label className="flex items-start gap-2 text-sm">
                         <Checkbox
                           checked={assessmentDoneByRn}
                           onCheckedChange={(checked) => {
                             const on = checked === true;
                             setAssessmentDoneByRn(on);
-                            if (on && !clean(assessmentAdminName)) {
-                              setAssessmentAdminName(getIspRnValue(selectedMember));
+                            if (on) {
+                              setDepartedSwMode(false);
+                              setDepartedSwName('');
+                              setDepartedSwEmail('');
+                              if (!clean(assessmentAdminName)) {
+                                setAssessmentAdminName(getIspRnValue(selectedMember));
+                              }
                             }
                           }}
                         />
@@ -987,7 +1108,7 @@ export default function KaiserIspCoverSheetToolPage() {
                       <Button
                         type="button"
                         onClick={handleOpenIspCoverSheet}
-                        disabled={!canOpenPrintable || (assessmentDoneByRn && !clean(assessmentAdminName))}
+                        disabled={!canOpenPrintable}
                       >
                         <ExternalLink className="mr-2 h-4 w-4" />
                         Open Cover Sheet
