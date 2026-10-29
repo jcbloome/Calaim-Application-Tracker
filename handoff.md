@@ -12,7 +12,7 @@
 
 - **Kaiser Cover Sheet Downloads — View PDF no longer opens Google search.** Chrome was treating `window.open(blob:…, noopener)` as a search query (`google.com/search?q=blob:http://localhost…`). View now opens the archived cover sheet in an in-page PDF preview; Download still saves the file.
   - Files: `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`.
-  - Commit: _pending_.
+  - Commit: `eb88dc9f`.
 
 - **Kaiser Cover Sheet — SW no longer with us (name required, email optional).** When Caspio has no ISP Social Worker, staff can check **SW no longer with us**, enter the SW name (email optional), and open the cover sheet. That satisfies the required ISP Social Worker field (mutually exclusive with RN-administered override). Name/email are passed into the cover sheet URL as `ISP_Social_Worker` / `SW_email` when provided.
   - Files: `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`.
