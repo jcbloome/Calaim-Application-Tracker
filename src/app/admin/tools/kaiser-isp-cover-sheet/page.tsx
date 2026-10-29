@@ -637,11 +637,7 @@ export default function KaiserIspCoverSheetToolPage() {
   );
   const canRefreshSelectedMember = Boolean(clean(selectedClientId));
 
-  const departedSwReady =
-    departedSwMode &&
-    Boolean(clean(departedSwName)) &&
-    Boolean(clean(departedSwEmail)) &&
-    clean(departedSwEmail).includes('@');
+  const departedSwReady = departedSwMode && Boolean(clean(departedSwName));
   const rnOverrideReady = assessmentDoneByRn && Boolean(clean(assessmentAdminName));
   const requiredFieldStatuses = useMemo(() => {
     if (!selectedMember) return [];
@@ -654,7 +650,9 @@ export default function KaiserIspCoverSheetToolPage() {
         const email = clean(departedSwEmail).toLowerCase();
         return {
           label: 'ISP Social Worker',
-          value: `${name} · ${email} (SW no longer with us — manual)`,
+          value: email
+            ? `${name} · ${email} (SW no longer with us — manual)`
+            : `${name} (SW no longer with us — manual)`,
         };
       }
       const rnAdminLabel = clean(assessmentAdminName);
@@ -727,23 +725,13 @@ export default function KaiserIspCoverSheetToolPage() {
       });
       return;
     }
-    if (departedSwMode) {
-      if (!clean(departedSwName)) {
-        toast({
-          variant: 'destructive',
-          title: 'Social worker name required',
-          description: 'Enter the name of the social worker who completed the assessment.',
-        });
-        return;
-      }
-      if (!clean(departedSwEmail) || !clean(departedSwEmail).includes('@')) {
-        toast({
-          variant: 'destructive',
-          title: 'Social worker email required',
-          description: 'Enter a valid email for the social worker who completed the assessment.',
-        });
-        return;
-      }
+    if (departedSwMode && !clean(departedSwName)) {
+      toast({
+        variant: 'destructive',
+        title: 'Social worker name required',
+        description: 'Enter the name of the social worker who completed the assessment.',
+      });
+      return;
     }
     if (!printableHref) return;
     const popup = window.open(printableHref, '_blank', 'noopener,noreferrer');
@@ -985,8 +973,7 @@ export default function KaiserIspCoverSheetToolPage() {
                           {!assessmentDoneByRn && !departedSwMode ? (
                             <span className="mt-1 block text-amber-800">
                               If the social worker is no longer with us, check “SW no longer with us” below and enter
-                              their name and email. If an RN did the assessment, use “Initial assessment done by RN”
-                              instead.
+                              their name. If an RN did the assessment, use “Initial assessment done by RN” instead.
                             </span>
                           ) : null}
                         </div>
@@ -1030,11 +1017,10 @@ export default function KaiserIspCoverSheetToolPage() {
                           }}
                         />
                         <span>
-                          <span className="font-medium">SW no longer with us — enter name and email</span>
+                          <span className="font-medium">SW no longer with us — enter name</span>
                           <span className="mt-0.5 block text-xs text-muted-foreground">
                             Use when the social worker already completed the ISP but is no longer active and Caspio
-                            has no ISP Social Worker. Enter their name and email to satisfy the requirement and open
-                            the cover sheet.
+                            has no ISP Social Worker. Name is required to open the cover sheet; email is optional.
                           </span>
                         </span>
                       </label>
@@ -1053,14 +1039,14 @@ export default function KaiserIspCoverSheetToolPage() {
                           </div>
                           <div className="space-y-1">
                             <label className="block text-xs font-medium" htmlFor="departed-sw-email">
-                              Social worker email
+                              Social worker email (optional)
                             </label>
                             <Input
                               id="departed-sw-email"
                               type="email"
                               value={departedSwEmail}
                               onChange={(e) => setDepartedSwEmail(e.target.value)}
-                              placeholder="name@example.com"
+                              placeholder="Optional"
                             />
                           </div>
                         </div>
