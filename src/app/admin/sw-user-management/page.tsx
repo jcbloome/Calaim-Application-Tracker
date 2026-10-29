@@ -806,13 +806,13 @@ export default function SWUserManagementPage() {
                 No social workers match {staffSearchQuery}.
               </div>
             ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Assigned Members</TableHead>
-                  <TableHead>Status / Access</TableHead>
+                  <TableHead className="w-[24%]">Name</TableHead>
+                  <TableHead className="w-[28%]">Email</TableHead>
+                  <TableHead className="w-[10%] text-center">Assigned</TableHead>
+                  <TableHead className="w-[38%]">Status / Access</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -831,9 +831,9 @@ export default function SWUserManagementPage() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <UserCheck
-                            className={`h-4 w-4 ${staff.isPortalActive ? 'text-emerald-600' : 'text-muted-foreground'}`}
+                            className={`h-4 w-4 shrink-0 ${staff.isPortalActive ? 'text-emerald-600' : 'text-muted-foreground'}`}
                           />
-                          <div>
+                          <div className="min-w-0 break-words">
                             <div className="font-medium flex items-center gap-2">
                               {staff.name}
                               {staff.isPortalActive ? (
@@ -851,14 +851,16 @@ export default function SWUserManagementPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Mail className="h-3 w-3 text-muted-foreground" />
-                          {staff.email && staff.email.includes('@') ? staff.email : (
+                        <div className="flex min-w-0 items-center gap-1">
+                          <Mail className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          {staff.email && staff.email.includes('@') ? (
+                            <span className="min-w-0 break-all">{staff.email}</span>
+                          ) : (
                             <span className="text-amber-600 text-sm">No email</span>
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-center">
                         <Badge variant="outline">
                           {staff.assignedMemberCount ?? 0}
                         </Badge>
@@ -882,8 +884,7 @@ export default function SWUserManagementPage() {
                               'Suspended'
                             )}
                           </Badge>
-                        </div>
-                        <div className="mt-2 flex items-center gap-2">
+                        <div className="flex items-center gap-2">
                           <Switch
                             checked={!staff.isPortalActive}
                             onCheckedChange={(checked) => togglePortalAccess(staff, !checked)}
@@ -899,7 +900,7 @@ export default function SWUserManagementPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="mt-2 h-7 text-xs"
+                            className="h-7 text-xs"
                             disabled={updatingAccess[staffEmail] || removingAccess[staffEmail]}
                             onClick={() => void togglePortalAccess(staff, true)}
                           >
@@ -918,7 +919,7 @@ export default function SWUserManagementPage() {
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                className="mt-2 h-7 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
+                                className="h-7 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
                                 disabled={updatingAccess[staffEmail] || removingAccess[staffEmail]}
                               >
                                 {removingAccess[staffEmail] ? (
@@ -950,6 +951,7 @@ export default function SWUserManagementPage() {
                             </AlertDialogContent>
                           </AlertDialog>
                         ) : null}
+                        </div>
                         {(() => {
                           const live = staffEmail ? emailSendStatus[staffEmail] : undefined;
                           const status = live?.status || staff.lastPasswordSetupEmailStatus;

@@ -8,6 +8,12 @@
 
 ---
 
+## Changes 2026-10-29
+
+- **SW User Management — Social Workers from Caspio table no longer cuts off columns.** Table uses fixed column widths (Name 24%, Email 28%, Assigned 10%, Status / Access 38%); long emails wrap instead of widening the table; access badge, Suspend switch, and action buttons sit in one wrapping row instead of a tall stack.
+  - Files: `src/app/admin/sw-user-management/page.tsx`.
+  - Commit: _pending_.
+
 ## Changes 2026-10-28
 
 - **ISP Workflow step 5 — member at RCFE requires current ISP location.** Placed members were getting outdated pre-placement ISP data (e.g. old SNF) into the ALFT form and SW invite, because the invite reads `ISP_Contact_*` first and step 5 only soft-warned on an RCFE mismatch. When step 4 says the member is **at RCFE**, step 5 now hard-requires: `ISP_Contact_Location` / `ISP_Contact_Address` match `RCFE_Name` / `RCFE_Address`, and `ISP_Contact_Confirm_Date` (Caspio DATE/TIME) within `ISP_CONFIRM_MAX_AGE_DAYS` = 30. The fix button **Use RCFE as ISP location & confirm today** copies RCFE → ISP fields and stamps `ISP_Contact_Confirm_Date` = today (PT). Saved setups that restore step 5 as verified are un-verified if live Caspio fails the check. `/api/alft/workflow/start` enforces the same rule server-side (409). Members not yet at RCFE (`isp_location`) are unchanged.
