@@ -12,7 +12,7 @@
 
 - **Kaiser Cover Sheet — SW no longer with us (name required, email optional).** When Caspio has no ISP Social Worker, staff can check **SW no longer with us**, enter the SW name (email optional), and open the cover sheet. That satisfies the required ISP Social Worker field (mutually exclusive with RN-administered override). Name/email are passed into the cover sheet URL as `ISP_Social_Worker` / `SW_email` when provided.
   - Files: `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`.
-  - Commit: _pending_.
+  - Commit: `332073a9`.
 
 - **ALFT Q28 — spell out SUD specify label.** `p7_sud_specify` label is now “Substance use disorder — specify type of substance abuse (if indicated)” (was “SUD specify”), with a short placeholder for substance type.
   - Files: `src/lib/alft/exact-alft-pages-data.ts`, `src/components/alft/ExactAlftQuestionnaire.tsx`.
