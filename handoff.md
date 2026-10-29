@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-29
 
+- **ISP Workflow — MSW / Social Worker no longer flipped back to RN by Firestore.** After live Caspio load, a prior `alft_assignments.assessorRole=rn` was re-applied on every refresh, wiping Caspio `Social_Worker` / `SW_email` and leaving step 1 stuck on “Override: RN does ALFT” (e.g. Javier Delgadillo). Choosing **MSW / Social Worker** (or Refresh while on MSW) now keeps MSW and loads SW from Caspio; the choice is soft-persisted so the next open does not flip back. Refresh from Caspio passes the current assessor type and labels which Caspio fields step 1 uses.
+  - Files: `src/app/admin/tools/isp-workflow/page.tsx`, `src/app/admin/tools/isp-workflow/components/RequiredCaspioFieldsPanel.tsx`.
+  - Commit: _pending_.
+
 - **SW User Management — Social Workers from Caspio table no longer cuts off columns.** Table uses fixed column widths (Name 24%, Email 28%, Assigned 10%, Status / Access 38%); long emails wrap instead of widening the table; access badge, Suspend switch, and action buttons sit in one wrapping row instead of a tall stack.
   - Files: `src/app/admin/sw-user-management/page.tsx`.
   - Commit: `c507cb18`.

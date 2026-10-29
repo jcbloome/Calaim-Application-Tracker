@@ -1324,7 +1324,11 @@ function IspWorkflowToolsPageInner() {
               clean(assignment.assessorRole || assignment.ispAssessorType).toLowerCase() === 'rn'
                 ? 'rn'
                 : 'msw';
-            if (savedAssessor === 'rn') {
+            // Never re-force RN from a prior Firestore assignment when the user (or refresh)
+            // explicitly asked for MSW — that was wiping Caspio Social_Worker / SW_email.
+            const userChoseMsw = options?.assessorTypeOverride === 'msw';
+            const userChoseRn = options?.assessorTypeOverride === 'rn';
+            if (savedAssessor === 'rn' && !userChoseMsw) {
               setAssessorType('rn');
               const rnName =
                 clean(assignedRnFromCaspio.name) ||
@@ -1345,6 +1349,18 @@ function IspWorkflowToolsPageInner() {
                   rnOptions.find((r) => clean(r.email).toLowerCase() === rnEmail.toLowerCase()) || null;
                 if (match) setRnUid(match.uid);
               }
+            }
+            // Persist explicit MSW/RN choice so the next open/refresh does not flip back.
+            if ((userChoseMsw && savedAssessor === 'rn') || (userChoseRn && savedAssessor === 'msw')) {
+              void setDoc(
+                doc(firestore, 'alft_assignments', memberId),
+                {
+                  assessorRole: userChoseMsw ? 'msw' : 'rn',
+                  ispAssessorType: userChoseMsw ? 'msw' : 'rn',
+                  updatedAt: serverTimestamp(),
+                },
+                { merge: true }
+              ).catch(() => null);
             }
             if (Boolean(assignment.formerSwImportMode || assignment.departedSwCompletedIsp)) {
               setFormerSwImportMode(true);
@@ -2930,7 +2946,10 @@ function IspWorkflowToolsPageInner() {
       return;
     }
     setConfirmedIspLocation(false);
-    await loadCaspioFieldPreview(memberId, member);
+    await loadCaspioFieldPreview(memberId, member, {
+      preferLive: true,
+      assessorTypeOverride: assessorType,
+    });
     toast({
       title: 'Refreshed',
       description: 'ISP location reloaded from Caspio.',
@@ -2989,7 +3008,10 @@ function IspWorkflowToolsPageInner() {
       }
 
       // Also refresh live Caspio field preview so assessor / checklist stay in sync.
-      await loadCaspioFieldPreview(memberId, selectedMember, { preferLive: true });
+      await loadCaspioFieldPreview(memberId, selectedMember, {
+        preferLive: true,
+        assessorTypeOverride: assessorType,
+      });
 
       const swChanged = Boolean(update?.swEmailChanged);
       const rnChanged = Boolean(update?.rnEmailChanged);
@@ -4621,6 +4643,7 @@ function IspWorkflowToolsPageInner() {
                       overrideIspContactPhone={overrideIspContactPhone}
                       setOverrideIspContactPhone={setOverrideIspContactPhone}
                       requiredFieldStatuses={requiredFieldStatuses}
+                      assessorType={assessorType}
                     />
 
                     <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/40 p-3">

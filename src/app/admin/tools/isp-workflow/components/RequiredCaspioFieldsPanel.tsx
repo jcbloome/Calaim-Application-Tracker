@@ -18,6 +18,8 @@ export interface RequiredCaspioFieldsPanelProps {
   overrideIspContactPhone: boolean;
   setOverrideIspContactPhone: Dispatch<SetStateAction<boolean>>;
   requiredFieldStatuses: { label: string; value: string; waived: boolean; ready: boolean; id: string; }[];
+  /** Keep Refresh from flipping MSW ↔ RN based on a prior Firestore assignment. */
+  assessorType: 'msw' | 'rn';
 }
 
 export function RequiredCaspioFieldsPanel({
@@ -32,6 +34,7 @@ export function RequiredCaspioFieldsPanel({
   overrideIspContactPhone,
   setOverrideIspContactPhone,
   requiredFieldStatuses,
+  assessorType,
 }: RequiredCaspioFieldsPanelProps) {
   return (
     <div className="rounded-md border bg-slate-50 p-3 text-sm">
@@ -44,6 +47,7 @@ export function RequiredCaspioFieldsPanel({
           onClick={() =>
             void loadCaspioFieldPreview(clientIdOf(selectedMember), selectedMember, {
               preferLive: true,
+              assessorTypeOverride: assessorType,
             })
           }
           disabled={isLoadingPreview}
@@ -66,6 +70,11 @@ export function RequiredCaspioFieldsPanel({
             : prefillDataSource === 'firestore-cache'
               ? 'Firestore cache (stale risk — click Refresh from Caspio)'
               : prefillDataSource}
+          {prefillDataSource === 'caspio-live' && assessorType === 'msw'
+            ? ' · step 1 uses Social_Worker / SW_email'
+            : prefillDataSource === 'caspio-live' && assessorType === 'rn'
+              ? ' · step 1 uses RN_ID / RN_Assigned'
+              : ''}
         </div>
       ) : null}
       {isLoadingPreview ? (
