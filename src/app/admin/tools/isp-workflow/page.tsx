@@ -577,9 +577,13 @@ function IspWorkflowToolsPageInner() {
     }
     if (!confirmedIspLocation) {
       reasons.push(
-        ispRcfeSoftMismatch
-          ? `Fix ISP location in step 5 — ${ispLocationReadiness.reasons.join('; ')}`
-          : 'Verify ISP location (step 5)'
+        assessmentPurpose === 'review'
+          ? ispRcfeSoftMismatch
+            ? `Confirm Current Physical Location (usually RCFE) in step 5 — ${ispLocationReadiness.reasons.join('; ')}`
+            : 'Confirm Current Physical Location in step 5 (reauth)'
+          : ispRcfeSoftMismatch
+            ? `Fix ISP location in step 5 — ${ispLocationReadiness.reasons.join('; ')}`
+            : 'Verify ISP location (step 5)'
       );
     }
     if (!confirmedClinicalUploads) reasons.push('Confirm member clinical uploads (step 6)');
@@ -4817,6 +4821,7 @@ function IspWorkflowToolsPageInner() {
                         acceptRcfeAsDefaultIspLocation={acceptRcfeAsDefaultIspLocation}
                         refreshIspLocationFromCaspio={refreshIspLocationFromCaspio}
                         visitLocationSource={visitLocationSource}
+                        assessmentPurpose={assessmentPurpose}
                         canConfirmIspLocationStep={canConfirmIspLocationStep}
                         setConfirmedIspLocation={setConfirmedIspLocation}
                         toast={toast}

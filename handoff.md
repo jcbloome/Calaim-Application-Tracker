@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-29
 
+- **ISP Workflow reauth — Current Physical Location confirmed (usually RCFE).** Choosing **Review (reassessment)** defaults to **At RCFE** when Caspio has `RCFE_Name`, fills ALFT Q3 Current Physical Location from RCFE fields, and step 5 asks staff to confirm Current Physical Location (match RCFE + recent ISP confirm date). Copy/buttons say “Current Physical Location” instead of only “ISP location” for reauth.
+  - Files: `src/app/admin/tools/isp-workflow/components/RcfeDetailsStep.tsx`, `src/app/admin/tools/isp-workflow/components/IspLocationStep.tsx`, `src/app/admin/tools/isp-workflow/page.tsx`.
+  - Commit: _pending_.
+
 - **ISP Workflow — Sync from Caspio pulls live SW; MSW is always the default.** Step 1 no longer restores RN from a prior Firestore `alft_assignments` record. Opening a member, Sync from Caspio, and member change all default to **MSW / Social Worker** and load `Social_Worker` / `SW_email` from **live Caspio**. RN only applies when staff explicitly picks **Override: RN does ALFT**. Sync from Caspio still updates the members cache, then refreshes the selected member checklist from live Caspio.
   - Files: `src/app/admin/tools/isp-workflow/page.tsx`, `src/app/admin/tools/isp-workflow/components/RequiredCaspioFieldsPanel.tsx`.
   - Commit: `006ddec1`.

@@ -6,7 +6,7 @@ import { clean, type AnswerMap } from './isp-workflow-helpers';
 import { Checkbox } from '@/components/ui/checkbox';
 import { type Dispatch, type SetStateAction } from 'react';
 import { type H2022EndWarning } from '@/lib/h2022-end-warning';
-import { type IspVisitLocationSource } from '@/lib/isp-visit-location';
+import { getRcfeLocationSnapshot, type IspVisitLocationSource } from '@/lib/isp-visit-location';
 
 export interface RcfeDetailsStepProps {
   confirmedPurpose: boolean;
@@ -96,18 +96,65 @@ export function RcfeDetailsStep({
                       )
                     );
                   }
-                } else if (
-                  visitLocationSource &&
-                  Object.keys(caspioSourcePreview).length
-                ) {
-                  setResolvedPreview((prev) =>
-                    applyVisitLocationToPreview(
-                      prev,
+                } else {
+                  // Reauth (review): Current Physical Location is usually the RCFE — default to At RCFE
+                  // when Caspio has RCFE_Name. Initial still requires an explicit choice unless already set.
+                  const hasRcfe = Boolean(getRcfeLocationSnapshot(caspioSourcePreview || {}).name);
+                  const nextVisit =
+                    opt.value === 'review' && hasRcfe
+                      ? ('rcfe' as const)
+                      : visitLocationSource || ('' as const);
+                  if (opt.value === 'review' && hasRcfe && visitLocationSource !== 'rcfe') {
+                    setVisitLocationSource('rcfe');
+                  }
+                  if (nextVisit && Object.keys(caspioSourcePreview).length) {
+                    const nextPreview = applyVisitLocationToPreview(
+                      resolvedPreview,
                       caspioSourcePreview,
-                      visitLocationSource,
+                      nextVisit === 'rcfe' || nextVisit === 'isp_location' ? nextVisit : 'isp_location',
                       opt.value
-                    )
-                  );
+                    );
+                    setResolvedPreview(nextPreview);
+                    setAnswers((prev) => {
+                      const merged = { ...prev };
+                      for (const key of [
+                        'p2_facility_name',
+                        'p2_current_street',
+                        'p2_current_city',
+                        'p2_current_state',
+                        'p2_current_zip',
+                        'p2_current_type',
+                        'p2_current_type_other',
+                        'isp_location_name',
+                        'isp_location_address',
+                        'isp_location_city',
+                        'isp_location_state',
+                        'isp_location_zip',
+                        'isp_location_type',
+                        'isp_contact_street',
+                        'isp_contact_city',
+                        'isp_contact_state',
+                        'isp_contact_zip',
+                      ] as const) {
+                        const value = clean(nextPreview[key]);
+                        if (value) merged[key] = value;
+                      }
+                      return merged;
+                    });
+                    setCaspioFilledIds((prev) => {
+                      const next = new Set(prev);
+                      [
+                        'p2_facility_name',
+                        'p2_current_street',
+                        'p2_current_city',
+                        'p2_current_state',
+                        'p2_current_zip',
+                      ].forEach((id) => {
+                        if (clean(nextPreview[id])) next.add(id);
+                      });
+                      return Array.from(next);
+                    });
+                  }
                 }
               }}
               className="h-4 w-4 accent-blue-700"
@@ -141,7 +188,7 @@ export function RcfeDetailsStep({
           <div className="text-xs font-medium text-sky-950">
             {assessmentPurpose === 'initial'
               ? 'Initial visit — is the member already at an RCFE, or at another ISP location (home, SNF, etc.)?'
-              : 'Reassessment / reauthorization visit — is the member at an RCFE, or still at home / SNF / another ISP location?'}
+              : 'Reassessment / reauthorization — confirm Current Physical Location (ALFT Q3). This is usually the RCFE.'}
           </div>
           <div className="flex flex-wrap gap-3 text-sm">
             {[
@@ -228,16 +275,16 @@ export function RcfeDetailsStep({
           {visitLocationSource === 'rcfe' ? (
             <div className="space-y-2">
               <p className="text-[11px] text-sky-900">
-                Form pulls ISP Address from Caspio{' '}
+                ALFT <span className="font-medium">Current Physical Location</span> uses Caspio{' '}
                 <span className="font-medium">RCFE_Name</span>,{' '}
                 <span className="font-medium">RCFE_Address</span>,{' '}
                 <span className="font-medium">RCFE_City</span>,{' '}
                 <span className="font-medium">RCFE_State</span>,{' '}
-                <span className="font-medium">RCFE_Zip</span> (where the member will go / already
-                is). If RCFE and ISP Contact differ, step 5 can sync Caspio.
+                <span className="font-medium">RCFE_Zip</span>. Step 5 confirms this matches ISP
+                Contact (and a recent ISP confirm date).
                 {assessmentPurpose === 'initial'
                   ? ' SW email: Initial assessment — already at an RCFE.'
-                  : ' SW email: Reassessment — at an RCFE.'}
+                  : ' SW email: Reassessment — Current Physical Location is the RCFE.'}
               </p>
               <label className="flex items-start gap-2 rounded border border-sky-200 bg-white/80 px-2 py-1.5 text-[11px] text-slate-800">
                 <Checkbox
