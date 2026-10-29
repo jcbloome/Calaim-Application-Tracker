@@ -12,7 +12,7 @@
 
 - **ALFT Q28 — spell out SUD specify label.** `p7_sud_specify` label is now “Substance use disorder — specify type of substance abuse (if indicated)” (was “SUD specify”), with a short placeholder for substance type.
   - Files: `src/lib/alft/exact-alft-pages-data.ts`, `src/components/alft/ExactAlftQuestionnaire.tsx`.
-  - Commit: _pending_.
+  - Commit: `4a82aa51`.
 
 - **ISP Workflow reauth — Current Physical Location confirmed (usually RCFE).** Choosing **Review (reassessment)** defaults to **At RCFE** when Caspio has `RCFE_Name`, fills ALFT Q3 Current Physical Location from RCFE fields, and step 5 asks staff to confirm Current Physical Location (match RCFE + recent ISP confirm date). Copy/buttons say “Current Physical Location” instead of only “ISP location” for reauth.
   - Files: `src/app/admin/tools/isp-workflow/components/RcfeDetailsStep.tsx`, `src/app/admin/tools/isp-workflow/components/IspLocationStep.tsx`, `src/app/admin/tools/isp-workflow/page.tsx`.
