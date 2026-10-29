@@ -12,7 +12,7 @@
 
 - **SW User Management — Social Workers from Caspio table no longer cuts off columns.** Table uses fixed column widths (Name 24%, Email 28%, Assigned 10%, Status / Access 38%); long emails wrap instead of widening the table; access badge, Suspend switch, and action buttons sit in one wrapping row instead of a tall stack.
   - Files: `src/app/admin/sw-user-management/page.tsx`.
-  - Commit: _pending_.
+  - Commit: `c507cb18`.
 
 ## Changes 2026-10-28
 
