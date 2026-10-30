@@ -12,7 +12,7 @@
 
 - **Kaiser Cover Sheet — Open Cover Sheet Flow stays empty until left-list select + live Caspio.** No auto-select of first member on Load Cache. Switching members clears green Ready fields immediately; required-field greens only show after live Caspio returns for that Client_ID2.
   - Files: `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx` (also prior refresh/cache fixes in `src/lib/fetch-kaiser-members.ts`, `src/app/api/kaiser-members/route.ts`).
-  - Commit: _pending_.
+  - Commit: `e168aef3`.
 
 - **ISP location — no invented addresses; step 5 red until Caspio is complete.** ISP snapshots / SW invite no longer fall back to RCFE or application `currentAddress` (e.g. fake “100 Sterling Court”). Empty Caspio `ISP_Contact_*` stays empty. ISP Workflow step 5 is red and blocked until street/city/state/zip/(name or type) are filled; at RCFE still requires match + confirm date. SW email preview shows MISSING and blocks send.
   - Files: `src/lib/isp-visit-location.ts`, `src/app/admin/tools/isp-workflow/components/IspLocationStep.tsx`, `src/app/admin/tools/isp-workflow/components/RcfeDetailsStep.tsx`, `src/app/admin/tools/isp-workflow/page.tsx`, `src/app/api/alft/workflow/start/route.ts`, `src/app/admin/alft-tracker/page.tsx`, `src/app/admin/alft-tracker/components/SwEmailPreviewDialog.tsx`.
