@@ -63,27 +63,38 @@ const normalizeForCompare = (value: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+/**
+ * ISP Contact / Current Physical fields only — never invents RCFE or app addresses.
+ * Empty Caspio ISP location must stay empty so staff fill it before SW invite / ALFT.
+ */
 export function getIspLocationSnapshot(source: Record<string, unknown>): IspLocationSnapshot {
   return {
-    name: pick(source, [
-      'ISP_Contact_Location',
-      'ISP_Current_Location',
-      'RCFE_Name',
-      'Facility_Name',
-    ]),
-    street: pick(source, [
-      'ISP_Contact_Address',
-      'ISP_Current_Address',
-      'RCFE_Address',
-      'RCFE_Street',
-      'RCFE_Street_Address',
-    ]),
-    city: pick(source, ['ISP_Contact_City', 'ISP_Current_City', 'RCFE_City']),
-    state: pick(source, ['ISP_Contact_State', 'ISP_Current_State', 'RCFE_State']) || 'CA',
-    zip: pick(source, ['ISP_Contact_Zip', 'ISP_Current_Zip', 'RCFE_Zip']),
+    name: pick(source, ['ISP_Contact_Location', 'ISP_Current_Location']),
+    street: pick(source, ['ISP_Contact_Address', 'ISP_Current_Address']),
+    city: pick(source, ['ISP_Contact_City', 'ISP_Current_City']),
+    state: pick(source, ['ISP_Contact_State', 'ISP_Current_State']),
+    zip: pick(source, ['ISP_Contact_Zip', 'ISP_Current_Zip']),
     phone: pick(source, ['ISP_Contact_Phone']),
-    type: pick(source, ['ISP_Location_Type']) || 'ISP Location',
+    type: pick(source, ['ISP_Location_Type']),
   };
+}
+
+/** True when Caspio has a usable ISP street + city + name (or type) for SW visit emails. */
+export function hasCompleteIspLocationInCaspio(source: Record<string, unknown>): {
+  ok: boolean;
+  reasons: string[];
+  snapshot: IspLocationSnapshot;
+} {
+  const snapshot = getIspLocationSnapshot(source);
+  const reasons: string[] = [];
+  if (!snapshot.street) reasons.push('ISP_Contact_Address is empty in Caspio');
+  if (!snapshot.city) reasons.push('ISP_Contact_City is empty in Caspio');
+  if (!snapshot.state) reasons.push('ISP_Contact_State is empty in Caspio');
+  if (!snapshot.zip) reasons.push('ISP_Contact_Zip is empty in Caspio');
+  if (!snapshot.name && !snapshot.type) {
+    reasons.push('ISP_Contact_Location (or ISP_Location_Type) is empty in Caspio');
+  }
+  return { ok: reasons.length === 0, reasons, snapshot };
 }
 
 export function getRcfeLocationSnapshot(source: Record<string, unknown>): IspLocationSnapshot {
@@ -179,8 +190,9 @@ export type IspLocationReadiness = {
 };
 
 /**
- * Member at RCFE: ISP_Contact_* must match RCFE_* and ISP_Contact_Confirm_Date must be recent,
- * otherwise stale pre-placement ISP data flows into the ALFT form and SW invite.
+ * Member at RCFE: ISP_Contact_* must match RCFE_* and ISP_Contact_Confirm_Date must be recent.
+ * Otherwise (home / SNF / other ISP): Caspio ISP_Contact_* address fields must be fully filled —
+ * never invent addresses from the application or RCFE.
  */
 export function evaluateIspLocationReadiness(
   source: Record<string, unknown>,
@@ -189,9 +201,10 @@ export function evaluateIspLocationReadiness(
   const confirm = getIspConfirmDate(source);
   const confirmDateFresh = confirm.ageDays !== null && confirm.ageDays <= ISP_CONFIRM_MAX_AGE_DAYS;
   if (clean(visitLocationSource).toLowerCase() !== 'rcfe') {
+    const ispComplete = hasCompleteIspLocationInCaspio(source);
     return {
-      ok: true,
-      reasons: [],
+      ok: ispComplete.ok,
+      reasons: ispComplete.reasons,
       confirmDateRaw: confirm.raw,
       confirmAgeDays: confirm.ageDays,
       locationMatchesRcfe: true,
@@ -301,42 +314,36 @@ export function applyIspVisitLocationFromCaspio(
   const isp = getIspLocationSnapshot(source);
   const rcfe = getRcfeLocationSnapshot(source);
 
-  const pickLoc = (rcfeValue: string, ispValue: string) =>
-    preferRcfe ? rcfeValue || ispValue : ispValue || rcfeValue;
+  // No cross-fallback: empty Caspio ISP must not pull RCFE/app addresses (and vice versa).
+  const name = preferRcfe ? rcfe.name : isp.name;
+  const street = preferRcfe ? rcfe.street : isp.street;
+  const city = preferRcfe ? rcfe.city : isp.city;
+  const rawState = preferRcfe ? rcfe.state : isp.state;
+  const state = rawState
+    ? /^[A-Za-z]{2}$/.test(rawState.trim())
+      ? rawState.trim().toUpperCase()
+      : rawState.trim()
+    : preferRcfe
+      ? 'CA'
+      : '';
+  const zip = preferRcfe ? rcfe.zip : isp.zip;
+  const phone = preferRcfe ? rcfe.phone : isp.phone;
+  const type = preferRcfe ? rcfe.type || 'RCFE' : isp.type;
 
-  const name = pickLoc(rcfe.name, isp.name);
-  const street = pickLoc(rcfe.street, isp.street);
-  const city = pickLoc(rcfe.city, isp.city);
-  const rawState = pickLoc(rcfe.state, isp.state) || 'CA';
-  const state = /^[A-Za-z]{2}$/.test(rawState.trim()) ? rawState.trim().toUpperCase() : rawState.trim();
-  const zip = pickLoc(rcfe.zip, isp.zip);
-  const phone = preferRcfe ? rcfe.phone || isp.phone : isp.phone || rcfe.phone;
-  const type = preferRcfe
-    ? rcfe.type || isp.type || 'RCFE'
-    : isp.type || (rcfe.name ? 'RCFE' : 'ISP Location');
-
-  if (name) {
-    next.p2_facility_name = name;
-    next.isp_location_name = name;
-  }
-  if (street) {
-    next.p2_current_street = street;
-    next.isp_location_address = street;
-    next.isp_contact_street = street;
-  }
-  if (city) {
-    next.p2_current_city = city;
-    next.isp_location_city = city;
-    next.isp_contact_city = city;
-  }
+  next.p2_facility_name = name;
+  next.isp_location_name = name;
+  next.p2_current_street = street;
+  next.isp_location_address = street;
+  next.isp_contact_street = street;
+  next.p2_current_city = city;
+  next.isp_location_city = city;
+  next.isp_contact_city = city;
   next.p2_current_state = state;
   next.isp_location_state = state;
   next.isp_contact_state = state;
-  if (zip) {
-    next.p2_current_zip = zip;
-    next.isp_location_zip = zip;
-    next.isp_contact_zip = zip;
-  }
+  next.p2_current_zip = zip;
+  next.isp_location_zip = zip;
+  next.isp_contact_zip = zip;
   if (phone) next.isp_contact_phone = phone;
   next.p2_current_type = type;
   next.p2_current_type_other = type;

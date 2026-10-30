@@ -173,16 +173,11 @@ function resolveMappedCaspioPrefill(
     p2_mail_city: ['Normal_Housing_City', 'Home_City', 'Member_City', 'City'],
     p2_mail_state: ['Normal_Housing_State', 'Home_State', 'Member_State', 'State'],
     p2_mail_zip: ['Normal_Housing_Zip', 'Home_Zip', 'Member_Zip', 'Zip'],
-    p2_current_street: [
-      'ISP_Contact_Address',
-      'ISP_Current_Address',
-      'RCFE_Address',
-      'RCFE_Street',
-      'RCFE_Street_Address',
-    ],
-    p2_current_city: ['ISP_Contact_City', 'ISP_Current_City', 'RCFE_City'],
-    p2_current_state: ['ISP_Contact_State', 'ISP_Current_State', 'RCFE_State'],
-    p2_current_zip: ['ISP_Contact_Zip', 'ISP_Current_Zip', 'RCFE_Zip'],
+    // ISP current location only — RCFE is applied separately when visitLocationSource === 'rcfe'.
+    p2_current_street: ['ISP_Contact_Address', 'ISP_Current_Address'],
+    p2_current_city: ['ISP_Contact_City', 'ISP_Current_City'],
+    p2_current_state: ['ISP_Contact_State', 'ISP_Current_State'],
+    p2_current_zip: ['ISP_Contact_Zip', 'ISP_Current_Zip'],
   };
   const getCaseInsensitive = (obj: Record<string, unknown>, key: string) => {
     const direct = obj[key];
@@ -646,35 +641,21 @@ export async function POST(req: NextRequest) {
     const otherResponder = otherResponderRaw === 'yes' || otherResponderRaw === 'no'
       ? otherResponderRaw
       : (otherResponderName || otherResponderRelationship ? 'yes' : 'no');
+    // Visit location for SW email / ALFT: Caspio only. Never invent from application currentAddress.
+    const atRcfeVisit = visitLocationSource === 'rcfe';
     const ispLocation = clean(
-      pickFirst(caspioSource as any, [
-        'ISP_Contact_Location',
-        'ISP_Current_Location',
-        'RCFE_Name',
-        'Facility_Name',
-      ]) ||
-        (resolved as any).ispCurrentLocation ||
-        (resolved as any).ispFacilityName ||
-        member?.ispCurrentLocation,
+      atRcfeVisit
+        ? pickFirst(caspioSource as any, ['RCFE_Name', 'Facility_Name'])
+        : pickFirst(caspioSource as any, ['ISP_Contact_Location', 'ISP_Current_Location']),
       240
     );
     const facilityType = clean(
-      pickFirst(caspioSource as any, ['ISP_Location_Type']) ||
-        (resolved as any).currentLocationType ||
-        member?.currentLocationType,
+      atRcfeVisit
+        ? pickFirst(caspioSource as any, ['ISP_Location_Type']) || 'RCFE'
+        : pickFirst(caspioSource as any, ['ISP_Location_Type']),
       120
     );
-    const facilityName = clean(
-      pickFirst(caspioSource as any, [
-        'ISP_Contact_Location',
-        'ISP_Current_Location',
-        'RCFE_Name',
-        'Facility_Name',
-      ]) ||
-        (resolved as any).ispFacilityName ||
-        member?.ispFacilityName,
-      240
-    );
+    const facilityName = ispLocation;
     const currentLocationTypeOther = clean(
       (resolved as any).currentLocationTypeOther ||
         member?.currentLocationTypeOther ||
@@ -682,44 +663,34 @@ export async function POST(req: NextRequest) {
       120
     );
     const caspioStreet = clean(
-      pickFirst(caspioSource as any, [
-        'ISP_Contact_Address',
-        'ISP_Current_Address',
-        'RCFE_Address',
-        'RCFE_Street',
-        'RCFE_Street_Address',
-      ]),
+      atRcfeVisit
+        ? pickFirst(caspioSource as any, ['RCFE_Address', 'RCFE_Street', 'RCFE_Street_Address'])
+        : pickFirst(caspioSource as any, ['ISP_Contact_Address', 'ISP_Current_Address']),
       240
     );
     const caspioCity = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_City', 'ISP_Current_City', 'RCFE_City']),
+      atRcfeVisit
+        ? pickFirst(caspioSource as any, ['RCFE_City'])
+        : pickFirst(caspioSource as any, ['ISP_Contact_City', 'ISP_Current_City']),
       120
     );
     const caspioState = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_State', 'ISP_Current_State', 'RCFE_State']),
+      atRcfeVisit
+        ? pickFirst(caspioSource as any, ['RCFE_State'])
+        : pickFirst(caspioSource as any, ['ISP_Contact_State', 'ISP_Current_State']),
       50
     );
     const caspioZip = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_Zip', 'ISP_Current_Zip', 'RCFE_Zip']),
+      atRcfeVisit
+        ? pickFirst(caspioSource as any, ['RCFE_Zip'])
+        : pickFirst(caspioSource as any, ['ISP_Contact_Zip', 'ISP_Current_Zip']),
       30
     );
     const caspioAddress = clean(
       [caspioStreet, caspioCity, caspioState, caspioZip].filter(Boolean).join(', '),
       400
     );
-    const ispAddress = clean(
-      caspioAddress ||
-        [
-          resolved.ispCurrentAddressStreet,
-          resolved.ispCurrentAddressCity,
-          resolved.ispCurrentAddressState,
-          resolved.ispCurrentAddressZip,
-        ]
-          .map((x) => clean(x, 120))
-          .filter(Boolean)
-          .join(', '),
-      400
-    );
+    const ispAddress = caspioAddress;
     const ispContactPhone = clean(
       pickFirst(caspioSource as any, ['ISP_Contact_Phone']) ||
         (resolved as any).ispContactPhone ||
@@ -776,12 +747,13 @@ export async function POST(req: NextRequest) {
 
     const ispLocationReadiness = evaluateIspLocationReadiness(caspioSource, visitLocationSource);
     if (!ispLocationReadiness.ok) {
+      const readinessHint = atRcfeVisit
+        ? 'Fix it in ISP Workflow step 5 (Use RCFE as ISP location & confirm today), then resend.'
+        : 'Fill ISP_Contact_Location / Address / City / State / Zip in Caspio (ISP Workflow step 5), then resend.';
       return NextResponse.json(
         {
           success: false,
-          error: `ISP location is not current for a member at RCFE: ${ispLocationReadiness.reasons.join(
-            '; '
-          )}. Fix it in ISP Workflow step 5 (Use RCFE as ISP location & confirm today), then resend.`,
+          error: `ISP location incomplete in Caspio: ${ispLocationReadiness.reasons.join('; ')}. ${readinessHint}`,
         },
         { status: 409 }
       );
@@ -844,14 +816,14 @@ export async function POST(req: NextRequest) {
       memberPhone: clean(resolved.memberPhone, 80),
       ispCurrentAddressStreet: caspioStreet,
       ispCurrentAddressCity: caspioCity,
-      ispCurrentAddressState: caspioState || 'CA',
+      ispCurrentAddressState: caspioState || (atRcfeVisit ? 'CA' : ''),
       ispCurrentAddressZip: caspioZip,
       assessmentSite: clean((resolved as any).assessmentSite, 80),
       homeAddressStreet: clean((resolved as any).homeAddressStreet, 240),
       homeAddressCity: clean((resolved as any).homeAddressCity, 120),
       homeAddressState: clean((resolved as any).homeAddressState, 50) || 'CA',
       homeAddressZip: clean((resolved as any).homeAddressZip, 30),
-      ispFacilityName: clean(resolved.ispFacilityName, 240),
+      ispFacilityName: facilityName,
       ispCurrentLocation: ispLocation,
       currentLocationType: facilityType,
       currentLocationTypeOther,

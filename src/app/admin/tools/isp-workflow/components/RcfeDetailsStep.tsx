@@ -136,8 +136,8 @@ export function RcfeDetailsStep({
                         'isp_contact_state',
                         'isp_contact_zip',
                       ] as const) {
-                        const value = clean(nextPreview[key]);
-                        if (value) merged[key] = value;
+                        // Always write (including empty) so stale invented addresses are cleared.
+                        merged[key] = clean(nextPreview[key]);
                       }
                       return merged;
                     });
@@ -151,6 +151,7 @@ export function RcfeDetailsStep({
                         'p2_current_zip',
                       ].forEach((id) => {
                         if (clean(nextPreview[id])) next.add(id);
+                        else next.delete(id);
                       });
                       return Array.from(next);
                     });
@@ -246,8 +247,7 @@ export function RcfeDetailsStep({
                           'isp_contact_state',
                           'isp_contact_zip',
                         ] as const) {
-                          const value = clean(nextPreview[key]);
-                          if (value) merged[key] = value;
+                          merged[key] = clean(nextPreview[key]);
                         }
                         return merged;
                       });
@@ -261,6 +261,7 @@ export function RcfeDetailsStep({
                           'p2_current_zip',
                         ].forEach((id) => {
                           if (clean(nextPreview[id])) next.add(id);
+                          else next.delete(id);
                         });
                         return Array.from(next);
                       });

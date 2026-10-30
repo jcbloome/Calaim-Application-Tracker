@@ -90,8 +90,10 @@ export function SwEmailPreviewDialog({
             ) : null}
           </div>
           {swEmailPreview?.missingIspFields?.length ? (
-            <div className="rounded border bg-amber-50 p-2 text-xs text-amber-800">
-              Missing required fields: {swEmailPreview.missingIspFields.join(', ')}
+            <div className="rounded border border-red-300 bg-red-50 p-2 text-xs text-red-900">
+              Cannot send — ISP location incomplete in Caspio:{' '}
+              {swEmailPreview.missingIspFields.join(', ')}. Fill ISP Contact location fields in
+              Caspio / ISP Workflow step 5, then refresh.
             </div>
           ) : null}
           <div className="rounded border bg-muted/20 p-2 space-y-1">

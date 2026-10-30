@@ -617,16 +617,22 @@ export default function AdminAlftTrackerPage() {
     const ispContactRelationship = sanitizeRelationshipLabel(
       pickPreview('isp_contact_relationship', 'p1_other_responder_relationship', 'ispContactRelationship')
     );
-    const ispFacilityName = pickPreview('p2_facility_name', 'isp_location_name', 'ispFacilityName', 'ispCurrentLocation');
+    const ispFacilityNameRaw = pickPreview(
+      'p2_facility_name',
+      'isp_location_name',
+      'ispFacilityName',
+      'ispCurrentLocation'
+    );
     const ispFacilityType = pickPreview('p2_current_type', 'isp_location_type', 'currentLocationType');
-    const ispAddress = [
-      pickPreview('p2_current_street', 'isp_location_address', 'ispCurrentAddressStreet'),
-      pickPreview('p2_current_city', 'isp_location_city', 'ispCurrentAddressCity'),
-      pickPreview('p2_current_state', 'isp_location_state', 'ispCurrentAddressState'),
-      pickPreview('p2_current_zip', 'isp_location_zip', 'ispCurrentAddressZip'),
-    ]
-      .filter(Boolean)
-      .join(', ');
+    const ispStreet = pickPreview('p2_current_street', 'isp_location_address', 'ispCurrentAddressStreet');
+    const ispCity = pickPreview('p2_current_city', 'isp_location_city', 'ispCurrentAddressCity');
+    const ispState = pickPreview('p2_current_state', 'isp_location_state', 'ispCurrentAddressState');
+    const ispZip = pickPreview('p2_current_zip', 'isp_location_zip', 'ispCurrentAddressZip');
+    const ispAddress = [ispStreet, ispCity, ispState, ispZip].filter(Boolean).join(', ');
+    // Do not show a facility/location name when street+city are missing — avoids stale/app-invented names
+    // (e.g. "100 Sterling Court") that are not a real Caspio ISP location for this member.
+    const ispLocationComplete = Boolean(ispStreet && ispCity && ispState && ispZip);
+    const ispFacilityName = ispLocationComplete ? ispFacilityNameRaw : '';
     const ispPhone = pickPreview('isp_contact_phone', 'ispContactPhone');
     const ispEmail = pickPreview('isp_contact_email', 'ispContactEmail');
     const ispContact2First = pickPreview('isp_contact_2_first', 'ispContact2First');
@@ -647,15 +653,17 @@ export default function AdminAlftTrackerPage() {
       relationship: ispContactRelationship,
       phone: ispPhone,
       email: ispEmail,
-      locationType: ispFacilityType,
+      locationType: ispLocationComplete ? ispFacilityType : '',
       facilityName: ispFacilityName,
       visitLocationSource: String((swEmailPreviewRow as any)?.visitLocationSource || '').trim(),
       askCaregiverOnArrival,
     });
-    const hasFacilityTypeOrName = Boolean(ispFacilityType || ispFacilityName);
+    const hasFacilityTypeOrName = Boolean(
+      ispLocationComplete && (ispFacilityType || ispFacilityName)
+    );
     const missingIspFields = [
-      !ispAddress ? 'ISP address' : '',
-      !hasFacilityTypeOrName ? 'Facility type or facility name' : '',
+      !ispLocationComplete ? 'ISP address (street, city, state, zip in Caspio)' : '',
+      !hasFacilityTypeOrName ? 'Facility type or facility name (Caspio ISP_Contact_Location)' : '',
       !hasContactMethod ? 'ISP contact phone' : '',
     ].filter(Boolean);
     const sentAtMs = Math.max(
@@ -690,9 +698,9 @@ export default function AdminAlftTrackerPage() {
         `Medical Record Number: ${mrn || 'Not provided'}`,
         '',
         'ISP Location:',
-        `${ispFacilityName || 'Not provided'}`,
-        `Type: ${ispFacilityType || 'Not provided'}`,
-        `Address: ${ispAddress || 'Address not provided'}`,
+        `${ispFacilityName || (ispLocationComplete ? 'Not provided' : 'MISSING — fill ISP location in Caspio')}`,
+        `Type: ${ispLocationComplete ? ispFacilityType || 'Not provided' : 'MISSING'}`,
+        `Address: ${ispAddress || 'MISSING — no Caspio ISP address'}`,
         '',
         ...ispContactBlock.plainLines,
         ...(hasSecondaryIspContact

@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-29
 
+- **ISP location — no invented addresses; step 5 red until Caspio is complete.** ISP snapshots / SW invite no longer fall back to RCFE or application `currentAddress` (e.g. fake “100 Sterling Court”). Empty Caspio `ISP_Contact_*` stays empty. ISP Workflow step 5 is red and blocked until street/city/state/zip/(name or type) are filled; at RCFE still requires match + confirm date. SW email preview shows MISSING and blocks send.
+  - Files: `src/lib/isp-visit-location.ts`, `src/app/admin/tools/isp-workflow/components/IspLocationStep.tsx`, `src/app/admin/tools/isp-workflow/components/RcfeDetailsStep.tsx`, `src/app/admin/tools/isp-workflow/page.tsx`, `src/app/api/alft/workflow/start/route.ts`, `src/app/admin/alft-tracker/page.tsx`, `src/app/admin/alft-tracker/components/SwEmailPreviewDialog.tsx`.
+  - Commit: _pending_.
+
 - **Kaiser Cover Sheet Downloads — View PDF no longer opens Google search.** Chrome was treating `window.open(blob:…, noopener)` as a search query (`google.com/search?q=blob:http://localhost…`). View now opens the archived cover sheet in an in-page PDF preview; Download still saves the file.
   - Files: `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`.
   - Commit: `eb88dc9f`.

@@ -70,6 +70,9 @@ export function IspLocationStep({
           ? 'Verify ISP location (RCFE)'
           : 'Verify ISP location';
 
+  const locationIncomplete =
+    confirmedPurpose && visitLocationReady && !ispLocationReadiness.ok && !confirmedIspLocation;
+
   return (
     <div
       className={`rounded-md border bg-white p-3 ${
@@ -77,16 +80,19 @@ export function IspLocationStep({
           ? 'border-green-300'
           : !confirmedPurpose || !visitLocationReady
             ? 'opacity-70'
-            : ispRcfeSoftMismatch
-              ? 'border-amber-400'
-              : ''
+            : locationIncomplete
+              ? 'border-red-400 bg-red-50/40'
+              : ispRcfeSoftMismatch
+                ? 'border-amber-400'
+                : ''
       }`}
     >
       <div className="mb-2 flex items-center gap-2 text-sm font-medium">
         <Badge variant="outline">5</Badge>
         {stepTitle}
         {confirmedIspLocation ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
-        {ispRcfeSoftMismatch && !confirmedIspLocation ? (
+        {locationIncomplete ? <AlertTriangle className="h-4 w-4 text-red-600" /> : null}
+        {ispRcfeSoftMismatch && !confirmedIspLocation && !locationIncomplete ? (
           <AlertTriangle className="h-4 w-4 text-amber-600" />
         ) : null}
       </div>
@@ -105,28 +111,44 @@ export function IspLocationStep({
             </p>
           ) : null}
 
-          <div className="rounded border bg-muted/20 px-2 py-1.5 text-[11px] text-slate-800">
-            <div className="font-medium text-slate-900">
+          <div
+            className={`rounded border px-2 py-1.5 text-[11px] ${
+              locationIncomplete
+                ? 'border-red-300 bg-red-50 text-red-950'
+                : 'bg-muted/20 text-slate-800'
+            }`}
+          >
+            <div className={`font-medium ${locationIncomplete ? 'text-red-950' : 'text-slate-900'}`}>
               {atRcfe ? 'Current Physical Location (from RCFE)' : 'Current Physical / ISP location'}
             </div>
             <div>
               {[
-                atRcfe ? rcfeLocationSnapshot.name || ispLocationSnapshot.name : ispLocationSnapshot.name,
-                atRcfe
-                  ? rcfeLocationSnapshot.street || ispLocationSnapshot.street
-                  : ispLocationSnapshot.street,
-                atRcfe ? rcfeLocationSnapshot.city || ispLocationSnapshot.city : ispLocationSnapshot.city,
-                atRcfe
-                  ? rcfeLocationSnapshot.state || ispLocationSnapshot.state
-                  : ispLocationSnapshot.state,
-                atRcfe ? rcfeLocationSnapshot.zip || ispLocationSnapshot.zip : ispLocationSnapshot.zip,
+                atRcfe ? rcfeLocationSnapshot.name : ispLocationSnapshot.name,
+                atRcfe ? rcfeLocationSnapshot.street : ispLocationSnapshot.street,
+                atRcfe ? rcfeLocationSnapshot.city : ispLocationSnapshot.city,
+                atRcfe ? rcfeLocationSnapshot.state : ispLocationSnapshot.state,
+                atRcfe ? rcfeLocationSnapshot.zip : ispLocationSnapshot.zip,
               ]
                 .filter(Boolean)
-                .join(' · ') || 'No location in Caspio yet'}
+                .join(' · ') ||
+                (locationIncomplete
+                  ? 'No ISP location in Caspio — fill ISP_Contact_Address / City / State / Zip / Location before continuing'
+                  : 'No location in Caspio yet')}
             </div>
+            {!ispLocationReadiness.ok && ispLocationReadiness.reasons.length > 0 && !atRcfe ? (
+              <ul className="mt-1 list-disc pl-4 text-red-900">
+                {ispLocationReadiness.reasons.map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            ) : null}
             <div
               className={
-                atRcfe && !ispLocationReadiness.confirmDateFresh ? 'mt-0.5 text-amber-800' : 'mt-0.5 text-slate-600'
+                atRcfe && !ispLocationReadiness.confirmDateFresh
+                  ? 'mt-0.5 text-amber-800'
+                  : locationIncomplete
+                    ? 'mt-0.5 text-red-800'
+                    : 'mt-0.5 text-slate-600'
               }
             >
               ISP confirm date: {confirmDateLabel}

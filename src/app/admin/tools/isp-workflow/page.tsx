@@ -512,21 +512,20 @@ function IspWorkflowToolsPageInner() {
     () => evaluateIspLocationReadiness(caspioSourcePreview || {}, visitLocationSource),
     [caspioSourcePreview, visitLocationSource]
   );
-  /** At RCFE: ISP fields must match RCFE with a recent ISP_Contact_Confirm_Date before step 5 can be verified. */
+  /** At RCFE: ISP must match RCFE + recent confirm date. Otherwise: Caspio ISP address fields required. */
   const ispRcfeSoftMismatch = visitLocationSource === 'rcfe' && !ispLocationReadiness.ok;
   const canConfirmIspLocationStep =
     Boolean(assessmentPurpose) && visitLocationReady && ispLocationReadiness.ok;
   // Saved setups restore step 5 as verified; re-check against live Caspio once the preview loads.
   useEffect(() => {
     if (!confirmedIspLocation || !hasPreviewForSelection || isLoadingPreview) return;
-    if (visitLocationSource === 'rcfe' && !ispLocationReadiness.ok) {
+    if (!ispLocationReadiness.ok) {
       setConfirmedIspLocation(false);
     }
   }, [
     confirmedIspLocation,
     hasPreviewForSelection,
     isLoadingPreview,
-    visitLocationSource,
     ispLocationReadiness.ok,
   ]);
   const stepsConfirmedForPrefill =
