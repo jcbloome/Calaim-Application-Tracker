@@ -452,11 +452,11 @@ export async function GET(request: NextRequest) {
           'memberLanguage',
           'Language',
         ]),
-        ispCurrentAddressStreet: pickFirstPopulated(member, ['ISP_Current_Address', 'Member_Address', 'Address', 'Street_Address']),
-        ispCurrentAddressCity: pickFirstPopulated(member, ['ISP_Current_City', 'Member_City', 'MemberCity', 'City']),
-        ispCurrentAddressState: pickFirstPopulated(member, ['ISP_Current_State', 'Member_State', 'State']),
-        ispCurrentAddressZip: pickFirstPopulated(member, ['ISP_Current_Zip', 'Member_Zip', 'Zip']),
-        ispFacilityName: pickFirstPopulated(member, ['ISP_Current_Location', 'RCFE_Name', 'Facility_Name']),
+        ispCurrentAddressStreet: pickFirstPopulated(member, ['ISP_Current_Address', 'ISP_Contact_Address']),
+        ispCurrentAddressCity: pickFirstPopulated(member, ['ISP_Current_City', 'ISP_Contact_City']),
+        ispCurrentAddressState: pickFirstPopulated(member, ['ISP_Current_State', 'ISP_Contact_State']),
+        ispCurrentAddressZip: pickFirstPopulated(member, ['ISP_Current_Zip', 'ISP_Contact_Zip']),
+        ispFacilityName: pickFirstPopulated(member, ['ISP_Current_Location', 'ISP_Contact_Location']),
         memberEmail: member.Senior_Email || member.Member_Email || member.memberEmail || '',
         CalAIM_MCO: member.CalAIM_MCO,
         CalAIM_Status: toCanonicalCalaimStatus(
@@ -498,15 +498,15 @@ export async function GET(request: NextRequest) {
         Authorized_Party_Email: pickFirstPopulated(member, ['Authorized_Party_Email']),
         Authorized_Party_Relationship: pickFirstPopulated(member, ['Authorized_Party_Relationship']),
         Staff_Assigned: member.Kaiser_User_Assignment || member.Staff_Assigned || '',
-        RCFE_Name: member.RCFE_Name,
+        RCFE_Name: member.RCFE_Name || '',
         RCFE_Admin_Name: member.RCFE_Admin_Name || member.RCFE_Administrator || member.RCFE_Admin || '',
         RCFE_Admin_Email: member.RCFE_Admin_Email || member.RCFE_Administrator_Email || member.RCFE_AdminEmail || '',
         CalAIM_RCFE_Owner_Email:
           member.CalAIM_RCFE_Owner_Email || member.RCFE_Owner_Email || member.CalAIM_RCFE_OwnerEmail || '',
-        RCFE_Address: member.RCFE_Address,
-        RCFE_City: member.RCFE_City,
-        RCFE_State: member.RCFE_State,
-        RCFE_Zip: member.RCFE_Zip,
+        RCFE_Address: member.RCFE_Address || member.RCFE_Street || member.RCFE_Street_Address || '',
+        RCFE_City: member.RCFE_City || '',
+        RCFE_State: member.RCFE_State || '',
+        RCFE_Zip: member.RCFE_Zip || '',
         pathway: member.Pathway || member.CalAIM_Pathway || 'Kaiser',
         Next_Step_Due_Date: member.Next_Step_Due_Date || member.next_steps_date || '',
         workflow_step: member.workflow_step || '',
@@ -902,9 +902,9 @@ export async function GET(request: NextRequest) {
         'ISP_Contact_Confirm',
         'ISP_Confirm_Date',
       ]),
-      id: member.Client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
-      Client_ID2: member.Client_ID2,
-      client_ID2: member.Client_ID2, // Duplicate for compatibility
+      id: String(member.Client_ID2 || member.client_ID2 || '').trim() || `member-${Math.random().toString(36).substring(7)}`,
+      Client_ID2: String(member.Client_ID2 || member.client_ID2 || '').trim(),
+      client_ID2: String(member.Client_ID2 || member.client_ID2 || '').trim(),
       // Use Senior_Last_First_ID as primary name field, fallback to constructed name
       memberName: member.Senior_Last_First_ID || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
       memberFirstName: member.Senior_First || 'Unknown',
@@ -980,11 +980,11 @@ export async function GET(request: NextRequest) {
         'memberLanguage',
         'Language',
       ]),
-      ispCurrentAddressStreet: pickFirstPopulated(member, ['ISP_Current_Address', 'Member_Address', 'Address', 'Street_Address']),
-      ispCurrentAddressCity: pickFirstPopulated(member, ['ISP_Current_City', 'Member_City', 'MemberCity', 'City']),
-      ispCurrentAddressState: pickFirstPopulated(member, ['ISP_Current_State', 'Member_State', 'State']),
-      ispCurrentAddressZip: pickFirstPopulated(member, ['ISP_Current_Zip', 'Member_Zip', 'Zip']),
-      ispFacilityName: pickFirstPopulated(member, ['ISP_Current_Location', 'RCFE_Name', 'Facility_Name']),
+      ispCurrentAddressStreet: pickFirstPopulated(member, ['ISP_Current_Address', 'ISP_Contact_Address']),
+      ispCurrentAddressCity: pickFirstPopulated(member, ['ISP_Current_City', 'ISP_Contact_City']),
+      ispCurrentAddressState: pickFirstPopulated(member, ['ISP_Current_State', 'ISP_Contact_State']),
+      ispCurrentAddressZip: pickFirstPopulated(member, ['ISP_Current_Zip', 'ISP_Contact_Zip']),
+      ispFacilityName: pickFirstPopulated(member, ['ISP_Current_Location', 'ISP_Contact_Location']),
       memberEmail: member.Senior_Email || member.memberEmail || member.Member_Email || '',
       CalAIM_MCO: member.CalAIM_MCO,
       CalAIM_Status: toCanonicalCalaimStatus(
@@ -1028,15 +1028,15 @@ export async function GET(request: NextRequest) {
       Authorized_Party_Relationship: pickFirstPopulated(member, ['Authorized_Party_Relationship']),
       // Kaiser Tracker expects Staff_Assigned field (using Kaiser_User_Assignment for staff assignments)
       Staff_Assigned: member.Kaiser_User_Assignment || member.Staff_Assigned || '',
-      RCFE_Name: member.RCFE_Name,
+      RCFE_Name: member.RCFE_Name || '',
       RCFE_Admin_Name: member.RCFE_Admin_Name || member.RCFE_Administrator || member.RCFE_Admin || '',
       RCFE_Admin_Email: member.RCFE_Admin_Email || member.RCFE_Administrator_Email || member.RCFE_AdminEmail || '',
       CalAIM_RCFE_Owner_Email:
         member.CalAIM_RCFE_Owner_Email || member.RCFE_Owner_Email || member.CalAIM_RCFE_OwnerEmail || '',
-      RCFE_Address: member.RCFE_Address,
-      RCFE_City: member.RCFE_City,
-      RCFE_State: member.RCFE_State,
-      RCFE_Zip: member.RCFE_Zip,
+      RCFE_Address: member.RCFE_Address || member.RCFE_Street || member.RCFE_Street_Address || '',
+      RCFE_City: member.RCFE_City || '',
+      RCFE_State: member.RCFE_State || '',
+      RCFE_Zip: member.RCFE_Zip || '',
       pathway: member.Pathway || member.CalAIM_Pathway || 'Kaiser',
       Next_Step_Due_Date: member.Next_Step_Due_Date || member.next_steps_date || '',
       workflow_step: member.workflow_step || '',
@@ -1106,6 +1106,42 @@ export async function GET(request: NextRequest) {
         const adminModule = await import('@/firebase-admin');
         const adminDb = adminModule.adminDb;
         const admin = adminModule.default;
+        // Fields that must mirror live Caspio even when empty — merge:true otherwise keeps stale values.
+        const clearWhenEmpty = [
+          'RCFE_Name',
+          'RCFE_Address',
+          'RCFE_Street',
+          'RCFE_Street_Address',
+          'RCFE_City',
+          'RCFE_State',
+          'RCFE_Zip',
+          'Facility_Name',
+          'Facility_Address',
+          'ISP_Current_Location',
+          'ISP_Current_Address',
+          'ISP_Current_City',
+          'ISP_Current_State',
+          'ISP_Current_Zip',
+          'ISP_Contact_Location',
+          'ISP_Contact_Address',
+          'ISP_Contact_City',
+          'ISP_Contact_State',
+          'ISP_Contact_Zip',
+          'ISP_Location_Type',
+          'Where_Living',
+          'Describe_Member_Living_Situation',
+          'Best_Contact_Phone',
+          'Member_Phone',
+          'Cell_Phone',
+          'Did_Submit_ALW_Application',
+          'ISP_Assessment_Date',
+          'ISP_RN',
+          'ISP_Social_Worker',
+          'Room_and_Board_Amount',
+          'Requested_Tier_Level',
+          'At_ALW_Facility',
+          'On_ALW_Waitlist',
+        ] as const;
         for (const member of responseBody.members as any[]) {
           const clientId2 = String(member?.Client_ID2 || member?.client_ID2 || '').trim();
           if (!clientId2) continue;
@@ -1114,21 +1150,25 @@ export async function GET(request: NextRequest) {
             unknown
           >;
           const cover = pickCoverSheetFields({ ...raw, ...member });
-          await adminDb
-            .collection('caspio_members_cache')
-            .doc(clientId2)
-            .set(
-              {
-                ...raw,
-                ...cover,
-                Client_ID2: clientId2,
-                client_ID2: clientId2,
-                CalAIM_MCO: String(raw.CalAIM_MCO || member?.CalAIM_MCO || 'Kaiser'),
-                _liveRefreshAt: admin.firestore.FieldValue.serverTimestamp(),
-                _liveRefreshSource: 'kaiser-members-clientId2',
-              },
-              { merge: true }
-            );
+          const payload: Record<string, unknown> = {
+            ...raw,
+            ...cover,
+            Client_ID2: clientId2,
+            client_ID2: clientId2,
+            CalAIM_MCO: String(raw.CalAIM_MCO || member?.CalAIM_MCO || 'Kaiser'),
+            _liveRefreshAt: admin.firestore.FieldValue.serverTimestamp(),
+            _liveRefreshSource: 'kaiser-members-clientId2',
+          };
+          for (const field of clearWhenEmpty) {
+            const fromRaw = raw[field];
+            const fromCover = (cover as Record<string, unknown>)[field];
+            const fromMember = member?.[field];
+            const liveValue = [fromRaw, fromCover, fromMember]
+              .map((v) => String(v ?? '').trim())
+              .find(Boolean);
+            payload[field] = liveValue || '';
+          }
+          await adminDb.collection('caspio_members_cache').doc(clientId2).set(payload, { merge: true });
         }
       } catch (cacheWriteError) {
         console.warn('Failed to upsert live Kaiser member into Firestore cache:', cacheWriteError);

@@ -68,6 +68,10 @@ function buildKaiserMembersUrl(options?: FetchKaiserMembersOptions): string {
   if (clientId2) params.set('clientId2', clientId2);
   const q = String(options?.q || '').trim();
   if (q) params.set('q', q);
+  // Bust intermediaries when forcing a live Caspio pull (selected-member refresh).
+  if (options?.source === 'caspio' || options?.refresh) {
+    params.set('_', String(Date.now()));
+  }
   const qs = params.toString();
   return qs ? `${API_PATHS.kaiserMembers}?${qs}` : API_PATHS.kaiserMembers;
 }

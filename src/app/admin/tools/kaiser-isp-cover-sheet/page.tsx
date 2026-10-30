@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { Database, ExternalLink, Loader2, RefreshCw, Search } from 'lucide-react';
@@ -11,7 +11,11 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
-import { fetchKaiserMembers, formatKaiserMembersFetchError } from '@/lib/fetch-kaiser-members';
+import {
+  fetchKaiserMembers,
+  formatKaiserMembersFetchError,
+  invalidateKaiserMembersCache,
+} from '@/lib/fetch-kaiser-members';
 import { TemplateUploaderCard } from './template-uploader-card';
 
 type KaiserMember = {
@@ -173,13 +177,13 @@ const composeAddress = (...parts: Array<unknown>) =>
     .trim();
 
 const getRcfeFullAddress = (member: KaiserMember) => {
-  const rcfeStreet = getValue(member, ['RCFE_Address']);
-  const rcfeCity = getValue(member, ['RCFE_City']);
-  const rcfeState = getValue(member, ['RCFE_State']);
-  const rcfeZip = getValue(member, ['RCFE_Zip']);
-  const rcfeCombined = composeAddress(rcfeStreet, rcfeCity, rcfeState, rcfeZip);
-  if (rcfeCombined) return rcfeCombined;
-  return getValue(member, ['Facility_Address', 'ISP_Current_Address']);
+  // RCFE fields only — never invent from ISP / member mailing address.
+  return composeAddress(
+    getValue(member, ['RCFE_Address', 'RCFE_Street', 'RCFE_Street_Address']),
+    getValue(member, ['RCFE_City']),
+    getValue(member, ['RCFE_State']),
+    getValue(member, ['RCFE_Zip'])
+  );
 };
 
 const toYesNo = (value: unknown): string => {
@@ -299,7 +303,7 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
         'RCFE_Name',
       ]),
   },
-  { label: 'Facility Name (RCFE)', value: getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']) },
+  { label: 'Facility Name (RCFE)', value: getValue(member, ['RCFE_Name', 'Facility_Name']) },
   { label: 'Facility Address (RCFE)', value: getRcfeFullAddress(member) },
   { label: 'Did Submit ALW Application', value: normalizeAlwSubmitted(getValue(member, ['Did_Submit_ALW_Application'])) },
 ];
@@ -485,6 +489,7 @@ export default function KaiserIspCoverSheetToolPage() {
   const [departedSwMode, setDepartedSwMode] = useState(false);
   const [departedSwName, setDepartedSwName] = useState('');
   const [departedSwEmail, setDepartedSwEmail] = useState('');
+  const membersFetchSeqRef = useRef(0);
 
   const getIdToken = async () => {
     const tokenUser = user || auth.currentUser;
@@ -495,8 +500,13 @@ export default function KaiserIspCoverSheetToolPage() {
   const fetchMembers = async (opts?: { clientId2?: string; source?: 'cache' | 'caspio' }) => {
     const requestedClientId2 = clean(opts?.clientId2);
     const source = opts?.source || (requestedClientId2 ? 'caspio' : 'cache');
+    const fetchSeq = ++membersFetchSeqRef.current;
     setIsLoading(true);
     try {
+      if (source === 'caspio') {
+        // Drop browser-session member list so we never reuse a prior full-list/cache snapshot.
+        invalidateKaiserMembersCache();
+      }
       const { members: loadedMembers, meta } = await fetchKaiserMembers<KaiserMember>({
         source,
         refresh: source === 'caspio',
@@ -507,6 +517,10 @@ export default function KaiserIspCoverSheetToolPage() {
             ? 'click Refresh from Caspio again'
             : 'click Load Cache again',
       });
+      if (fetchSeq !== membersFetchSeqRef.current) {
+        // A newer Load Cache / Refresh finished first — ignore this stale response.
+        return;
+      }
       const metaSource = String(meta?.source || '').toLowerCase();
       if (source === 'caspio' && !metaSource.includes('caspio')) {
         throw new Error(
@@ -518,13 +532,25 @@ export default function KaiserIspCoverSheetToolPage() {
           `No Kaiser member found in live Caspio for Client_ID2 ${requestedClientId2}.`
         );
       }
+      // Guard: single-member live pull must return the requested Client_ID2 only.
+      if (source === 'caspio' && requestedClientId2) {
+        const mismatched = loadedMembers.filter((incoming) => {
+          const incomingId = clean(incoming.Client_ID2 || incoming.client_ID2);
+          return incomingId && incomingId !== requestedClientId2;
+        });
+        if (mismatched.length > 0 || loadedMembers.every((m) => !clean(m.Client_ID2 || m.client_ID2))) {
+          throw new Error(
+            `Live Caspio returned unexpected Client_ID2 (wanted ${requestedClientId2}). Try Refresh Selected again.`
+          );
+        }
+      }
       setMembers((prev) => {
-        // For selected-member refresh, merge the returned member into existing list.
+        // For selected-member refresh, replace that member with the live Caspio row (no field merge).
         if (requestedClientId2) {
           const next = [...prev];
           loadedMembers.forEach((incoming) => {
             const incomingId = clean(incoming.Client_ID2 || incoming.client_ID2);
-            if (!incomingId) return;
+            if (!incomingId || incomingId !== requestedClientId2) return;
             const existingIndex = next.findIndex(
               (member) => clean(member.Client_ID2 || member.client_ID2) === incomingId
             );
@@ -539,24 +565,45 @@ export default function KaiserIspCoverSheetToolPage() {
       const resolvedSource =
         metaSource.includes('caspio') || source === 'caspio' ? 'caspio' : 'cache';
       setLastLoadedSource(resolvedSource);
+      // Never auto-select the first list member — Open Cover Sheet stays empty until a left-list click.
       if (requestedClientId2) {
         setSelectedClientId(requestedClientId2);
         setSelectedMemberSource(resolvedSource);
-      } else if (loadedMembers.length > 0) {
-        const firstClientId = clean(loadedMembers[0].Client_ID2 || loadedMembers[0].client_ID2);
-        setSelectedClientId((prev) => prev || firstClientId);
-        setSelectedMemberSource(resolvedSource);
       }
+      const liveMember =
+        requestedClientId2
+          ? loadedMembers.find(
+              (m) => clean(m.Client_ID2 || m.client_ID2) === requestedClientId2
+            )
+          : null;
+      const liveRcfe = liveMember
+        ? composeAddress(
+            getValue(liveMember, ['RCFE_Address', 'RCFE_Street']),
+            getValue(liveMember, ['RCFE_City']),
+            getValue(liveMember, ['RCFE_State']),
+            getValue(liveMember, ['RCFE_Zip'])
+          )
+        : '';
       toast({
-        title: requestedClientId2 ? 'Selected member refreshed from live Caspio' : 'Kaiser members loaded',
+        title: requestedClientId2
+          ? resolvedSource === 'caspio'
+            ? 'Selected member refreshed from live Caspio'
+            : 'Selected member loaded from cache'
+          : 'Kaiser members loaded',
         description: requestedClientId2
-          ? `Client_ID2 ${requestedClientId2} pulled from Caspio (not Firestore cache).`
+          ? `Client_ID2 ${requestedClientId2} from ${
+              resolvedSource === 'caspio' ? 'live Caspio' : 'Firestore cache'
+            }. RCFE address: ${liveRcfe || '(empty in Caspio)'}.`
           : `${loadedMembers.length} members loaded from ${
               resolvedSource === 'caspio' ? 'live Caspio' : 'Firestore cache'
             }.`,
-        className: 'bg-green-100 text-green-900 border-green-200',
+        className:
+          resolvedSource === 'caspio'
+            ? 'bg-green-100 text-green-900 border-green-200'
+            : 'bg-amber-100 text-amber-900 border-amber-200',
       });
     } catch (error: unknown) {
+      if (fetchSeq !== membersFetchSeqRef.current) return;
       toast({
         variant: 'destructive',
         title: 'Unable to load Kaiser members',
@@ -569,7 +616,9 @@ export default function KaiserIspCoverSheetToolPage() {
         }),
       });
     } finally {
-      setIsLoading(false);
+      if (fetchSeq === membersFetchSeqRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -628,14 +677,18 @@ export default function KaiserIspCoverSheetToolPage() {
     });
   }, [members, query]);
 
-  const selectedMember = useMemo(
-    () =>
-      filteredMembers.find(
-        (member) => clean(member.Client_ID2 || member.client_ID2) === clean(selectedClientId)
-      ) || filteredMembers[0] || null,
-    [filteredMembers, selectedClientId]
+  // Resolve from the full members list (not search-filtered) so Open Cover Sheet never
+  // silently falls back to a different member when search text doesn't match the selection.
+  const selectedMember = useMemo(() => {
+    const wanted = clean(selectedClientId);
+    if (!wanted) return null;
+    return (
+      members.find((member) => clean(member.Client_ID2 || member.client_ID2) === wanted) || null
+    );
+  }, [members, selectedClientId]);
+  const canRefreshSelectedMember = Boolean(
+    clean(selectedClientId) && clean(selectedMember?.Client_ID2 || selectedMember?.client_ID2)
   );
-  const canRefreshSelectedMember = Boolean(clean(selectedClientId));
 
   const departedSwReady = departedSwMode && Boolean(clean(departedSwName));
   const rnOverrideReady = assessmentDoneByRn && Boolean(clean(assessmentAdminName));
@@ -741,7 +794,10 @@ export default function KaiserIspCoverSheetToolPage() {
   };
 
   const handleRefreshSelectedMember = () => {
-    const clientId2 = clean(selectedClientId);
+    // Prefer the Client_ID2 shown on the Open Cover Sheet card so we never refresh a stale id.
+    const clientId2 = clean(
+      selectedMember?.Client_ID2 || selectedMember?.client_ID2 || selectedClientId
+    );
     if (!clientId2) {
       toast({
         variant: 'destructive',
@@ -750,6 +806,8 @@ export default function KaiserIspCoverSheetToolPage() {
       });
       return;
     }
+    setSelectedClientId(clientId2);
+    setSelectedMemberSource(''); // hide Ready greens until this live pull finishes
     void fetchMembers({ clientId2, source: 'caspio' });
   };
 
@@ -875,18 +933,16 @@ export default function KaiserIspCoverSheetToolPage() {
                         type="button"
                         key={stableRowKey}
                         onClick={() => {
+                          // Clear previous member greens immediately; panel stays empty until live Caspio returns.
                           setSelectedClientId(clientId2);
+                          setSelectedMemberSource('');
                           setAssessmentDoneByRn(false);
                           setAssessmentAdminName('');
                           setDepartedSwMode(false);
                           setDepartedSwName('');
                           setDepartedSwEmail('');
-                          // Open Cover Sheet Flow: pull this member live from Caspio so required
-                          // fields (ISP Assessment Date, RN, etc.) are not stale Firestore values.
                           if (clientId2) {
                             void fetchMembers({ clientId2, source: 'caspio' });
-                          } else {
-                            setSelectedMemberSource(lastLoadedSource || 'cache');
                           }
                         }}
                         className={`w-full rounded-md border p-3 text-left transition ${
@@ -926,26 +982,46 @@ export default function KaiserIspCoverSheetToolPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {selectedMember ? (
+                {!clean(selectedClientId) ? (
+                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                    Select a member on the left to load live Caspio fields for the cover sheet. This
+                    panel stays empty until you click a member.
+                  </div>
+                ) : selectedMemberSource !== 'caspio' || !selectedMember ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs text-muted-foreground">
+                        Data source: <span className="font-medium">Waiting for live Caspio…</span>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleRefreshSelectedMember}
+                        disabled={isLoading || isSyncingMembersCache || !clean(selectedClientId)}
+                        title="Forces a live Caspio query for this Client_ID2"
+                      >
+                        <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                        Refresh Selected from Caspio
+                      </Button>
+                    </div>
+                    <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : null}
+                        <span>
+                          {isLoading
+                            ? `Pulling Client_ID2 ${clean(selectedClientId)} from live Caspio…`
+                            : `Client_ID2 ${clean(selectedClientId)} selected — click Refresh Selected from Caspio (required fields stay hidden until live data arrives).`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
                   <>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="text-xs text-muted-foreground">
                         Data source:{' '}
-                        <span
-                          className={
-                            selectedMemberSource === 'caspio'
-                              ? 'font-medium text-green-700'
-                              : selectedMemberSource === 'cache'
-                                ? 'font-medium text-amber-700'
-                                : 'font-medium'
-                          }
-                        >
-                          {selectedMemberSource === 'caspio'
-                            ? 'Live Caspio'
-                            : selectedMemberSource === 'cache'
-                              ? 'Firestore cache'
-                              : 'Not loaded yet'}
-                        </span>
+                        <span className="font-medium text-green-700">Live Caspio</span>
                       </div>
                       <Button
                         type="button"
@@ -1104,10 +1180,6 @@ export default function KaiserIspCoverSheetToolPage() {
                       Opens `/admin/tools/kaiser-isp-cover-sheet/kaiser-isp-cover-sheet` with selected member data.
                     </p>
                   </>
-                ) : (
-                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    Select a member to generate a Kaiser cover sheet.
-                  </div>
                 )}
               </CardContent>
             </Card>
