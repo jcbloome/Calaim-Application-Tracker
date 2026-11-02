@@ -15,6 +15,20 @@ import {
 import path from 'path';
 import { adminDb, adminStorage } from '@/firebase-admin';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
+import {
+  buildKaiserTierCalcAcrobatScript,
+  buildKaiserTierFieldKeystrokeScript,
+  computeCoverSheetTotalCosts,
+  KAISER_COVER_AUTH_KP_TIER_FIELD,
+  KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
+  KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
+  KAISER_COVER_AUTH_TOTAL_FIELD,
+  KAISER_COVER_REAUTH_KP_TIER_FIELD,
+  KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
+  KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
+  KAISER_COVER_REAUTH_TOTAL_FIELD,
+  parseKaiserTierNumber,
+} from '@/lib/kaiser-cover-sheet-tier-rates';
 import { KAISER_COVER_TEMPLATE_SETTINGS_DOC } from '@/lib/kaiser-isp-cover-sheet-template';
 
 export const runtime = 'nodejs';
@@ -262,7 +276,30 @@ type DropdownFieldLike = {
 };
 
 /** KP completes these on the downloaded PDF — never prefill or lock them. */
-const KP_ONLY_DROPDOWN_NAMES = new Set(['Dropdown15', 'Dropdown25']);
+const KP_ONLY_DROPDOWN_NAMES = new Set([
+  KAISER_COVER_AUTH_KP_TIER_FIELD,
+  KAISER_COVER_REAUTH_KP_TIER_FIELD,
+]);
+
+/** Attach Acrobat Keystroke JS so KP tier dropdown selection fills Max Expense + Total Costs. */
+function attachFieldKeystrokeAction(
+  pdfDoc: PDFDocument,
+  field: { acroField?: { dict?: { set: (key: unknown, value: unknown) => void } } },
+  script: string
+) {
+  try {
+    const dict = field?.acroField?.dict;
+    if (!dict || typeof dict.set !== 'function') return;
+    const jsAction = pdfDoc.context.obj({
+      Type: 'Action',
+      S: 'JavaScript',
+      JS: PDFString.of(script),
+    });
+    dict.set(PDFName.of('AA'), pdfDoc.context.obj({ K: jsAction }));
+  } catch {
+    // Keep generating if one widget cannot accept an action.
+  }
+}
 
 function isTextFieldLike(field: unknown): field is TextFieldLike {
   return Boolean(field && typeof (field as TextFieldLike).setText === 'function');
@@ -780,7 +817,18 @@ export async function GET(req: NextRequest) {
       setFieldValue('RN who reviewed the assessment First Last Name', rnReviewer);
       setFieldValue('Assessment Date (MM/DD/YYY)', assessmentDate);
       // Initial-auth amount field only — do not touch reauth Text3.
-      setTextFieldOnly('Members Financial Responsibility of Room and Board', roomBoardAmount);
+      setTextFieldOnly(KAISER_COVER_AUTH_ROOM_BOARD_FIELD, roomBoardAmount);
+      // Prefill Max KP expense + Total Costs from ILS requested tier (Kaiser can change via Dropdown15 JS).
+      {
+        const tierCosts = computeCoverSheetTotalCosts({
+          tier: parseKaiserTierNumber(requestedTierNumber || requestedTier),
+          roomBoardAmount,
+        });
+        if (tierCosts.maxExpenseLabel) {
+          setTextFieldOnly(KAISER_COVER_AUTH_MAX_EXPENSE_FIELD, tierCosts.maxExpenseLabel);
+        }
+        setTextFieldOnly(KAISER_COVER_AUTH_TOTAL_FIELD, tierCosts.totalLabel || '$0.00');
+      }
       setFieldValue('Dropdown3', regionNcalScal);
       setFieldValue('County', memberCounty);
       setFieldValue('Dropdown4', atAlw);
@@ -916,8 +964,19 @@ export async function GET(req: NextRequest) {
       setFieldValue('Dropdown34', inAlwCounty);
       // Reauth R&B amount lives in Text22 (07/2026 template) / Text3 (prior) only. Do not fill the
       // initial-authorization "Members Financial Responsibility of Room and Board" amount field.
-      setTextFieldOnly('Text22', roomBoardAmount);
+      setTextFieldOnly(KAISER_COVER_REAUTH_ROOM_BOARD_FIELD, roomBoardAmount);
       setTextFieldOnly('Text3', roomBoardAmount);
+      // Prefill Max KP expense (Text24) + Total Costs (Text23) from ILS requested tier.
+      {
+        const tierCosts = computeCoverSheetTotalCosts({
+          tier: parseKaiserTierNumber(requestedTierNumber || requestedTier),
+          roomBoardAmount,
+        });
+        if (tierCosts.maxExpenseLabel) {
+          setTextFieldOnly(KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD, tierCosts.maxExpenseLabel);
+        }
+        setTextFieldOnly(KAISER_COVER_REAUTH_TOTAL_FIELD, tierCosts.totalLabel || '$0.00');
+      }
       // Reauthorization: only fill the ILS preliminary tier (Dropdown35 / prior Dropdown7),
       // never KP determination dropdowns (Dropdown15 / Dropdown25).
       setFieldValue('Dropdown35', requestedTierTier);
@@ -970,6 +1029,25 @@ export async function GET(req: NextRequest) {
     }
 
     form.updateFieldAppearances(font);
+
+    // Acrobat scripts: when Kaiser picks KP Tier Level, plot Max Tier Expenses + Total Costs.
+    try {
+      pdfDoc.addJavaScript('KaiserTierRates', buildKaiserTierCalcAcrobatScript());
+      const authKp = getFieldMaybe(KAISER_COVER_AUTH_KP_TIER_FIELD) as {
+        acroField?: { dict?: { set: (key: unknown, value: unknown) => void } };
+      } | null;
+      const reauthKp = getFieldMaybe(KAISER_COVER_REAUTH_KP_TIER_FIELD) as {
+        acroField?: { dict?: { set: (key: unknown, value: unknown) => void } };
+      } | null;
+      if (authKp) {
+        attachFieldKeystrokeAction(pdfDoc, authKp, buildKaiserTierFieldKeystrokeScript('auth'));
+      }
+      if (reauthKp) {
+        attachFieldKeystrokeAction(pdfDoc, reauthKp, buildKaiserTierFieldKeystrokeScript('reauth'));
+      }
+    } catch (tierScriptError) {
+      console.warn('Could not attach Kaiser tier calculation scripts:', tierScriptError);
+    }
 
     // Re-assert after appearance rebuild: every dropdown stays editable (not flattened / not read-only).
     for (const field of form.getFields()) {
