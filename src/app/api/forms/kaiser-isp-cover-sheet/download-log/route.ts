@@ -100,6 +100,8 @@ export async function GET(req: NextRequest) {
         archived: Boolean(data.archived),
         archivedAt: toIso(data.archivedAt),
         archivedStoragePath: clean(data.archivedStoragePath),
+        totalCostsFormat: clean(data.totalCostsFormat),
+        upgradedAt: toIso(data.upgradedAt),
         deleted: Boolean(data.deleted),
       };
     });

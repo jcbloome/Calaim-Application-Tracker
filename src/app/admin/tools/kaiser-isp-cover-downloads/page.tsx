@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Download, Loader2, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 
 type DownloadLogEntry = {
@@ -22,12 +23,22 @@ type DownloadLogEntry = {
   archived?: boolean;
   archivedAt?: string;
   archivedStoragePath?: string;
+  totalCostsFormat?: string;
+  upgradedAt?: string;
   deleted?: boolean;
 };
 
 const clean = (value: unknown) => String(value || '').trim();
 const toCoverTypeLabel = (coverPageType: string) =>
   coverPageType === 'reauthorization' ? 'Reauthorization' : 'Initial Authorization';
+
+/** Local calendar date YYYY-MM-DD (for “today” filters). */
+const localDateInputValue = (date = new Date()) => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
 
 export default function KaiserIspCoverDownloadsPage() {
   const auth = useAuth();
@@ -49,6 +60,8 @@ export default function KaiserIspCoverDownloadsPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [showAllLogs, setShowAllLogs] = useState(false);
+  const [isUpgrading, setIsUpgrading] = useState(false);
+  const [isZipping, setIsZipping] = useState(false);
 
   const loadLogs = async (filterOverrides?: {
     search?: string;
@@ -117,6 +130,160 @@ export default function KaiserIspCoverDownloadsPage() {
 
   const canAccessArchive = (entry: DownloadLogEntry) =>
     Boolean(entry.archived) || Boolean(clean(entry.archivedStoragePath));
+
+  const hasDateFilter = Boolean(clean(fromDate) || clean(toDate));
+  const archivedMatchingLogs = useMemo(
+    () => (hasDateFilter ? logs.filter((entry) => canAccessArchive(entry)) : []),
+    [logs, hasDateFilter]
+  );
+  const needsUpgradeCount = useMemo(
+    () =>
+      archivedMatchingLogs.filter(
+        (entry) => clean(entry.totalCostsFormat) !== 'room-board-then-kp-tier'
+      ).length,
+    [archivedMatchingLogs]
+  );
+
+  const applyTodayFilter = () => {
+    const today = localDateInputValue();
+    setFromDate(today);
+    setToDate(today);
+    setShowAllLogs(true);
+    void loadLogs({ fromDate: today, toDate: today });
+  };
+
+  const handleUpgradeMatching = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      toast({
+        title: 'Sign-in required',
+        description: 'Please sign in again before upgrading.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!archivedMatchingLogs.length) {
+      toast({
+        title: 'Nothing to upgrade',
+        description: 'Load matching archived downloads first (try Today).',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setIsUpgrading(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/forms/kaiser-isp-cover-sheet/download-log/upgrade', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          logIds: archivedMatchingLogs.map((entry) => entry.id),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(String(body?.error || `Upgrade failed (HTTP ${response.status})`));
+      }
+      const stillZero = Number(body.stillZero || 0);
+      const sample = Array.isArray(body.results)
+        ? body.results.find((row: any) => row?.ok && row?.authTotal && row.authTotal !== '$0.00')
+        : null;
+      toast({
+        title: `Upgraded ${Number(body.upgraded || 0)} cover sheet${Number(body.upgraded || 0) === 1 ? '' : 's'}`,
+        description: [
+          Number(body.failed || 0) > 0 ? `${body.failed} failed.` : null,
+          stillZero > 0
+            ? `${stillZero} still show $0.00 (no room & board on PDF or in Caspio).`
+            : sample?.authTotal
+              ? `Example Total Costs: ${sample.authTotal}. Re-download or ZIP to get the updated files.`
+              : 'Re-download or ZIP to get the updated files.',
+        ]
+          .filter(Boolean)
+          .join(' '),
+      });
+      await loadLogs();
+    } catch (error: any) {
+      toast({
+        title: 'Upgrade failed',
+        description: String(error?.message || 'Could not upgrade cover sheets'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpgrading(false);
+    }
+  };
+
+  const handleDownloadZipForIls = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      toast({
+        title: 'Sign-in required',
+        description: 'Please sign in again before downloading.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!archivedMatchingLogs.length) {
+      toast({
+        title: 'Nothing to zip',
+        description: 'Load matching archived downloads first (try Today).',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setIsZipping(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/forms/kaiser-isp-cover-sheet/download-log/zip', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          logIds: archivedMatchingLogs.map((entry) => entry.id),
+          from: clean(fromDate) || undefined,
+          to: clean(toDate) || undefined,
+        }),
+      });
+      const contentType = String(response.headers.get('content-type') || '');
+      if (!response.ok) {
+        const body = contentType.includes('application/json')
+          ? await response.json().catch(() => ({}))
+          : {};
+        throw new Error(String((body as any)?.error || `ZIP failed (HTTP ${response.status})`));
+      }
+      const blob = await response.blob();
+      const headerName = response.headers.get('content-disposition') || '';
+      const match = headerName.match(/filename="([^"]+)"/i);
+      const fileName =
+        clean(match?.[1]) ||
+        `Kaiser Cover Sheets for ILS ${clean(fromDate) || localDateInputValue()}.zip`;
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+      toast({
+        title: 'ZIP download started',
+        description: `${archivedMatchingLogs.length} cover sheet${archivedMatchingLogs.length === 1 ? '' : 's'} for ILS`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'ZIP download failed',
+        description: String(error?.message || 'Could not build ZIP'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsZipping(false);
+    }
+  };
 
   const fetchArchiveBlob = async (entry: DownloadLogEntry, format: 'file' | 'view') => {
     const user = auth.currentUser;
@@ -313,10 +480,70 @@ export default function KaiserIspCoverDownloadsPage() {
           <CardTitle>Kaiser Cover Sheet Downloads</CardTitle>
           <CardDescription>
             Recent Kaiser cover sheet downloads appear below (last 10). Search by member, date, or staff to find
-            older files. Use View to open the archived PDF or Download to save it.
+            older files. Use View / Download for one PDF, or upgrade matching results and ZIP them for ILS.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 space-y-2">
+            <div className="text-sm font-medium text-emerald-950">Send cover sheets to ILS</div>
+            <p className="text-xs text-emerald-900/80">
+              Click <span className="font-medium">Today&apos;s covers</span> (or set a date range + Search),
+              upgrade archived PDFs so Total Costs starts with member room &amp; board, then download one ZIP
+              for ILS.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={applyTodayFilter} disabled={loading}>
+                Today&apos;s covers
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleUpgradeMatching()}
+                disabled={loading || isUpgrading || !hasDateFilter || !archivedMatchingLogs.length}
+                title={
+                  !hasDateFilter
+                    ? 'Set a date range (or click Today’s covers) first'
+                    : 'Rewrite Total Costs on archived PDFs to room & board first'
+                }
+              >
+                {isUpgrading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                Upgrade to new Total Costs
+                {needsUpgradeCount ? ` (${needsUpgradeCount})` : ''}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleDownloadZipForIls()}
+                disabled={loading || isZipping || !hasDateFilter || !archivedMatchingLogs.length}
+                title={
+                  !hasDateFilter
+                    ? 'Set a date range (or click Today’s covers) first'
+                    : 'Download all matching archived cover sheets as one ZIP'
+                }
+              >
+                {isZipping ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Download all as ZIP for ILS
+                {archivedMatchingLogs.length ? ` (${archivedMatchingLogs.length})` : ''}
+              </Button>
+            </div>
+            {hasDateFilter && !loading ? (
+              <div className="text-xs text-emerald-900/70">
+                {archivedMatchingLogs.length
+                  ? `${archivedMatchingLogs.length} archived cover sheet${archivedMatchingLogs.length === 1 ? '' : 's'} in this date range ready for upgrade / ZIP.`
+                  : 'No archived cover sheets in this date range yet.'}
+              </div>
+            ) : null}
+          </div>
+
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
             <Input
               placeholder="Search all fields"
@@ -395,6 +622,11 @@ export default function KaiserIspCoverDownloadsPage() {
                         {toCoverTypeLabel(clean(entry.coverPageType))} ·{' '}
                         {entry.staffName || entry.staffEmail || 'Unknown staff'}
                       </div>
+                      {clean(entry.totalCostsFormat) === 'room-board-then-kp-tier' ? (
+                        <Badge variant="outline" className="mt-1 border-emerald-200 bg-emerald-50 text-emerald-800">
+                          New Total Costs
+                        </Badge>
+                      ) : null}
                     </button>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button

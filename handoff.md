@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-02
 
+- **Kaiser Cover Sheet downloads — upgrade today’s PDFs + ZIP for ILS.** On `/admin/tools/kaiser-isp-cover-downloads`: **Today’s covers**, **Upgrade to new Total Costs** (patches archived PDFs in place: Total = room & board first + Acrobat scripts), and **Download all as ZIP for ILS**. Upgrade now rewrites field **appearances** (so Chrome no longer shows stale `$0.00`) and backfills blank room & board from Caspio/cache.
+  - Files: `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/upgrade/route.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/zip/route.ts`, `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/route.ts`.
+  - Commit: _pending_.
+
 - **Kaiser Cover Sheet — Total Costs starts as member room & board, then adds KP tier.** On generate, **Total Costs** prefills the member’s financial responsibility (not `$0.00`). **Max Tier Level Expenses** still stays blank until Kaiser selects KP Tier Level; then Total = room & board + approved tier rate.
   - Files: `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`.
   - Commit: `48cf0d6b`.
