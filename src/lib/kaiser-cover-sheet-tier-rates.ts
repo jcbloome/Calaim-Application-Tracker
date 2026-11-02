@@ -87,8 +87,9 @@ function __kTierRate(tierValue){var tier=String(tierValue||"").replace(/^\\s+|\\
 }
 
 /**
- * Self-contained script: KP-approved tier only → Max Expense + Total Costs.
- * Never uses ILS requested tier — Kaiser may authorize a different level.
+ * Self-contained script: KP-approved tier → Max Expense; Total = room & board + KP rate.
+ * With no KP tier yet, Max Expense stays blank and Total shows member financial
+ * responsibility only. Never uses ILS requested tier.
  * Optional overrideTier is used during dropdown Keystroke (event.change) before the
  * field value is committed, so amounts update immediately on selection.
  */
@@ -127,22 +128,25 @@ try{
 `.trim();
 }
 
-/** Calculate script for Total Costs — uses KP tier rate only (not ILS requested). */
+/**
+ * Calculate script for Total Costs.
+ * Starts as member room & board only; adds KP-approved tier rate when Dropdown is set.
+ * Never uses ILS requested tier.
+ */
 export function buildKaiserTotalCostsCalculateScript(opts: {
   tierField: string;
   maxField: string;
   roomBoardField: string;
 }): string {
-  const { tierField, maxField, roomBoardField } = opts;
+  const { tierField, roomBoardField } = opts;
   return `
 ${acrobatHelpersBlock()}
 try{
   var rate=__kTierRate(this.getField("${tierField}").value);
-  var maxF=this.getField("${maxField}");
   var rbF=this.getField("${roomBoardField}");
-  var maxAmt = rate ? rate : (maxF ? __kParseMoney(maxF.value) : 0);
   var rb = rbF ? __kParseMoney(rbF.value) : 0;
-  event.value = __kFormatMoney(maxAmt + rb);
+  // No KP tier yet → show member financial responsibility only.
+  event.value = __kFormatMoney(rate + rb);
 }catch(e){event.value="$0.00";}
 `.trim();
 }

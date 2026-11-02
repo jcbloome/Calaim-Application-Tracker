@@ -1021,16 +1021,17 @@ function KaiserIspCoverSheetPrintableContent() {
                     ) : null}
                     <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700">
                       <div className="font-medium text-slate-900">
-                        KP Max Tier Expenses (after Kaiser authorizes)
+                        Total Costs + KP Max Tier Expenses
                       </div>
                       <div className="mt-0.5">
+                        Total Costs starts as the member&apos;s financial responsibility (room &amp; board).
                         ILS requested tier does not fill Max KP expenses. When Kaiser selects the approved
-                        KP Tier Level in Adobe Acrobat, Max Tier Level Expenses and Total Costs auto-fill
-                        from: Tier 1 ${KAISER_COVER_SHEET_TIER_RATES[1].toLocaleString()} · Tier 2 $
+                        KP Tier Level in Adobe Acrobat, Max Tier Level Expenses fills and Total Costs adds
+                        that amount (Tier 1 ${KAISER_COVER_SHEET_TIER_RATES[1].toLocaleString()} · Tier 2 $
                         {KAISER_COVER_SHEET_TIER_RATES[2].toLocaleString()} · Tier 3 $
                         {KAISER_COVER_SHEET_TIER_RATES[3].toLocaleString()} · Tier 4 $
                         {KAISER_COVER_SHEET_TIER_RATES[4].toLocaleString()} · Tier 5 $
-                        {KAISER_COVER_SHEET_TIER_RATES[5].toLocaleString()}.
+                        {KAISER_COVER_SHEET_TIER_RATES[5].toLocaleString()}).
                       </div>
                     </div>
                   </div>

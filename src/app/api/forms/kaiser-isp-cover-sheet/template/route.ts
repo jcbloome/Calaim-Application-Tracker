@@ -21,6 +21,7 @@ import {
   buildKaiserTierCalcAcrobatScript,
   buildKaiserTierDropdownChangeScript,
   buildKaiserTotalCostsCalculateScript,
+  computeCoverSheetTotalCosts,
   KAISER_COVER_AUTH_KP_TIER_FIELD,
   KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
@@ -832,13 +833,16 @@ export async function GET(req: NextRequest) {
       setFieldValue('Assessment Date (MM/DD/YYY)', assessmentDate);
       // Initial-auth amount field only — do not touch reauth Text3.
       setTextFieldOnly(KAISER_COVER_AUTH_ROOM_BOARD_FIELD, roomBoardAmount);
-      // Max Tier Expenses + Total Costs stay blank/$0 until Kaiser selects KP Tier Level (Dropdown15).
-      // ILS requested tier must NOT prefill these — Kaiser may authorize a different tier.
+      // Max Tier Expenses stays blank until Kaiser selects KP Tier Level (Dropdown15).
+      // Total Costs starts as member financial responsibility (room & board), then adds KP tier when selected.
+      // ILS requested tier must NOT prefill Max Expenses — Kaiser may authorize a different tier.
       try {
         const maxField = getFieldMaybe(KAISER_COVER_AUTH_MAX_EXPENSE_FIELD);
         if (maxField && isTextFieldLike(maxField)) maxField.setText('');
         const totalField = getFieldMaybe(KAISER_COVER_AUTH_TOTAL_FIELD);
-        if (totalField && isTextFieldLike(totalField)) totalField.setText('$0.00');
+        if (totalField && isTextFieldLike(totalField)) {
+          totalField.setText(computeCoverSheetTotalCosts({ roomBoardAmount }).totalLabel);
+        }
       } catch {
         // ignore
       }
@@ -979,12 +983,15 @@ export async function GET(req: NextRequest) {
       // initial-authorization "Members Financial Responsibility of Room and Board" amount field.
       setTextFieldOnly(KAISER_COVER_REAUTH_ROOM_BOARD_FIELD, roomBoardAmount);
       setTextFieldOnly('Text3', roomBoardAmount);
-      // Max Tier Expenses + Total Costs stay blank/$0 until Kaiser selects KP Tier Level (Dropdown25).
+      // Max Tier Expenses stays blank until Kaiser selects KP Tier Level (Dropdown25).
+      // Total Costs starts as member financial responsibility, then adds KP tier when selected.
       try {
         const maxField = getFieldMaybe(KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD);
         if (maxField && isTextFieldLike(maxField)) maxField.setText('');
         const totalField = getFieldMaybe(KAISER_COVER_REAUTH_TOTAL_FIELD);
-        if (totalField && isTextFieldLike(totalField)) totalField.setText('$0.00');
+        if (totalField && isTextFieldLike(totalField)) {
+          totalField.setText(computeCoverSheetTotalCosts({ roomBoardAmount }).totalLabel);
+        }
       } catch {
         // ignore
       }
@@ -1079,6 +1086,9 @@ export async function GET(req: NextRequest) {
         totalField: KAISER_COVER_REAUTH_TOTAL_FIELD,
       });
 
+      const authRoomBoard = getFieldMaybe(KAISER_COVER_AUTH_ROOM_BOARD_FIELD) as AcroFieldWithDict | null;
+      const reauthRoomBoard = getFieldMaybe(KAISER_COVER_REAUTH_ROOM_BOARD_FIELD) as AcroFieldWithDict | null;
+
       // K=Keystroke, V=Validate, Bl=Blur — cover Acrobat combo-box commit paths.
       attachFieldAdditionalActions(pdfDoc, authKp, {
         K: authTierChange,
@@ -1090,8 +1100,12 @@ export async function GET(req: NextRequest) {
         V: reauthTierChange,
         Bl: reauthApply,
       });
+      // Refresh Total Costs when member room & board amount is edited.
+      attachFieldAdditionalActions(pdfDoc, authRoomBoard, { Bl: authApply, V: authApply });
+      attachFieldAdditionalActions(pdfDoc, reauthRoomBoard, { Bl: reauthApply, V: reauthApply });
 
       // Calculate only from KP-approved tier — never ILS requested tier.
+      // Total = member financial responsibility + KP tier (tier may be $0 until selected).
       attachFieldAdditionalActions(pdfDoc, authMax, {
         C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_AUTH_KP_TIER_FIELD),
       });
