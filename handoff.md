@@ -12,7 +12,7 @@
 
 - **Batch Eligibility Log — Eligible / Not eligible CSV from each 271 run.** Decode runs show **Eligible** and **Not eligible** download buttons that pull the saved 271, decode it, and export Active vs Inactive member rows (with Caspio match fields) without opening the full results table first.
   - Files: `src/app/admin/tools/batch-eligibility-log/page.tsx`, `src/lib/batch-eligibility-results.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`.
-  - Commit: _pending_.
+  - Commit: `1004c828`.
 
 - **Batch eligibility 271 — one CSV for Needs review + Unclear + Rejected.** Decode results card adds **Download Needs review + Unclear + Rejected** exporting the full combined checklist (not just the current filter), with a **Review status** column plus eligibility result / Caspio / needs-review detail so staff can work each row.
   - Files: `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`.
