@@ -12,11 +12,11 @@
 
 - **Batch eligibility 271 — one CSV for Needs review + Unclear + Rejected.** Decode results card adds **Download Needs review + Unclear + Rejected** exporting the full combined checklist (not just the current filter), with a **Review status** column plus eligibility result / Caspio / needs-review detail so staff can work each row.
   - Files: `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`.
-  - Commit: _see next commit_.
+  - Commit: `8b95ba87`.
 
 - **Kaiser Cover Sheet — Max KP expenses only after Kaiser selects approved tier.** ILS requested tier no longer prefills Max Tier Level Expenses / Total Costs (Kaiser may authorize a different level). Those fields stay blank/$0 until KP Tier Level (`Dropdown15` / `Dropdown25`) is selected in Adobe Acrobat, then auto-fill from rates T1 $2,871 · T2 $3,430 · T3 $3,989 · T4 $5,387 · T5 $8,124 (+ room & board for Total). Keystroke uses `event.change` so amounts update immediately on dropdown pick (not only after tabbing to the next field).
   - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`.
-  - Commit: `d6cf8479` (+ keystroke-immediate in same commit as batch CSV below).
+  - Commit: `d6cf8479` (keystroke-immediate: `8b95ba87`).
 
 ## Changes 2026-10-29
 
