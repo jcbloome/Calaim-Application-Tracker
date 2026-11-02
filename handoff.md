@@ -12,7 +12,7 @@
 
 - **Kaiser Cover Sheet — Total Costs starts as member room & board, then adds KP tier.** On generate, **Total Costs** prefills the member’s financial responsibility (not `$0.00`). **Max Tier Level Expenses** still stays blank until Kaiser selects KP Tier Level; then Total = room & board + approved tier rate.
   - Files: `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`.
-  - Commit: _pending_.
+  - Commit: `48cf0d6b`.
 
 - **Batch Eligibility Log — Eligible / Not eligible CSV from each 271 run.** Decode runs show **Eligible** and **Not eligible** download buttons that pull the saved 271, decode it, and export Active vs Inactive member rows (with Caspio match fields) without opening the full results table first.
   - Files: `src/app/admin/tools/batch-eligibility-log/page.tsx`, `src/lib/batch-eligibility-results.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`.
