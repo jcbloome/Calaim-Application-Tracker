@@ -11,11 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
-import {
-  computeCoverSheetTotalCosts,
-  KAISER_COVER_SHEET_TIER_RATES,
-  parseKaiserTierNumber,
-} from '@/lib/kaiser-cover-sheet-tier-rates';
+import { KAISER_COVER_SHEET_TIER_RATES } from '@/lib/kaiser-cover-sheet-tier-rates';
 
 function clean(value: string | null) {
   return String(value || '').trim();
@@ -369,15 +365,6 @@ function KaiserIspCoverSheetPrintableContent() {
   // Reassessment/reauthorization is always RCFE for current living situation.
   const effectiveLivingSituation =
     normalizedCoverPageType === 'reauthorization' ? 'RCFE' : clean(currentLivingSituation);
-  const coverSheetTierCosts = useMemo(
-    () =>
-      computeCoverSheetTotalCosts({
-        tier: parseKaiserTierNumber(effectiveRequestedTier),
-        roomBoardAmount: prefill.roomBoardAmount,
-      }),
-    [effectiveRequestedTier, prefill.roomBoardAmount]
-  );
-
   const mergedParams = useMemo(() => {
     const params = new URLSearchParams();
     if (clean(prefill.returnTo)) params.set('returnTo', clean(prefill.returnTo));
@@ -1032,27 +1019,20 @@ function KaiserIspCoverSheetPrintableContent() {
                         Current Caspio tier: {effectiveCaspioTierLevel || 'Not available'}
                       </div>
                     ) : null}
-                    {coverSheetTierCosts.maxExpense ? (
-                      <div className="mt-2 rounded border border-sky-200 bg-sky-50/70 px-2 py-1.5 text-xs text-sky-950">
-                        <div className="font-medium">KP facility costs (auto on cover PDF)</div>
-                        <div>
-                          Max Tier Level Expenses Covered by KP:{' '}
-                          <span className="font-medium">{coverSheetTierCosts.maxExpenseLabel}</span>
-                        </div>
-                        <div>
-                          Total Costs (tier + room &amp; board):{' '}
-                          <span className="font-medium">{coverSheetTierCosts.totalLabel}</span>
-                        </div>
-                        <div className="mt-1 text-[11px] text-sky-900/80">
-                          Rates: Tier 1 ${KAISER_COVER_SHEET_TIER_RATES[1].toLocaleString()} · Tier 2 $
-                          {KAISER_COVER_SHEET_TIER_RATES[2].toLocaleString()} · Tier 3 $
-                          {KAISER_COVER_SHEET_TIER_RATES[3].toLocaleString()} · Tier 4 $
-                          {KAISER_COVER_SHEET_TIER_RATES[4].toLocaleString()} · Tier 5 $
-                          {KAISER_COVER_SHEET_TIER_RATES[5].toLocaleString()}. When Kaiser selects KP Tier
-                          Level in Acrobat, these amounts recalculate.
-                        </div>
+                    <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700">
+                      <div className="font-medium text-slate-900">
+                        KP Max Tier Expenses (after Kaiser authorizes)
                       </div>
-                    ) : null}
+                      <div className="mt-0.5">
+                        ILS requested tier does not fill Max KP expenses. When Kaiser selects the approved
+                        KP Tier Level in Adobe Acrobat, Max Tier Level Expenses and Total Costs auto-fill
+                        from: Tier 1 ${KAISER_COVER_SHEET_TIER_RATES[1].toLocaleString()} · Tier 2 $
+                        {KAISER_COVER_SHEET_TIER_RATES[2].toLocaleString()} · Tier 3 $
+                        {KAISER_COVER_SHEET_TIER_RATES[3].toLocaleString()} · Tier 4 $
+                        {KAISER_COVER_SHEET_TIER_RATES[4].toLocaleString()} · Tier 5 $
+                        {KAISER_COVER_SHEET_TIER_RATES[5].toLocaleString()}.
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : null}

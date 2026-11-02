@@ -16,9 +16,11 @@ import path from 'path';
 import { adminDb, adminStorage } from '@/firebase-admin';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
 import {
+  buildKaiserMaxExpenseCalculateScript,
+  buildKaiserTierApplyInlineScript,
   buildKaiserTierCalcAcrobatScript,
-  buildKaiserTierFieldKeystrokeScript,
-  computeCoverSheetTotalCosts,
+  buildKaiserTierDropdownChangeScript,
+  buildKaiserTotalCostsCalculateScript,
   KAISER_COVER_AUTH_KP_TIER_FIELD,
   KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
@@ -27,7 +29,6 @@ import {
   KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
   KAISER_COVER_REAUTH_TOTAL_FIELD,
-  parseKaiserTierNumber,
 } from '@/lib/kaiser-cover-sheet-tier-rates';
 import { KAISER_COVER_TEMPLATE_SETTINGS_DOC } from '@/lib/kaiser-isp-cover-sheet-template';
 
@@ -281,21 +282,34 @@ const KP_ONLY_DROPDOWN_NAMES = new Set([
   KAISER_COVER_REAUTH_KP_TIER_FIELD,
 ]);
 
-/** Attach Acrobat Keystroke JS so KP tier dropdown selection fills Max Expense + Total Costs. */
-function attachFieldKeystrokeAction(
+type AcroFieldWithDict = {
+  acroField?: { dict?: { set: (key: unknown, value: unknown) => void; lookupMaybe?: (key: unknown) => unknown } };
+  ref?: unknown;
+};
+
+function makeJsAction(pdfDoc: PDFDocument, script: string) {
+  return pdfDoc.context.obj({
+    Type: 'Action',
+    S: 'JavaScript',
+    JS: PDFString.of(script),
+  });
+}
+
+/** Merge Acrobat Additional-Actions (AA) entries onto a field without wiping existing ones. */
+function attachFieldAdditionalActions(
   pdfDoc: PDFDocument,
-  field: { acroField?: { dict?: { set: (key: unknown, value: unknown) => void } } },
-  script: string
+  field: AcroFieldWithDict | null | undefined,
+  actions: Record<string, string>
 ) {
   try {
     const dict = field?.acroField?.dict;
     if (!dict || typeof dict.set !== 'function') return;
-    const jsAction = pdfDoc.context.obj({
-      Type: 'Action',
-      S: 'JavaScript',
-      JS: PDFString.of(script),
-    });
-    dict.set(PDFName.of('AA'), pdfDoc.context.obj({ K: jsAction }));
+    const entries: Record<string, ReturnType<typeof makeJsAction>> = {};
+    for (const [key, script] of Object.entries(actions)) {
+      if (!script) continue;
+      entries[key] = makeJsAction(pdfDoc, script);
+    }
+    dict.set(PDFName.of('AA'), pdfDoc.context.obj(entries as any));
   } catch {
     // Keep generating if one widget cannot accept an action.
   }
@@ -818,16 +832,15 @@ export async function GET(req: NextRequest) {
       setFieldValue('Assessment Date (MM/DD/YYY)', assessmentDate);
       // Initial-auth amount field only — do not touch reauth Text3.
       setTextFieldOnly(KAISER_COVER_AUTH_ROOM_BOARD_FIELD, roomBoardAmount);
-      // Prefill Max KP expense + Total Costs from ILS requested tier (Kaiser can change via Dropdown15 JS).
-      {
-        const tierCosts = computeCoverSheetTotalCosts({
-          tier: parseKaiserTierNumber(requestedTierNumber || requestedTier),
-          roomBoardAmount,
-        });
-        if (tierCosts.maxExpenseLabel) {
-          setTextFieldOnly(KAISER_COVER_AUTH_MAX_EXPENSE_FIELD, tierCosts.maxExpenseLabel);
-        }
-        setTextFieldOnly(KAISER_COVER_AUTH_TOTAL_FIELD, tierCosts.totalLabel || '$0.00');
+      // Max Tier Expenses + Total Costs stay blank/$0 until Kaiser selects KP Tier Level (Dropdown15).
+      // ILS requested tier must NOT prefill these — Kaiser may authorize a different tier.
+      try {
+        const maxField = getFieldMaybe(KAISER_COVER_AUTH_MAX_EXPENSE_FIELD);
+        if (maxField && isTextFieldLike(maxField)) maxField.setText('');
+        const totalField = getFieldMaybe(KAISER_COVER_AUTH_TOTAL_FIELD);
+        if (totalField && isTextFieldLike(totalField)) totalField.setText('$0.00');
+      } catch {
+        // ignore
       }
       setFieldValue('Dropdown3', regionNcalScal);
       setFieldValue('County', memberCounty);
@@ -966,16 +979,14 @@ export async function GET(req: NextRequest) {
       // initial-authorization "Members Financial Responsibility of Room and Board" amount field.
       setTextFieldOnly(KAISER_COVER_REAUTH_ROOM_BOARD_FIELD, roomBoardAmount);
       setTextFieldOnly('Text3', roomBoardAmount);
-      // Prefill Max KP expense (Text24) + Total Costs (Text23) from ILS requested tier.
-      {
-        const tierCosts = computeCoverSheetTotalCosts({
-          tier: parseKaiserTierNumber(requestedTierNumber || requestedTier),
-          roomBoardAmount,
-        });
-        if (tierCosts.maxExpenseLabel) {
-          setTextFieldOnly(KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD, tierCosts.maxExpenseLabel);
-        }
-        setTextFieldOnly(KAISER_COVER_REAUTH_TOTAL_FIELD, tierCosts.totalLabel || '$0.00');
+      // Max Tier Expenses + Total Costs stay blank/$0 until Kaiser selects KP Tier Level (Dropdown25).
+      try {
+        const maxField = getFieldMaybe(KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD);
+        if (maxField && isTextFieldLike(maxField)) maxField.setText('');
+        const totalField = getFieldMaybe(KAISER_COVER_REAUTH_TOTAL_FIELD);
+        if (totalField && isTextFieldLike(totalField)) totalField.setText('$0.00');
+      } catch {
+        // ignore
       }
       // Reauthorization: only fill the ILS preliminary tier (Dropdown35 / prior Dropdown7),
       // never KP determination dropdowns (Dropdown15 / Dropdown25).
@@ -1030,20 +1041,91 @@ export async function GET(req: NextRequest) {
 
     form.updateFieldAppearances(font);
 
-    // Acrobat scripts: when Kaiser picks KP Tier Level, plot Max Tier Expenses + Total Costs.
+    // Acrobat scripts: KP Tier dropdown → Max Tier Expenses + Total Costs.
+    // Use Calculate on expense/total fields (reliable on recalc) plus Keystroke/Blur/Validate on the dropdown.
     try {
       pdfDoc.addJavaScript('KaiserTierRates', buildKaiserTierCalcAcrobatScript());
-      const authKp = getFieldMaybe(KAISER_COVER_AUTH_KP_TIER_FIELD) as {
-        acroField?: { dict?: { set: (key: unknown, value: unknown) => void } };
-      } | null;
-      const reauthKp = getFieldMaybe(KAISER_COVER_REAUTH_KP_TIER_FIELD) as {
-        acroField?: { dict?: { set: (key: unknown, value: unknown) => void } };
-      } | null;
-      if (authKp) {
-        attachFieldKeystrokeAction(pdfDoc, authKp, buildKaiserTierFieldKeystrokeScript('auth'));
-      }
-      if (reauthKp) {
-        attachFieldKeystrokeAction(pdfDoc, reauthKp, buildKaiserTierFieldKeystrokeScript('reauth'));
+
+      const authTierChange = buildKaiserTierDropdownChangeScript({
+        tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
+        maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
+        roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
+        totalField: KAISER_COVER_AUTH_TOTAL_FIELD,
+      });
+      const reauthTierChange = buildKaiserTierDropdownChangeScript({
+        tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
+        maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
+        roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
+        totalField: KAISER_COVER_REAUTH_TOTAL_FIELD,
+      });
+
+      const authKp = getFieldMaybe(KAISER_COVER_AUTH_KP_TIER_FIELD) as AcroFieldWithDict | null;
+      const reauthKp = getFieldMaybe(KAISER_COVER_REAUTH_KP_TIER_FIELD) as AcroFieldWithDict | null;
+      const authMax = getFieldMaybe(KAISER_COVER_AUTH_MAX_EXPENSE_FIELD) as AcroFieldWithDict | null;
+      const authTotal = getFieldMaybe(KAISER_COVER_AUTH_TOTAL_FIELD) as AcroFieldWithDict | null;
+      const reauthMax = getFieldMaybe(KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD) as AcroFieldWithDict | null;
+      const reauthTotal = getFieldMaybe(KAISER_COVER_REAUTH_TOTAL_FIELD) as AcroFieldWithDict | null;
+
+      const authApply = buildKaiserTierApplyInlineScript({
+        tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
+        maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
+        roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
+        totalField: KAISER_COVER_AUTH_TOTAL_FIELD,
+      });
+      const reauthApply = buildKaiserTierApplyInlineScript({
+        tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
+        maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
+        roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
+        totalField: KAISER_COVER_REAUTH_TOTAL_FIELD,
+      });
+
+      // K=Keystroke, V=Validate, Bl=Blur — cover Acrobat combo-box commit paths.
+      attachFieldAdditionalActions(pdfDoc, authKp, {
+        K: authTierChange,
+        V: authTierChange,
+        Bl: authApply,
+      });
+      attachFieldAdditionalActions(pdfDoc, reauthKp, {
+        K: reauthTierChange,
+        V: reauthTierChange,
+        Bl: reauthApply,
+      });
+
+      // Calculate only from KP-approved tier — never ILS requested tier.
+      attachFieldAdditionalActions(pdfDoc, authMax, {
+        C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_AUTH_KP_TIER_FIELD),
+      });
+      attachFieldAdditionalActions(pdfDoc, authTotal, {
+        C: buildKaiserTotalCostsCalculateScript({
+          tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
+          maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
+          roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
+        }),
+      });
+      attachFieldAdditionalActions(pdfDoc, reauthMax, {
+        C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_REAUTH_KP_TIER_FIELD),
+      });
+      attachFieldAdditionalActions(pdfDoc, reauthTotal, {
+        C: buildKaiserTotalCostsCalculateScript({
+          tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
+          maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
+          roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
+        }),
+      });
+
+      // Calculation order: Max expense fields first, then totals.
+      try {
+        const acroForm = pdfDoc.catalog.lookup(PDFName.of('AcroForm')) as
+          | { set?: (key: unknown, value: unknown) => void }
+          | undefined;
+        const calcFields = [authMax, authTotal, reauthMax, reauthTotal]
+          .map((f) => (f as { ref?: unknown } | null)?.ref)
+          .filter((ref): ref is NonNullable<typeof ref> => Boolean(ref));
+        if (acroForm && typeof acroForm.set === 'function' && calcFields.length > 0) {
+          acroForm.set(PDFName.of('CO'), pdfDoc.context.obj(calcFields as any));
+        }
+      } catch {
+        // Optional; scripts still work without an explicit CO array in many Acrobat versions.
       }
     } catch (tierScriptError) {
       console.warn('Could not attach Kaiser tier calculation scripts:', tierScriptError);
