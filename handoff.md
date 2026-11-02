@@ -12,7 +12,7 @@
 
 - **Kaiser Cover Sheet — auto Max Tier KP expense + Total Costs from tier rates.** When ILS requested tier is set, PDF fills Max Tier Level Expenses Covered by KP and Auto calculated Total Costs (= tier rate + room & board). Rates: T1 $2,871 · T2 $3,430 · T3 $3,989 · T4 $5,387 · T5 $8,124. Acrobat scripts on KP Tier dropdowns (`Dropdown15` auth / `Dropdown25` reauth) recalculate when Kaiser selects/changes the verified tier. Prefill UI shows the projected amounts.
   - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `src/lib/kaiser-isp-cover-sheet-template.ts`.
-  - Commit: _pending_.
+  - Commit: `4d116af7`.
 
 ## Changes 2026-10-29
 
