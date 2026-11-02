@@ -89,6 +89,8 @@ function __kTierRate(tierValue){var tier=String(tierValue||"").replace(/^\\s+|\\
 /**
  * Self-contained script: KP-approved tier only → Max Expense + Total Costs.
  * Never uses ILS requested tier — Kaiser may authorize a different level.
+ * Optional overrideTier is used during dropdown Keystroke (event.change) before the
+ * field value is committed, so amounts update immediately on selection.
  */
 export function buildKaiserTierApplyInlineScript(opts: {
   tierField: string;
@@ -100,7 +102,10 @@ export function buildKaiserTierApplyInlineScript(opts: {
   return `
 ${acrobatHelpersBlock()}
 try{
-  var rate=__kTierRate(this.getField("${tierField}").value);
+  var tierVal = (typeof __kOverrideTier != "undefined" && __kOverrideTier != null && String(__kOverrideTier) !== "")
+    ? String(__kOverrideTier)
+    : String(this.getField("${tierField}").value || "");
+  var rate=__kTierRate(tierVal);
   var maxF=this.getField("${maxField}");
   var rbF=this.getField("${roomBoardField}");
   var totF=this.getField("${totalField}");
@@ -142,7 +147,11 @@ try{
 `.trim();
 }
 
-/** Keystroke/Blur on KP tier dropdown — only commit when selection is finalized. */
+/**
+ * Keystroke on KP tier dropdown — apply as soon as a list item is chosen.
+ * Acrobat combo boxes fire Keystroke with willCommit=false and event.change = selected
+ * option; waiting for willCommit/blur is what caused "updates only on next field".
+ */
 export function buildKaiserTierDropdownChangeScript(opts: {
   tierField: string;
   maxField: string;
@@ -150,8 +159,25 @@ export function buildKaiserTierDropdownChangeScript(opts: {
   totalField: string;
 }): string {
   return `
-if(typeof event!="undefined" && event.willCommit===false) return;
-${buildKaiserTierApplyInlineScript(opts)}
+${acrobatHelpersBlock()}
+try{
+  var __kOverrideTier = null;
+  if (typeof event != "undefined") {
+    var changeStr = event.change != null ? String(event.change) : "";
+    var changeExStr = event.changeEx != null ? String(event.changeEx) : "";
+    var valueStr = event.value != null ? String(event.value) : "";
+    if (event.willCommit === false) {
+      // Dropdown list pick: new value is usually in event.change before the field commits.
+      if (changeStr !== "") __kOverrideTier = changeStr;
+      else if (changeExStr !== "") __kOverrideTier = changeExStr;
+      else if (valueStr !== "" && !/select from drop\\s*down/i.test(valueStr)) __kOverrideTier = valueStr;
+      else return; // keystroke noise with no selection yet
+    } else if (valueStr !== "") {
+      __kOverrideTier = valueStr;
+    }
+  }
+  ${buildKaiserTierApplyInlineScript(opts)}
+}catch(e){}
 `.trim();
 }
 
@@ -159,8 +185,7 @@ export function buildKaiserTierCalcAcrobatScript(): string {
   return `
 ${acrobatHelpersBlock()}
 function kaiserOnAuthTierChange(){
-  if(typeof event!="undefined" && event.willCommit===false) return;
-  ${buildKaiserTierApplyInlineScript({
+  ${buildKaiserTierDropdownChangeScript({
     tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
     maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
     roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
@@ -168,8 +193,7 @@ function kaiserOnAuthTierChange(){
   })}
 }
 function kaiserOnReauthTierChange(){
-  if(typeof event!="undefined" && event.willCommit===false) return;
-  ${buildKaiserTierApplyInlineScript({
+  ${buildKaiserTierDropdownChangeScript({
     tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
     maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
     roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,

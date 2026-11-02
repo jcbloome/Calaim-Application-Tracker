@@ -237,8 +237,29 @@ export function EligibilityResultsCard({
     });
   }, [rows, outcomeFilter, search]);
 
-  const downloadResults = () => {
+  const reviewQueueRows = useMemo(() => {
+    // One checklist export: Needs review (Caspio mismatch) + Unclear + Rejected / not found.
+    return rows.filter(
+      (row) =>
+        isFlagged(row) || row.result.outcome === 'unknown' || row.result.outcome === 'rejected'
+    );
+  }, [rows]);
+
+  const reviewBucketLabel = (row: Row) => {
+    const buckets: string[] = [];
+    if (isFlagged(row)) buckets.push('Needs review');
+    if (row.result.outcome === 'unknown') buckets.push('Unclear');
+    if (row.result.outcome === 'rejected') buckets.push('Rejected / not found');
+    return buckets.join('; ');
+  };
+
+  const downloadRowsAsCsv = (
+    rowsToExport: Row[],
+    fileLabel: string,
+    options?: { includeReviewBucket?: boolean }
+  ) => {
     const columns = [
+      ...(options?.includeReviewBucket ? ['Review status'] : []),
       'Last name',
       'First name',
       'Medi-Cal ID',
@@ -250,9 +271,10 @@ export function EligibilityResultsCard({
       'Messages',
       'Client_ID2',
       'Caspio CalAIM status',
-      'Needs review',
+      'Needs review detail',
     ];
-    const data = visibleRows.map((row) => [
+    const data = rowsToExport.map((row) => [
+      ...(options?.includeReviewBucket ? [reviewBucketLabel(row)] : []),
       row.result.lastName,
       row.result.firstName,
       row.result.memberId,
@@ -270,9 +292,19 @@ export function EligibilityResultsCard({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${BATCH_ELIGIBILITY_PLAN_LABELS[plan]} eligibility results ${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.download = `${BATCH_ELIGIBILITY_PLAN_LABELS[plan]} ${fileLabel} ${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadResults = () => {
+    downloadRowsAsCsv(visibleRows, 'eligibility results');
+  };
+
+  const downloadReviewQueue = () => {
+    downloadRowsAsCsv(reviewQueueRows, 'needs-review-unclear-rejected', {
+      includeReviewBucket: true,
+    });
   };
 
   const filterButton = (value: typeof outcomeFilter, text: string, count: number) => (
@@ -357,6 +389,17 @@ export function EligibilityResultsCard({
               <Button size="sm" variant="outline" onClick={downloadResults}>
                 <Download className="mr-2 h-4 w-4" />
                 Download these results (CSV)
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!reviewQueueRows.length}
+                onClick={downloadReviewQueue}
+                title="One CSV of Needs review + Unclear + Rejected / not found, with status for each row"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download Needs review + Unclear + Rejected (
+                {reviewQueueRows.length.toLocaleString()})
               </Button>
             </div>
             {onRecheck ? (
