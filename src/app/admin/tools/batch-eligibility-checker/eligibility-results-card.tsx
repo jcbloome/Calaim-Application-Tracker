@@ -1,7 +1,6 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { format } from 'date-fns';
 import { ChevronDown, ChevronRight, Download, FileUp, Loader2, RotateCcw, X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,38 +11,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import {
   BATCH_ELIGIBILITY_PLAN_LABELS,
-  buildCsv,
-  formatDate,
   type BatchEligibilityMember,
   type BatchEligibilityPlan,
 } from '@/lib/batch-eligibility';
 import {
-  coverageDates,
-  decode271,
-  otherEntities,
-  summarizeCoverage,
-  type EligibilityOutcome,
-  type EligibilityResult,
-} from '@/lib/x12-271';
+  buildEligibilityResultRows,
+  countEligibilityRows,
+  downloadEligibilityRowsCsv,
+  ELIGIBILITY_FLAG_LABELS,
+  ELIGIBILITY_OUTCOME_LABELS,
+  isEligibilityFlagged,
+  type EligibilityResultRow,
+} from '@/lib/batch-eligibility-results';
+import { decode271, type EligibilityOutcome, type EligibilityResult } from '@/lib/x12-271';
 
-type Flag = 'lost' | 'gained' | 'unmatched' | 'none';
-
-type Row = {
-  key: string;
-  result: EligibilityResult;
-  member: BatchEligibilityMember | null;
-  flag: Flag;
-  coverage: string;
-  dates: string[];
-  entities: string[];
-};
-
-const OUTCOME_LABELS: Record<EligibilityOutcome, string> = {
-  active: 'Active',
-  inactive: 'Inactive',
-  rejected: 'Rejected / not found',
-  unknown: 'Unclear',
-};
+type Row = EligibilityResultRow;
 
 const OUTCOME_CLASSES: Record<EligibilityOutcome, string> = {
   active: 'bg-green-100 text-green-800 border-green-200',
@@ -51,64 +33,6 @@ const OUTCOME_CLASSES: Record<EligibilityOutcome, string> = {
   rejected: 'bg-amber-100 text-amber-800 border-amber-200',
   unknown: 'bg-slate-100 text-slate-700 border-slate-200',
 };
-
-const FLAG_LABELS: Record<Exclude<Flag, 'none'>, string> = {
-  lost: 'Authorized in Caspio, not active',
-  gained: 'Not authorized in Caspio, now active',
-  unmatched: 'Not matched to one of our members',
-};
-
-const normId = (value: string) => String(value || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-const dobKey = (value: string) => formatDate(value, 'YYYYMMDD');
-const isFlagged = (row: Row) => row.flag === 'lost' || row.flag === 'gained';
-const isAuthorized = (member: BatchEligibilityMember | null) =>
-  member?.calaimStatus.trim().toLowerCase() === 'authorized';
-
-function buildRows(results: EligibilityResult[], members: BatchEligibilityMember[]): Row[] {
-  const byId = new Map<string, BatchEligibilityMember>();
-  const byClientId = new Map<string, BatchEligibilityMember>();
-  const byNameDob = new Map<string, BatchEligibilityMember>();
-  for (const m of members) {
-    if (m.medicalId) byId.set(normId(m.medicalId), m);
-    if (m.mrn && !byId.has(normId(m.mrn))) byId.set(normId(m.mrn), m);
-    if (m.clientId2) byClientId.set(String(m.clientId2).trim(), m);
-    byNameDob.set(`${m.lastName.trim().toUpperCase()}|${dobKey(m.birthDate)}`, m);
-  }
-  return results.map((result, i) => {
-    const member =
-      result.traceNumbers.map((t) => byClientId.get(t.trim())).find(Boolean) ||
-      byId.get(normId(result.memberId)) ||
-      (result.birthDate ? byNameDob.get(`${result.lastName.trim().toUpperCase()}|${dobKey(result.birthDate)}`) : undefined) ||
-      null;
-    let flag: Flag = 'none';
-    if (!member) flag = 'unmatched';
-    else if (isAuthorized(member) && result.outcome !== 'active') flag = 'lost';
-    else if (!isAuthorized(member) && result.outcome === 'active') flag = 'gained';
-    return {
-      key: `${i}-${result.memberId}`,
-      result,
-      member,
-      flag,
-      coverage: summarizeCoverage(result),
-      dates: coverageDates(result),
-      entities: otherEntities(result),
-    };
-  });
-}
-
-function countRows(rows: Row[]) {
-  const c: Record<EligibilityOutcome, number> = { active: 0, inactive: 0, rejected: 0, unknown: 0 };
-  let lost = 0;
-  let gained = 0;
-  let unmatched = 0;
-  for (const row of rows) {
-    c[row.result.outcome]++;
-    if (row.flag === 'lost') lost++;
-    else if (row.flag === 'gained') gained++;
-    else if (row.flag === 'unmatched') unmatched++;
-  }
-  return { ...c, lost, gained, unmatched, flagged: lost + gained };
-}
 
 type DecodedFile = { name: string; text: string };
 
@@ -171,7 +95,7 @@ export function EligibilityResultsCard({
     if (!getIdToken) return;
     setIsSaving(true);
     try {
-      const counts = countRows(buildRows(decoded, members));
+      const counts = countEligibilityRows(buildEligibilityResultRows(decoded, members));
       const form = new FormData();
       form.append('kind', 'decode');
       form.append('plan', plan);
@@ -204,8 +128,8 @@ export function EligibilityResultsCard({
     await saveToLog(files, decoded);
   };
 
-  const rows = useMemo(() => buildRows(results, members), [results, members]);
-  const counts = useMemo(() => countRows(rows), [rows]);
+  const rows = useMemo(() => buildEligibilityResultRows(results, members), [results, members]);
+  const counts = useMemo(() => countEligibilityRows(rows), [rows]);
 
   const selectWhere = (predicate: (row: Row) => boolean) =>
     setSelected((prev) => {
@@ -238,71 +162,18 @@ export function EligibilityResultsCard({
   }, [rows, outcomeFilter, search]);
 
   const reviewQueueRows = useMemo(() => {
-    // One checklist export: Needs review (Caspio mismatch) + Unclear + Rejected / not found.
     return rows.filter(
       (row) =>
-        isFlagged(row) || row.result.outcome === 'unknown' || row.result.outcome === 'rejected'
+        isEligibilityFlagged(row) || row.result.outcome === 'unknown' || row.result.outcome === 'rejected'
     );
   }, [rows]);
 
-  const reviewBucketLabel = (row: Row) => {
-    const buckets: string[] = [];
-    if (isFlagged(row)) buckets.push('Needs review');
-    if (row.result.outcome === 'unknown') buckets.push('Unclear');
-    if (row.result.outcome === 'rejected') buckets.push('Rejected / not found');
-    return buckets.join('; ');
-  };
-
-  const downloadRowsAsCsv = (
-    rowsToExport: Row[],
-    fileLabel: string,
-    options?: { includeReviewBucket?: boolean }
-  ) => {
-    const columns = [
-      ...(options?.includeReviewBucket ? ['Review status'] : []),
-      'Last name',
-      'First name',
-      'Medi-Cal ID',
-      'DOB',
-      'Eligibility result',
-      'Coverage',
-      'Coverage dates',
-      'Plans / entities',
-      'Messages',
-      'Client_ID2',
-      'Caspio CalAIM status',
-      'Needs review detail',
-    ];
-    const data = rowsToExport.map((row) => [
-      ...(options?.includeReviewBucket ? [reviewBucketLabel(row)] : []),
-      row.result.lastName,
-      row.result.firstName,
-      row.result.memberId,
-      row.result.birthDate,
-      OUTCOME_LABELS[row.result.outcome],
-      row.coverage,
-      row.dates.join('; '),
-      row.entities.join('; '),
-      [...new Set(row.result.benefits.flatMap((b) => b.messages))].join('; '),
-      row.member?.clientId2 || '',
-      row.member?.calaimStatus || '',
-      row.flag === 'none' ? '' : FLAG_LABELS[row.flag],
-    ]);
-    const blob = new Blob([buildCsv(columns, data)], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${BATCH_ELIGIBILITY_PLAN_LABELS[plan]} ${fileLabel} ${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
   const downloadResults = () => {
-    downloadRowsAsCsv(visibleRows, 'eligibility results');
+    downloadEligibilityRowsCsv(visibleRows, plan, 'eligibility results');
   };
 
   const downloadReviewQueue = () => {
-    downloadRowsAsCsv(reviewQueueRows, 'needs-review-unclear-rejected', {
+    downloadEligibilityRowsCsv(reviewQueueRows, plan, 'needs-review-unclear-rejected', {
       includeReviewBucket: true,
     });
   };
@@ -407,7 +278,7 @@ export function EligibilityResultsCard({
                 <div className="text-sm font-medium">Re-check members after fixing them in Caspio</div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs text-muted-foreground">Select:</span>
-                  <Button size="sm" variant="outline" onClick={() => selectWhere((r) => isFlagged(r))}>
+                  <Button size="sm" variant="outline" onClick={() => selectWhere((r) => isEligibilityFlagged(r))}>
                     Needs review ({counts.flagged})
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => selectWhere((r) => r.result.outcome === 'unknown')}>
@@ -511,7 +382,7 @@ export function EligibilityResultsCard({
                           </TableCell>
                           <TableCell className="align-top">
                             <Badge variant="outline" className={OUTCOME_CLASSES[row.result.outcome]}>
-                              {OUTCOME_LABELS[row.result.outcome]}
+                              {ELIGIBILITY_OUTCOME_LABELS[row.result.outcome]}
                             </Badge>
                           </TableCell>
                           <TableCell className="max-w-[22rem] align-top text-xs">
@@ -537,7 +408,7 @@ export function EligibilityResultsCard({
                                 variant={row.flag === 'unmatched' ? 'outline' : 'destructive'}
                                 className="mt-1 whitespace-normal"
                               >
-                                {FLAG_LABELS[row.flag]}
+                                {ELIGIBILITY_FLAG_LABELS[row.flag]}
                               </Badge>
                             ) : null}
                           </TableCell>

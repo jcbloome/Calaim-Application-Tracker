@@ -18,6 +18,11 @@ import {
   type BatchEligibilityPlan,
   type BatchEligibilityRun,
 } from '@/lib/batch-eligibility';
+import {
+  decodeEligibilityFilesToRows,
+  downloadEligibilityRowsCsv,
+} from '@/lib/batch-eligibility-results';
+import type { EligibilityOutcome } from '@/lib/x12-271';
 import { EligibilityResultsCard } from '../batch-eligibility-checker/eligibility-results-card';
 
 type KindFilter = 'all' | 'batch' | 'decode';
@@ -83,6 +88,7 @@ export default function BatchEligibilityLogPage() {
   const [openRun, setOpenRun] = useState<BatchEligibilityRun | null>(null);
   const [openFiles, setOpenFiles] = useState<Array<{ name: string; text: string }> | undefined>(undefined);
   const [loadingRunId, setLoadingRunId] = useState<string | null>(null);
+  const [csvDownloadKey, setCsvDownloadKey] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
   const getIdToken = useCallback(async () => {
@@ -143,15 +149,18 @@ export default function BatchEligibilityLogPage() {
     }
   };
 
+  const loadRunFiles = async (run: BatchEligibilityRun) =>
+    Promise.all(
+      run.files.map(async (file, index) => ({
+        name: file.name,
+        text: await (await authedFetch(`/api/admin/batch-eligibility/runs/${run.id}?file=${index}`)).text(),
+      }))
+    );
+
   const openResults = async (run: BatchEligibilityRun) => {
     setLoadingRunId(run.id);
     try {
-      const files = await Promise.all(
-        run.files.map(async (file, index) => ({
-          name: file.name,
-          text: await (await authedFetch(`/api/admin/batch-eligibility/runs/${run.id}?file=${index}`)).text(),
-        }))
-      );
+      const files = await loadRunFiles(run);
       setOpenRun(run);
       setOpenFiles(files);
       setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -159,6 +168,35 @@ export default function BatchEligibilityLogPage() {
       toast({ variant: 'destructive', title: 'Could not open results', description: error?.message });
     } finally {
       setLoadingRunId(null);
+    }
+  };
+
+  const downloadOutcomeCsv = async (run: BatchEligibilityRun, outcome: Extract<EligibilityOutcome, 'active' | 'inactive'>) => {
+    const key = `${run.id}:${outcome}`;
+    setCsvDownloadKey(key);
+    try {
+      const files = await loadRunFiles(run);
+      const rows = decodeEligibilityFilesToRows(files, members).filter((row) => row.result.outcome === outcome);
+      if (!rows.length) {
+        toast({
+          title: outcome === 'active' ? 'No eligible results in this run' : 'No not-eligible results in this run',
+        });
+        return;
+      }
+      downloadEligibilityRowsCsv(
+        rows,
+        plan,
+        outcome === 'active' ? 'eligible' : 'not-eligible',
+        { createdAtIso: run.createdAtIso }
+      );
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: outcome === 'active' ? 'Eligible download failed' : 'Not eligible download failed',
+        description: error?.message,
+      });
+    } finally {
+      setCsvDownloadKey(null);
     }
   };
 
@@ -171,7 +209,7 @@ export default function BatchEligibilityLogPage() {
           <h1 className="text-2xl font-bold tracking-tight">Batch Eligibility Log</h1>
           <p className="text-muted-foreground">
             Every batch file created (Health Net CSV for Claim.MD, Kaiser 270 for Smart Data Solutions) and every 271
-            result file decoded. Re-download any file or reopen decoded results.
+            result file decoded. Re-download any file, export eligible / not eligible CSVs, or reopen decoded results.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -279,19 +317,51 @@ export default function BatchEligibilityLogPage() {
                       </TableCell>
                       <TableCell className="align-top">
                         {run.kind === 'decode' ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => void openResults(run)}
-                            disabled={loadingRunId === run.id}
-                          >
-                            {loadingRunId === run.id ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <Eye className="mr-2 h-4 w-4" />
-                            )}
-                            Open results
-                          </Button>
+                          <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void openResults(run)}
+                              disabled={loadingRunId === run.id}
+                            >
+                              {loadingRunId === run.id ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Eye className="mr-2 h-4 w-4" />
+                              )}
+                              Open results
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-green-200 text-green-800 hover:bg-green-50"
+                              disabled={csvDownloadKey === `${run.id}:active` || !Number(run.summary?.active || 0)}
+                              onClick={() => void downloadOutcomeCsv(run, 'active')}
+                              title="CSV of Active / eligible responses from this run"
+                            >
+                              {csvDownloadKey === `${run.id}:active` ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Download className="mr-2 h-4 w-4" />
+                              )}
+                              Eligible ({Number(run.summary?.active || 0).toLocaleString()})
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-red-200 text-red-800 hover:bg-red-50"
+                              disabled={csvDownloadKey === `${run.id}:inactive` || !Number(run.summary?.inactive || 0)}
+                              onClick={() => void downloadOutcomeCsv(run, 'inactive')}
+                              title="CSV of Inactive / not eligible responses from this run"
+                            >
+                              {csvDownloadKey === `${run.id}:inactive` ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Download className="mr-2 h-4 w-4" />
+                              )}
+                              Not eligible ({Number(run.summary?.inactive || 0).toLocaleString()})
+                            </Button>
+                          </div>
                         ) : null}
                       </TableCell>
                     </TableRow>
