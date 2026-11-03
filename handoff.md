@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-02
 
+- **ISP Tracker — deleted member still visible to staff (e.g. Marilyn Brown).** Intake “Delete & start over” soft-deleted the intake but left `alft_assignments` with `swInviteSent: true`, so other staff still saw an invite row. Delete now soft-removes the assignment too; load hides old start-over ghosts until a real new invite; local UI drops all rows for that member.
+  - Files: `src/app/api/alft/intake/delete/route.ts`, `src/app/admin/tools/isp-tracker/page.tsx`, `handoff.md`.
+  - Commit: _(pending)_
+
 - **ISP Tracker — stuck on “Loading ISP Tracker data…”.** Load no longer waits for every reauth member’s H2022 Caspio-cache `getDoc` before rendering. Rows paint after intake/assignment merge; H2022 warnings enrich in small batches afterward. Stale loads are ignored; a 40s watchdog clears the spinner if Firestore is slow.
   - Files: `src/app/admin/tools/isp-tracker/page.tsx`, `handoff.md`.
   - Commit: `f72b2141`.

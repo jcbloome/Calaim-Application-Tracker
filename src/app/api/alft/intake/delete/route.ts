@@ -97,6 +97,7 @@ export async function POST(req: NextRequest) {
 
     let assignmentSnapshot: Record<string, unknown> | null = null;
     let assignmentReset = false;
+    const removedAtIso = new Date().toISOString();
     if (memberId) {
       const assignmentRef = adminDb.collection('alft_assignments').doc(memberId);
       const assignmentSnap = await assignmentRef.get().catch(() => null);
@@ -108,36 +109,64 @@ export async function POST(req: NextRequest) {
           workflowStage: clean(a.workflowStage, 160) || null,
           workflowSteps: a.workflowSteps && typeof a.workflowSteps === 'object' ? a.workflowSteps : null,
         };
-      }
+        const priorInvites =
+          a.workflowInvites && typeof a.workflowInvites === 'object' ? a.workflowInvites : {};
 
-      await assignmentRef
-        .set(
-          {
-            status: 'ready_for_resubmit',
-            workflowStatus: null,
-            workflowStage: null,
-            workflowRouting: {
-              nextStepKey: 'sw_submit',
-              nextStepLabel: 'Social worker submit ISP / ALFT',
+        // Soft-remove assignment from ISP Tracker too. Do NOT leave swInviteSent:true —
+        // that resurfaced deleted members as invite rows for other staff.
+        await assignmentRef
+          .set(
+            {
+              status: 'removed_from_isp_tracker',
+              workflowStatus: 'removed_from_isp_tracker',
+              workflowStage: 'removed_from_isp_tracker',
+              ispTrackerSoftDeleted: true,
+              removedFromIspTrackerAt: admin.firestore.FieldValue.serverTimestamp(),
+              removedFromIspTrackerAtIso: removedAtIso,
+              removedFromIspTrackerByUid: authCheck.uid,
+              removedFromIspTrackerByEmail: authCheck.email || null,
+              ispTrackerRestoreSnapshot: {
+                status: assignmentSnapshot.status,
+                workflowStatus: assignmentSnapshot.workflowStatus,
+                workflowStage: assignmentSnapshot.workflowStage,
+                workflowSteps: assignmentSnapshot.workflowSteps,
+                removedAtIso,
+              },
+              workflowInvites: {
+                ...priorInvites,
+                active: false,
+                cancelledAt: removedAtIso,
+                cancelledByUid: authCheck.uid,
+                cancelledByEmail: authCheck.email || null,
+              },
+              swInviteCancelledAtIso: removedAtIso,
+              workflowSteps: {
+                ...(a.workflowSteps && typeof a.workflowSteps === 'object' ? a.workflowSteps : {}),
+                swInviteSent: false,
+                swSubmittedSigned: false,
+                managerReview: 'pending',
+                rnReviewSignature: 'pending',
+                pdfReady: false,
+              },
+              lastIntakeId: null,
+              startOverAt: admin.firestore.FieldValue.serverTimestamp(),
+              startOverByUid: authCheck.uid,
+              startOverByEmail: authCheck.email || null,
+              startOverFromIntakeId: intakeId,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion({
+                event: 'removed_from_tracker',
+                atIso: removedAtIso,
+                byName: authCheck.email || 'Admin',
+                byEmail: authCheck.email || null,
+                details: 'Soft-deleted with ISP intake (hidden from tracker until undelete / new invite)',
+              }),
             },
-            workflowSteps: {
-              swInviteSent: true,
-              swSubmittedSigned: false,
-              managerReview: 'pending',
-              rnReviewSignature: 'pending',
-              pdfReady: false,
-            },
-            lastIntakeId: null,
-            startOverAt: admin.firestore.FieldValue.serverTimestamp(),
-            startOverByUid: authCheck.uid,
-            startOverByEmail: authCheck.email || null,
-            startOverFromIntakeId: intakeId,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        )
-        .catch(() => null);
-      assignmentReset = true;
+            { merge: true }
+          )
+          .catch(() => null);
+        assignmentReset = true;
+      }
     }
 
     await intakeRef.set(

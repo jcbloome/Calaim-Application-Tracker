@@ -1447,6 +1447,16 @@ export default function IspTrackerPage() {
             Boolean(data?.workflowSteps?.swInviteSent && !data?.workflowSteps?.swSubmittedSigned);
           if (!inviteStillActive) continue;
         }
+
+        // Older intake "Delete & start over" left assignment.swInviteSent=true without a new
+        // invite, so deleted members (e.g. Marilyn Brown) still appeared for other staff.
+        const startOverMs = Math.max(toMs(data.startOverAt), toMs(data.startOverAtIso));
+        if (startOverMs > 0 && !softRemovedFromTracker) {
+          const reinvitedAfterStartOver =
+            data?.workflowInvites?.active === true ||
+            (Boolean(data?.workflowSteps?.swInviteSent) && inviteFallbackMs > startOverMs);
+          if (!reinvitedAfterStartOver) continue;
+        }
         const invitePending =
           INVITE_PENDING_STATUSES.has(ws) ||
           INVITE_PENDING_STATUSES.has(status) ||
@@ -2510,7 +2520,11 @@ export default function IspTrackerPage() {
       if (!res.ok || !body?.success) {
         throw new Error(String(body?.error || 'Delete failed'));
       }
-      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      // Drop every row for this member (intake + any invite ghost from assignment).
+      const memberId = clean(row.memberId);
+      setRows((prev) =>
+        prev.filter((r) => r.id !== row.id && (!memberId || r.memberId !== memberId))
+      );
       setConfirmDeleteRow(null);
       toast({
         title: 'ISP record removed',
