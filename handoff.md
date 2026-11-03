@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-02
 
+- **Kaiser Cover Sheet — Total Costs appearance for staff browsers.** Final PDF pass re-applies room & board + Auto Calculated Total and rebuilds appearances so Chrome no longer shows stale `$0.00`. Generator UI also shows the expected Total Costs above the preview and cache-busts the iframe.
+  - Files: `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`.
+  - Commit: _pending_.
+
 - **Kaiser Cover Sheet — Open Cover Sheet stays in the same tab.** When all required fields are green, **Open Cover Sheet** uses in-app navigation instead of `window.open`/`_blank`, so a second browser window/tab is not created.
   - Files: `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`.
   - Commit: `63be5b08`.

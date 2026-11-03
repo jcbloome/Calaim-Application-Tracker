@@ -1178,6 +1178,31 @@ export async function GET(req: NextRequest) {
       if (isAuthorization) applyTwoLineFieldAppearance('Facility Address', addressTwoLine);
       if (isReauthorization) applyTwoLineFieldAppearance('Street City Zip', addressTwoLine);
     }
+    // Final pass: re-assert room & board + Total Costs AFTER dropdown/script appearance work.
+    // Browser PDF viewers (Chrome) show baked appearances, not live Acrobat Calculate — without
+    // this re-apply, staff often still see the template's stale $0.00 in Auto calculated.
+    try {
+      const totals = computeCoverSheetTotalCosts({ roomBoardAmount });
+      if (isAuthorization) {
+        setTextFieldOnly(KAISER_COVER_AUTH_ROOM_BOARD_FIELD, roomBoardAmount);
+        const maxField = getFieldMaybe(KAISER_COVER_AUTH_MAX_EXPENSE_FIELD);
+        if (maxField && isTextFieldLike(maxField)) maxField.setText('');
+        const totalField = getFieldMaybe(KAISER_COVER_AUTH_TOTAL_FIELD);
+        if (totalField && isTextFieldLike(totalField)) totalField.setText(totals.totalLabel);
+      }
+      if (isReauthorization) {
+        setTextFieldOnly(KAISER_COVER_REAUTH_ROOM_BOARD_FIELD, roomBoardAmount);
+        setTextFieldOnly('Text3', roomBoardAmount);
+        const maxField = getFieldMaybe(KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD);
+        if (maxField && isTextFieldLike(maxField)) maxField.setText('');
+        const totalField = getFieldMaybe(KAISER_COVER_REAUTH_TOTAL_FIELD);
+        if (totalField && isTextFieldLike(totalField)) totalField.setText(totals.totalLabel);
+      }
+      form.updateFieldAppearances(font);
+    } catch (finalTotalsError) {
+      console.warn('[kaiser-isp-cover-sheet/template] final Total Costs appearance pass failed', finalTotalsError);
+    }
+
     try {
       const acroForm = pdfDoc.catalog.lookup(PDFName.of('AcroForm'));
       if (acroForm && typeof (acroForm as { set?: unknown }).set === 'function') {

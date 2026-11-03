@@ -11,7 +11,10 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
-import { KAISER_COVER_SHEET_TIER_RATES } from '@/lib/kaiser-cover-sheet-tier-rates';
+import {
+  computeCoverSheetTotalCosts,
+  KAISER_COVER_SHEET_TIER_RATES,
+} from '@/lib/kaiser-cover-sheet-tier-rates';
 
 function clean(value: string | null) {
   return String(value || '').trim();
@@ -420,10 +423,18 @@ function KaiserIspCoverSheetPrintableContent() {
     effectiveLivingSituation,
   ]);
 
+  const expectedTotalCosts = useMemo(
+    () => computeCoverSheetTotalCosts({ roomBoardAmount: prefill.roomBoardAmount }),
+    [prefill.roomBoardAmount]
+  );
+
   const prefilledPreviewUrl = useMemo(() => {
-    const query = mergedParams.toString();
+    const params = new URLSearchParams(mergedParams);
+    // Bust browser PDF iframe cache when room & board / totals change.
+    params.set('_preview', `${expectedTotalCosts.totalLabel}-${expectedTotalCosts.roomBoard}`);
+    const query = params.toString();
     return `/api/forms/kaiser-isp-cover-sheet/template${query ? `?${query}` : ''}`;
-  }, [mergedParams]);
+  }, [mergedParams, expectedTotalCosts.totalLabel, expectedTotalCosts.roomBoard]);
 
   const buildDownloadUrl = (downloadLogId: string) => {
     const params = new URLSearchParams(mergedParams);
@@ -1023,6 +1034,13 @@ function KaiserIspCoverSheetPrintableContent() {
                       <div className="font-medium text-slate-900">
                         Total Costs + KP Max Tier Expenses
                       </div>
+                      <div className="mt-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-950">
+                        <span className="font-semibold">Auto Calculated Total Costs now:</span>{' '}
+                        {expectedTotalCosts.totalLabel}
+                        {expectedTotalCosts.roomBoard
+                          ? ` (member room & board ${expectedTotalCosts.totalLabel}; KP tier not selected yet)`
+                          : ' — enter Client Financial Responsibility above so Total is not $0.00'}
+                      </div>
                       <div className="mt-0.5">
                         Total Costs starts as the member&apos;s financial responsibility (room &amp; board).
                         ILS requested tier does not fill Max KP expenses. When Kaiser selects the approved
@@ -1256,8 +1274,16 @@ function KaiserIspCoverSheetPrintableContent() {
               PDF viewers often cannot use combo-box dropdowns).
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
+              <span className="font-semibold">Auto Calculated Total Costs</span> should show{' '}
+              <span className="font-semibold">{expectedTotalCosts.totalLabel}</span>
+              {expectedTotalCosts.roomBoard
+                ? ' (member financial responsibility / room & board). Max KP expenses stay blank until Kaiser picks a tier.'
+                : '. Enter and verify Client Financial Responsibility above — otherwise the PDF Total stays $0.00.'}
+            </div>
             <iframe
+              key={prefilledPreviewUrl}
               title="Kaiser ALFT filled preview"
               src={`${prefilledPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1`}
               className="h-[900px] w-full rounded border"
