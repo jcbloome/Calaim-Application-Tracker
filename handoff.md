@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-02
 
+- **Kaiser Cover Sheet — Open Cover Sheet stays in the same tab.** When all required fields are green, **Open Cover Sheet** uses in-app navigation instead of `window.open`/`_blank`, so a second browser window/tab is not created.
+  - Files: `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`.
+  - Commit: _pending_.
+
 - **UIS RCFE Notice tool.** Upload Health Net UIS / undocumented Medi-Cal ID Excel → match Caspio members → list RCFEs to email → send Health Net Jan 1, 2027 FFS transition notice (with member CSV attachment per RCFE). Links: Health Net home + provider UIS transition page (`…/providers/medi-cal-ffs-uis-member-transition.html`).
   - Files: `src/app/admin/tools/uis-rcfe-notice/page.tsx`, `src/lib/uis-rcfe-notice.ts`, `src/app/api/admin/uis-rcfe-notice/match/route.ts`, `src/app/api/admin/uis-rcfe-notice/send/route.ts`, `src/app/admin/layout.tsx`.
   - Commit: `682e800e`.

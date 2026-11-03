@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
-import { Database, ExternalLink, Loader2, RefreshCw, Search } from 'lucide-react';
+import { Database, FileText, Loader2, RefreshCw, Search } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -470,6 +471,7 @@ const buildIspCoverSheetUrl = (
 
 export default function KaiserIspCoverSheetToolPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const auth = useAuth();
   const { user } = useUser();
   const [members, setMembers] = useState<KaiserMember[]>([]);
@@ -787,10 +789,8 @@ export default function KaiserIspCoverSheetToolPage() {
       return;
     }
     if (!printableHref) return;
-    const popup = window.open(printableHref, '_blank', 'noopener,noreferrer');
-    if (!popup) {
-      window.location.href = printableHref;
-    }
+    // Same tab — avoid a second cover-sheet window when all required fields are green.
+    router.push(printableHref);
   };
 
   const handleRefreshSelectedMember = () => {
@@ -1172,12 +1172,13 @@ export default function KaiserIspCoverSheetToolPage() {
                         onClick={handleOpenIspCoverSheet}
                         disabled={!canOpenPrintable}
                       >
-                        <ExternalLink className="mr-2 h-4 w-4" />
+                        <FileText className="mr-2 h-4 w-4" />
                         Open Cover Sheet
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Opens `/admin/tools/kaiser-isp-cover-sheet/kaiser-isp-cover-sheet` with selected member data.
+                      Opens the cover sheet in this tab with the selected member data (use Back / return link to
+                      come back to the member list).
                     </p>
                   </>
                 )}
