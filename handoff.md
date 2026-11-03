@@ -12,7 +12,7 @@
 
 - **UIS RCFE Notice tool.** Upload Health Net UIS / undocumented Medi-Cal ID Excel → match Caspio members → list RCFEs to email → send Health Net Jan 1, 2027 FFS transition notice (with member CSV attachment per RCFE). Links: Health Net home + provider UIS transition page (`…/providers/medi-cal-ffs-uis-member-transition.html`).
   - Files: `src/app/admin/tools/uis-rcfe-notice/page.tsx`, `src/lib/uis-rcfe-notice.ts`, `src/app/api/admin/uis-rcfe-notice/match/route.ts`, `src/app/api/admin/uis-rcfe-notice/send/route.ts`, `src/app/admin/layout.tsx`.
-  - Commit: _pending_.
+  - Commit: `682e800e`.
 
 - **Kaiser Cover Sheet downloads — upgrade today’s PDFs + ZIP for ILS.** On `/admin/tools/kaiser-isp-cover-downloads`: **Today’s covers**, **Upgrade to new Total Costs** (patches archived PDFs in place: Total = room & board first + Acrobat scripts), and **Download all as ZIP for ILS**. Upgrade now rewrites field **appearances** (so Chrome no longer shows stale `$0.00`) and backfills blank room & board from Caspio/cache.
   - Files: `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/upgrade/route.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/zip/route.ts`, `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/route.ts`.
