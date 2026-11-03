@@ -328,8 +328,12 @@ function KaiserTrackerPageContent() {
       // Staff cards only include members with CalAIM Authorized or Pending.
       if (!isAuthorizedOrPendingCalaim(member?.CalAIM_Status)) return;
 
-      // Use normalized staff so numeric IDs (107, 224, 33, 48) count as Unassigned
-      const staffName = normalizeStaffForSummary(getStaffAssignmentValue(member));
+      const status = getEffectiveKaiserStatus(member);
+      // Case Closed belongs in the Case Closed bucket — never under a staff person's card.
+      let staffName = isCaseClosedStatus(status)
+        ? 'Case Closed'
+        : normalizeStaffForSummary(getStaffAssignmentValue(member));
+      if (isCaseClosedStatus(staffName)) staffName = 'Case Closed';
       
       // Initialize staff if not exists
       if (!assignments[staffName]) {
@@ -342,9 +346,6 @@ function KaiserTrackerPageContent() {
       
       assignments[staffName].count++;
       assignments[staffName].members.push(member);
-
-      // Count status breakdown
-      const status = getEffectiveKaiserStatus(member);
       assignments[staffName].statusBreakdown[status] = (assignments[staffName].statusBreakdown[status] || 0) + 1;
 
     });
@@ -432,7 +433,7 @@ function KaiserTrackerPageContent() {
       }
       
     } catch (error: any) {
-      console.error('Error loading member notes:', error);
+      console.warn('Error loading member notes:', String(error?.message || error));
       toast({
         title: "Error",
         description: error.message || "Failed to load member notes",
@@ -454,6 +455,18 @@ function KaiserTrackerPageContent() {
   const syncMemberNotes = async () => {
     const member = memberNotesModal.member;
     if (!member) return;
+    const clientId2 = String(member.client_ID2 || '').trim();
+    // Unpushed app intakes have synthetic draft-* IDs — Caspio rejects those with 400.
+    if (
+      clientId2.startsWith('draft-') ||
+      String((member as any)?.source || '').trim() === 'application-draft'
+    ) {
+      toast({
+        title: 'Not in Caspio yet',
+        description: 'Push this application to Caspio before syncing member notes.',
+      });
+      return;
+    }
     setMemberNotesModal((prev) => ({
       ...prev,
       isLoadingNotes: true,
@@ -461,7 +474,7 @@ function KaiserTrackerPageContent() {
     try {
       // Sync behavior: incremental by default, with one-time empty-store repair.
       const response = await fetch(
-        `/api/member-notes?clientId2=${member.client_ID2}&forceSync=false&skipSync=false&repairIfEmpty=true`
+        `/api/member-notes?clientId2=${encodeURIComponent(clientId2)}&forceSync=false&skipSync=false&repairIfEmpty=true`
       );
       const parsed = await parseApiJson(response);
       if (!parsed.ok) {
@@ -486,7 +499,8 @@ function KaiserTrackerPageContent() {
         description: `${data?.existingNotesCount || 0} existing + ${data?.newNotesCount || 0} new notes for ${member.memberFirstName} ${member.memberLastName}`,
       });
     } catch (error: any) {
-      console.error('Error syncing member notes:', error);
+      // Log as string — Next.js dev overlay treats console.error(Error) as unhandled.
+      console.warn('Error syncing member notes:', String(error?.message || error));
       setMemberNotesModal((prev) => ({
         ...prev,
         isLoadingNotes: false,
@@ -511,12 +525,18 @@ function KaiserTrackerPageContent() {
     if (notesGlobalSyncing) return;
     stopAllSyncRef.current = false;
     const scope = Array.isArray(categoryMembers)
-      ? categoryMembers.filter((m) => String(m?.client_ID2 || '').trim())
+      ? categoryMembers.filter((m) => {
+          const id = String(m?.client_ID2 || '').trim();
+          if (!id || id.startsWith('draft-')) return false;
+          if (String((m as any)?.source || '').trim() === 'application-draft') return false;
+          return true;
+        })
       : [];
     if (scope.length === 0) {
       toast({
-        title: 'No members in scope',
-        description: 'No members are available in this category to sync.',
+        title: 'No Caspio members in scope',
+        description:
+          'This category only has app intakes not pushed to Caspio yet — nothing to sync from Caspio notes.',
       });
       return;
     }
@@ -799,9 +819,14 @@ function KaiserTrackerPageContent() {
     if (notesGlobalSyncing) return;
 
     const base = Array.isArray(scopeOverride) && scopeOverride.length > 0 ? scopeOverride : members;
-    const scope = opts?.includeAllMembers
+    const inCaspio = (member: KaiserMember) => {
+      const id = String(member?.client_ID2 || '').trim();
+      return Boolean(id) && !id.startsWith('draft-') && String((member as any)?.source || '') !== 'application-draft';
+    };
+    const scope = (opts?.includeAllMembers
       ? base
-      : base.filter((member) => isAuthorizedOrPendingCalaim(member?.CalAIM_Status));
+      : base.filter((member) => isAuthorizedOrPendingCalaim(member?.CalAIM_Status))
+    ).filter(inCaspio);
     if (scope.length === 0) {
       if (!opts?.quiet) {
         toast({

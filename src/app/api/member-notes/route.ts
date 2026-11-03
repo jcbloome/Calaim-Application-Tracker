@@ -1108,13 +1108,28 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Unpushed Kaiser app intakes use synthetic draft-* Client_ID2 values — Caspio returns 400.
+    const memberKey = String(clientId2 || '').trim();
+    if (memberKey.startsWith('draft-')) {
+      return NextResponse.json({
+        success: true,
+        clientId2: memberKey,
+        notes: [],
+        count: 0,
+        didSync: false,
+        skippedCaspio: true,
+        existingNotesCount: 0,
+        newNotesCount: 0,
+        message: 'App intake not in Caspio yet — notes sync skipped.',
+      });
+    }
+
     console.log(
       `📥 Fetching notes for member: ${clientId2} (forceSync: ${forceSync}, skipSync: ${skipSync}, repairIfEmpty: ${repairIfEmpty})`
     );
 
     // Use legacy Caspio REST table sync for member notes.
     // The module-based notes tables are not guaranteed to exist in all Caspio environments.
-    const memberKey = String(clientId2 || '').trim();
     const prevStatus = await getSyncStatusFromFirestore(memberKey).catch(() => null);
     const prevLastSyncAt = String(prevStatus?.lastSyncAt || '').trim();
     const hasFirstSync = Boolean(prevStatus?.firstSyncCompleted);

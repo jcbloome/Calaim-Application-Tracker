@@ -172,6 +172,18 @@ const isKaiserDraftApplication = (app: Record<string, unknown>) => {
     isTruthy(app?.kaiserAuthReceivedViaIls)
   );
 };
+const isClosedOrInactiveKaiserStatus = (value: unknown) => {
+  const n = normalizeText(value);
+  return (
+    n === 'case closed' ||
+    n === 'case close' ||
+    n === 'denied' ||
+    n === 'not interested' ||
+    n === 'non active' ||
+    n === 'nonactive' ||
+    n.includes('case closed')
+  );
+};
 const deriveDraftKaiserStatus = (app: Record<string, unknown>) => {
   const explicit = String(app?.kaiserStatus || app?.Kaiser_Status || '').trim();
   if (explicit) return explicit;
@@ -188,7 +200,9 @@ const toDraftKaiserMember = (docId: string, app: Record<string, unknown>) => {
 
   const clientId2 = String(app?.clientId2 || app?.client_ID2 || app?.caspioClientId2 || '').trim();
   const syntheticClientId2 = clientId2 || `draft-${docId}`;
-  const staffAssigned = String(app?.assignedStaffName || app?.draftSubmittedByStaffName || '').trim();
+  // Only explicit assignment counts — do not attribute to whoever created/submitted the draft
+  // (that put closed intakes like Catherine Tan under Lisselotte Ventura).
+  const staffAssigned = String(app?.assignedStaffName || app?.Kaiser_User_Assignment || '').trim();
   const memberCounty = resolveMemberCounty(
     app as Record<string, unknown>,
     app?.memberCounty || app?.memberCustomaryCounty || app?.currentCounty || app?.Member_County || ''
@@ -278,17 +292,41 @@ const appendDraftKaiserMembers = async (adminDb: any, baseMembers: any[]) => {
     const existingClientIds = new Set(
       baseMembers.map((m) => String(m?.Client_ID2 || m?.client_ID2 || '').trim().toLowerCase()).filter(Boolean)
     );
+    const existingMrns = new Set(
+      baseMembers
+        .map((m) => String(m?.memberMrn || m?.MCP_CIN || m?.MRN || '').replace(/\D/g, ''))
+        .filter((mrn) => mrn.length >= 6)
+    );
     const draftMembers: any[] = [];
     draftsById.forEach((app, appId) => {
       if (!isKaiserDraftApplication(app)) return;
       if (Boolean(app?.caspioSent)) return;
       const statusText = normalizeText(app?.status || '');
-      const isDraftLike = statusText === 'draft' || statusText === 'authorization received (doc collection)' || !statusText;
+      const kaiserStatusText = normalizeText(app?.kaiserStatus || app?.Kaiser_Status || '');
+      // Closed / abandoned intakes must not appear on staff workload cards.
+      if (
+        isClosedOrInactiveKaiserStatus(statusText) ||
+        isClosedOrInactiveKaiserStatus(kaiserStatusText) ||
+        statusText.includes('closed') ||
+        statusText === 'cancelled' ||
+        statusText === 'canceled' ||
+        statusText === 'archived'
+      ) {
+        return;
+      }
+      const isDraftLike =
+        statusText === 'draft' ||
+        statusText === 'authorization received (doc collection)' ||
+        !statusText;
       if (!isDraftLike) return;
       const candidate = toDraftKaiserMember(appId, app);
       if (!candidate) return;
+      if (isClosedOrInactiveKaiserStatus(candidate.Kaiser_Status)) return;
       const candidateClientId = String(candidate?.Client_ID2 || '').trim().toLowerCase();
       if (candidateClientId && existingClientIds.has(candidateClientId)) return;
+      // Already in Caspio under another Client_ID2 — drop the unpushed draft ghost.
+      const candidateMrn = String(candidate?.memberMrn || '').replace(/\D/g, '');
+      if (candidateMrn.length >= 6 && existingMrns.has(candidateMrn)) return;
       draftMembers.push(candidate);
     });
 
