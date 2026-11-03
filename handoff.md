@@ -12,7 +12,7 @@
 
 - **Kaiser Tracker — closed / unpushed draft still under staff (Catherine Tan) + notes 400.** Drafts no longer inherit `draftSubmittedByStaffName` as Staff Assigned. Closed/cancelled drafts and drafts whose MRN already exists in Caspio are excluded. Case Closed buckets under Case Closed, not a staff card. Notes sync skips `draft-*` Client_IDs (Caspio 400) and logs errors as strings so Next.js doesn’t show a fake unhandled overlay.
   - Files: `src/app/api/kaiser-members/route.ts`, `src/app/admin/kaiser-tracker/page.tsx`, `src/app/api/member-notes/route.ts`, `handoff.md`.
-  - Commit: _(pending)_
+  - Commit: `038fd131`.
 
 - **ISP Tracker — deleted member still visible to staff (e.g. Marilyn Brown).** Intake “Delete & start over” soft-deleted the intake but left `alft_assignments` with `swInviteSent: true`, so other staff still saw an invite row. Delete now soft-removes the assignment too; load hides old start-over ghosts until a real new invite; local UI drops all rows for that member.
   - Files: `src/app/api/alft/intake/delete/route.ts`, `src/app/admin/tools/isp-tracker/page.tsx`, `handoff.md`.
