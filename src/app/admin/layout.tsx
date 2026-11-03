@@ -201,6 +201,7 @@ const adminNavLinks: AdminNavLink[] = [
       { href: '/admin/tools/health-net-active-members', label: 'Health Net Members', icon: FileSpreadsheet },
       { href: '/admin/tools/health-net-la-zip-counts', label: 'Health Net LA ZIP Counts', icon: MapPin },
       { href: '/admin/rcfe-bulk-email', label: 'RCFE Bulk Email', icon: Mail },
+      { href: '/admin/tools/uis-rcfe-notice', label: 'UIS RCFE Notice', icon: Mail },
       { href: '/admin/tools/alw-waitlist', label: 'ALW Waitlist (Sierra CCA)', icon: FileSpreadsheet },
       { href: '/admin/health-net-auth-requests', label: 'Health Net Auth Requests', icon: BellRing },
       { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Status', icon: ClipboardCheck },
