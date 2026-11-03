@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
 import {
   BATCH_ELIGIBILITY_PLAN_LABELS,
-  RECHECK_STORAGE_KEY,
+  recheckStorageKeyForPlan,
   type BatchEligibilityMember,
   type BatchEligibilityPlan,
   type BatchEligibilityRun,
@@ -28,8 +28,8 @@ import { EligibilityResultsCard } from '../batch-eligibility-checker/eligibility
 type KindFilter = 'all' | 'batch' | 'decode';
 
 const LIST_LABELS: Record<string, string> = {
-  authorized: 'Authorized',
-  'not-authorized': 'Inactive',
+  authorized: 'Authorized / Active statuses',
+  'not-authorized': 'Inactive / Other statuses',
   recheck: 'Re-check',
   statuses: 'Kaiser statuses',
 };
@@ -381,18 +381,14 @@ export default function BatchEligibilityLogPage() {
             plan={plan}
             preloaded={openFiles}
             title={`Results decoded ${format(new Date(openRun.createdAtIso), 'MMM d, yyyy h:mm a')}`}
-            onRecheck={
-              plan === 'healthnet'
-                ? (clientIds) => {
-                    try {
-                      sessionStorage.setItem(RECHECK_STORAGE_KEY, JSON.stringify(clientIds));
-                    } catch {
-                      // ignore
-                    }
-                    router.push('/admin/tools/batch-eligibility-checker');
-                  }
-                : undefined
-            }
+            onRecheck={(clientIds) => {
+              try {
+                sessionStorage.setItem(recheckStorageKeyForPlan(plan), JSON.stringify(clientIds));
+              } catch {
+                // ignore
+              }
+              router.push('/admin/tools/batch-eligibility-checker');
+            }}
           />
         ) : null}
       </div>

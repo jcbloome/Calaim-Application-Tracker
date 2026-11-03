@@ -10,7 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import type { BatchEligibilityMember } from '@/lib/batch-eligibility';
+import {
+  KAISER_ELIGIBILITY_STATUSES,
+  isKaiserEligibilityStatus,
+  type BatchEligibilityMember,
+} from '@/lib/batch-eligibility';
 import {
   DEFAULT_EDI_270_SETTINGS,
   build270,
@@ -44,11 +48,18 @@ const SETTING_FIELDS: Array<{ key: TextSettingKey; label: string; hint?: string;
   { key: 'serviceType', label: 'Service type code (EQ01)', hint: '30 = health benefit plan coverage' },
 ];
 
-const KAISER_CHECK_STATUSES = ['Authorized', 'Pending', 'H2022'];
-const isCheckedKaiserStatus = (status: string) =>
-  KAISER_CHECK_STATUSES.some((s) => s.toLowerCase() === status.trim().toLowerCase());
+const KAISER_CHECK_STATUSES = [...KAISER_ELIGIBILITY_STATUSES];
+const isCheckedKaiserStatus = isKaiserEligibilityStatus;
 
-export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promise<string> }) {
+export function KaiserBatchEligibility({
+  getIdToken,
+  mode = 'standalone',
+}: {
+  getIdToken: () => Promise<string>;
+  /** When embedded under Claim.MD, hide the 271 decode card (Claim.MD already has one). */
+  mode?: 'standalone' | 'sds-optional';
+}) {
+  const hideResults = mode === 'sds-optional';
   const { toast } = useToast();
   const [settings, setSettings] = useState<Edi270Settings>(DEFAULT_EDI_270_SETTINGS);
   const [settingsDirty, setSettingsDirty] = useState(false);
@@ -226,7 +237,7 @@ export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promi
         <CardHeader className="cursor-pointer select-none" onClick={() => setSettingsOpen((open) => !open)}>
           <CardTitle className="flex items-center gap-2">
             {showSettings ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-            1. Smart Data Solutions EDI settings
+            {hideResults ? 'A' : '1'}. Smart Data Solutions EDI settings
             {!showSettings ? (
               <Badge variant="secondary" className="font-normal">
                 Saved
@@ -315,7 +326,7 @@ export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promi
 
       <Card>
         <CardHeader>
-          <CardTitle>2. Kaiser members</CardTitle>
+          <CardTitle>{hideResults ? 'B' : '2'}. Kaiser members</CardTitle>
           <CardDescription>
             From the synced Caspio members cache
             {membersSyncedIso ? ` (last synced ${format(new Date(membersSyncedIso), 'MMM d, yyyy h:mm a')})` : ''}.
@@ -400,7 +411,7 @@ export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promi
 
       <Card>
         <CardHeader>
-          <CardTitle>3. Download 270 for Smart Data Solutions</CardTitle>
+          <CardTitle>{hideResults ? 'C' : '3'}. Download 270 for Smart Data Solutions</CardTitle>
           <CardDescription>
             X12 005010X279A1 batch eligibility inquiry. Each member&apos;s trace number (TRN) is their Caspio Client_ID2,
             so the 271 response can be matched back exactly.
@@ -430,12 +441,14 @@ export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promi
         </CardContent>
       </Card>
 
-      <EligibilityResultsCard
-        members={members}
-        plan="kaiser"
-        getIdToken={getIdToken}
-        title="4. Decode Smart Data Solutions 271 results"
-      />
+      {hideResults ? null : (
+        <EligibilityResultsCard
+          members={members}
+          plan="kaiser"
+          getIdToken={getIdToken}
+          title="4. Decode Smart Data Solutions 271 results"
+        />
+      )}
     </div>
   );
 }

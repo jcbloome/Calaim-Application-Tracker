@@ -32,8 +32,8 @@ export const MEMBER_FIELD_LABELS: Record<MemberFieldKey, string> = {
   firstName: 'Member first name',
   birthDate: 'Member birth date',
   sex: 'Member sex (M/F)',
-  medicalId: 'Medi-Cal CIN / member ID',
-  mrn: 'MRN',
+  medicalId: 'Medi-Cal CIN',
+  mrn: 'Kaiser MRN',
   clientId2: 'Caspio Client_ID2',
   calaimStatus: 'CalAIM status',
   authStartT2038: 'T2038 auth start',
@@ -52,11 +52,37 @@ const DATE_FIELDS = new Set<MemberFieldKey>([
   'authEndH2022',
 ]);
 
+/** Claim.MD payer IDs for Kaiser eligibility (ILS clearinghouse vs regional Kaiser). */
+export const KAISER_CLAIMMD_PAYER_IDS = {
+  ils: '81397',
+  north: '94135',
+  south: '94134',
+} as const;
+
+export type KaiserClaimMdPayerMode = 'region' | 'ils';
+
+/** Caspio statuses included in the routine Kaiser eligibility check batch. */
+export const KAISER_ELIGIBILITY_STATUSES = ['Authorized', 'H2022'] as const;
+
+export const isKaiserEligibilityStatus = (status: string) =>
+  KAISER_ELIGIBILITY_STATUSES.some((s) => s.toLowerCase() === status.trim().toLowerCase());
+
+/** Payerid for a Kaiser member row in the Claim.MD CSV. */
+export function kaiserClaimMdPayerId(
+  member: Pick<BatchEligibilityMember, 'region'>,
+  mode: KaiserClaimMdPayerMode = 'region'
+): string {
+  if (mode === 'ils') return KAISER_CLAIMMD_PAYER_IDS.ils;
+  if (/south/i.test(member.region || '')) return KAISER_CLAIMMD_PAYER_IDS.south;
+  return KAISER_CLAIMMD_PAYER_IDS.north;
+}
+
 /** How a template column is filled: a member field, a fixed value, today's date, or left blank. */
 export type ColumnSource =
   | { kind: 'member'; field: MemberFieldKey }
   | { kind: 'constant'; value: string }
   | { kind: 'today' }
+  | { kind: 'kaiserPayer'; mode: KaiserClaimMdPayerMode }
   | { kind: 'blank' };
 
 export type DateFormat = 'MM/DD/YYYY' | 'YYYYMMDD' | 'YYYY-MM-DD';
@@ -65,6 +91,9 @@ export const BATCH_ELIGIBILITY_RUNS_COLLECTION = 'batch_eligibility_runs';
 
 /** sessionStorage key holding Client_ID2s picked from decoded results for a re-check batch. */
 export const RECHECK_STORAGE_KEY = 'batch-eligibility-recheck-healthnet';
+
+export const recheckStorageKeyForPlan = (plan: BatchEligibilityPlan) =>
+  plan === 'kaiser' ? 'batch-eligibility-recheck-kaiser' : RECHECK_STORAGE_KEY;
 
 /** A logged batch file creation ("batch") or 271 results decode ("decode"). Files live in Storage. */
 export type BatchEligibilityRun = {
@@ -157,14 +186,67 @@ export function parseTemplateSheet(
   for (const [column, value] of Object.entries(PLAN_FIXED_VALUES[plan])) {
     if (parsed.columns.includes(column)) parsed.mapping[column] = { kind: 'constant', value };
   }
+  if (plan === 'kaiser') {
+    for (const column of parsed.columns) {
+      if (isKaiserClaimMdMemberIdColumn(column)) {
+        parsed.mapping[column] = { kind: 'member', field: 'mrn' };
+      }
+    }
+  }
   return parsed;
 }
 
 /** Columns that are always the same value for a plan's Claim.MD batch file. */
 export const PLAN_FIXED_VALUES: Record<BatchEligibilityPlan, Record<string, string>> = {
   healthnet: { payerid: '95567', prov_npi: '1508537325', pat_rel: '18' },
-  kaiser: {},
+  // payerid is set per row via ColumnSource kind `kaiserPayer` (North/South or ILS).
+  kaiser: { prov_npi: '1508537325', pat_rel: '18' },
 };
+
+/** Claim.MD columns that carry the subscriber / insured ID (Kaiser needs MRN here, not Medi-Cal CIN). */
+export function isKaiserClaimMdMemberIdColumn(column: string): boolean {
+  const key = column.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  if (!key || key.includes('payer') || key.includes('npi') || key.includes('tax')) return false;
+  if (key === 'mrn' || key.includes('kaiser')) return true;
+  if (/(insnumber|insuredid|memberid|subscriberid|subscriber|policyid|patid|patientid|idnumber)/.test(key)) {
+    return true;
+  }
+  const h = norm(column);
+  return (
+    /\b(ins|insured|member|subscriber|patient|pat)\b/.test(h) && /\b(id|number|num|no)\b/.test(h)
+  );
+}
+
+/** Apply Kaiser Claim.MD payer mapping (region or ILS) onto any payerid-like columns. */
+export function applyKaiserPayerMapping(
+  template: BatchEligibilityTemplate,
+  mode: KaiserClaimMdPayerMode
+): BatchEligibilityTemplate {
+  const mapping = { ...template.mapping };
+  for (const column of template.columns) {
+    const key = column.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (key.includes('payer')) mapping[column] = { kind: 'kaiserPayer', mode };
+  }
+  return { ...template, mapping };
+}
+
+/**
+ * Kaiser Claim.MD defaults: regional/ILS payerid + Kaiser MRN in the subscriber/member ID column
+ * (Medi-Cal CIN is rejected by Claim.MD for Kaiser).
+ */
+export function applyKaiserClaimMdDefaults(
+  template: BatchEligibilityTemplate,
+  mode: KaiserClaimMdPayerMode
+): BatchEligibilityTemplate {
+  const withPayer = applyKaiserPayerMapping(template, mode);
+  const mapping = { ...withPayer.mapping };
+  for (const column of withPayer.columns) {
+    if (isKaiserClaimMdMemberIdColumn(column)) {
+      mapping[column] = { kind: 'member', field: 'mrn' };
+    }
+  }
+  return { ...withPayer, mapping };
+}
 
 function parseSheetColumns(
   rows: unknown[][]
@@ -247,6 +329,7 @@ export function buildRow(member: BatchEligibilityMember, template: Pick<BatchEli
     const source = template.mapping[column] || { kind: 'blank' };
     if (source.kind === 'constant') return source.value;
     if (source.kind === 'today') return formatDate(todayIso(), template.dateFormat);
+    if (source.kind === 'kaiserPayer') return kaiserClaimMdPayerId(member, source.mode);
     if (source.kind === 'member') {
       const value = String(member[source.field] ?? '').trim();
       return DATE_FIELDS.has(source.field) ? formatDate(value, template.dateFormat) : value;

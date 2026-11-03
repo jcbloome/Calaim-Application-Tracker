@@ -196,8 +196,8 @@ export function EligibilityResultsCard({
         <CardDescription>
           {preloaded
             ? 'Decoded from the saved 271 file(s) and matched to current Caspio status.'
-            : `Upload the 271 eligibility response file(s) downloaded from ${
-                plan === 'kaiser' ? 'Smart Data Solutions' : 'Claim.MD'
+            : `Upload the 271 eligibility response file(s) downloaded from Claim.MD${
+                plan === 'kaiser' ? ' (or Smart Data Solutions, if using the optional 270)' : ''
               }. They are decoded and matched to ${BATCH_ELIGIBILITY_PLAN_LABELS[plan]} members by trace number, member ID (or last name + birth date), and the files are saved to the Batch Eligibility Log.`}
         </CardDescription>
       </CardHeader>

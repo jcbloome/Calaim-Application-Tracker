@@ -26,17 +26,24 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
 import {
+  BATCH_ELIGIBILITY_PLAN_LABELS,
+  KAISER_CLAIMMD_PAYER_IDS,
+  KAISER_ELIGIBILITY_STATUSES,
   MEMBER_FIELD_LABELS,
+  PLAN_FIXED_VALUES,
+  applyKaiserClaimMdDefaults,
   buildCsv,
-  RECHECK_STORAGE_KEY,
   buildRow,
   formatDate,
+  isKaiserEligibilityStatus,
   parseTemplateSheet,
+  recheckStorageKeyForPlan,
   type BatchEligibilityMember,
   type BatchEligibilityPlan,
   type BatchEligibilityTemplate,
   type ColumnSource,
   type DateFormat,
+  type KaiserClaimMdPayerMode,
   type MemberFieldKey,
 } from '@/lib/batch-eligibility';
 import { EligibilityResultsCard } from './eligibility-results-card';
@@ -44,31 +51,59 @@ import { KaiserBatchEligibility } from './kaiser-batch-eligibility';
 
 const DATE_FORMATS: DateFormat[] = ['MM/DD/YYYY', 'YYYYMMDD', 'YYYY-MM-DD'];
 type MemberList = 'authorized' | 'not-authorized' | 'recheck';
-const MEMBER_LISTS: Record<MemberList, { label: string; purpose: string }> = {
-  authorized: {
-    label: 'Authorized',
-    purpose: 'Caspio status Authorized — check whether any have lost eligibility.',
-  },
-  'not-authorized': {
-    label: 'Inactive',
-    purpose: 'Caspio status Non_Active — check whether any are now eligible.',
-  },
-  recheck: {
-    label: 'Re-check',
-    purpose: 'Members picked from decoded results — fix them in Caspio, pull the latest, then resubmit.',
-  },
-};
 const isAuthorizedStatus = (status: string) => status.trim().toLowerCase() === 'authorized';
 const isInactiveStatus = (status: string) => /^(non[\s_-]?active|inactive)$/i.test(status.trim());
+
+const memberListsForPlan = (plan: BatchEligibilityPlan): Record<MemberList, { label: string; purpose: string }> => {
+  if (plan === 'kaiser') {
+    return {
+      authorized: {
+        label: 'Authorized / H2022',
+        purpose: 'CalAIM_Status Authorized or H2022 — check current Kaiser eligibility via Claim.MD.',
+      },
+      'not-authorized': {
+        label: 'Other statuses',
+        purpose: 'All other Caspio statuses — optional eligibility check.',
+      },
+      recheck: {
+        label: 'Re-check',
+        purpose: 'Members picked from decoded results — fix them in Caspio, pull the latest, then resubmit.',
+      },
+    };
+  }
+  return {
+    authorized: {
+      label: 'Authorized',
+      purpose: 'Caspio status Authorized — check whether any have lost eligibility.',
+    },
+    'not-authorized': {
+      label: 'Inactive',
+      purpose: 'Caspio status Non_Active — check whether any are now eligible.',
+    },
+    recheck: {
+      label: 'Re-check',
+      purpose: 'Members picked from decoded results — fix them in Caspio, pull the latest, then resubmit.',
+    },
+  };
+};
 
 const sourceToSelectValue = (source: ColumnSource | undefined) => {
   if (!source || source.kind === 'blank') return 'blank';
   if (source.kind === 'member') return `member:${source.field}`;
+  if (source.kind === 'kaiserPayer') return `kaiserPayer:${source.mode}`;
   return source.kind;
 };
 
-function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<string> }) {
-  const plan: BatchEligibilityPlan = 'healthnet';
+function ClaimMdBatchEligibility({
+  getIdToken,
+  plan,
+}: {
+  getIdToken: () => Promise<string>;
+  plan: BatchEligibilityPlan;
+}) {
+  const planLabel = BATCH_ELIGIBILITY_PLAN_LABELS[plan];
+  const memberLists = memberListsForPlan(plan);
+  const recheckKey = recheckStorageKeyForPlan(plan);
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [template, setTemplate] = useState<BatchEligibilityTemplate | null>(null);
@@ -85,6 +120,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
   const [mappingOpen, setMappingOpen] = useState(false);
   const [recheckIds, setRecheckIds] = useState<string[]>([]);
   const [isPullingCaspio, setIsPullingCaspio] = useState(false);
+  const [kaiserPayerMode, setKaiserPayerMode] = useState<KaiserClaimMdPayerMode>('region');
   const step3Ref = useRef<HTMLDivElement>(null);
 
   const authedFetch = useCallback(
@@ -106,7 +142,63 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
     setIsLoadingTemplate(true);
     try {
       const data = await authedFetch(`/api/admin/batch-eligibility/template?plan=${plan}`);
-      setTemplate(data.template || null);
+      let next: BatchEligibilityTemplate | null = data.template || null;
+
+      // Kaiser uses the same Claim.MD CSV layout as Health Net — reuse HN format when Kaiser
+      // has never had its own template saved (otherwise download stays disabled).
+      if (!next && plan === 'kaiser') {
+        const hn = await authedFetch('/api/admin/batch-eligibility/template?plan=healthnet');
+        const source = hn.template as BatchEligibilityTemplate | null;
+        if (source?.columns?.length) {
+          let mapping: Record<string, ColumnSource> = { ...(source.mapping || {}) };
+          for (const [column, value] of Object.entries(PLAN_FIXED_VALUES.kaiser)) {
+            if (source.columns.includes(column)) mapping[column] = { kind: 'constant', value };
+          }
+          next = applyKaiserClaimMdDefaults(
+            {
+              ...source,
+              plan: 'kaiser',
+              fileName: source.fileName || 'Claim.MD format (from Health Net)',
+              mapping,
+              uploadedAtIso: new Date().toISOString(),
+              uploadedByEmail: source.uploadedByEmail || '',
+            },
+            'region'
+          );
+          const saved = await authedFetch('/api/admin/batch-eligibility/template', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(next),
+          });
+          next = saved.template || next;
+          toast({
+            title: 'Copied Health Net Claim.MD format for Kaiser',
+            description: `Subscriber ID uses Kaiser MRN. Payerid: North ${KAISER_CLAIMMD_PAYER_IDS.north} / South ${KAISER_CLAIMMD_PAYER_IDS.south} (or ILS ${KAISER_CLAIMMD_PAYER_IDS.ils}).`,
+          });
+        }
+      }
+
+      if (next && plan === 'kaiser') {
+        const payerSrc = next.columns.map((c) => next!.mapping[c]).find((src) => src?.kind === 'kaiserPayer');
+        const mode = payerSrc?.kind === 'kaiserPayer' ? payerSrc.mode : 'region';
+        setKaiserPayerMode(mode);
+        const before = JSON.stringify(next.mapping);
+        next = applyKaiserClaimMdDefaults(next, mode);
+        if (JSON.stringify(next.mapping) !== before) {
+          const saved = await authedFetch('/api/admin/batch-eligibility/template', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(next),
+          });
+          next = saved.template || next;
+          toast({
+            title: 'Kaiser Claim.MD mapping updated',
+            description: 'Subscriber / member ID columns now use Kaiser MRN (not Medi-Cal CIN).',
+          });
+        }
+      }
+
+      setTemplate(next);
       setMappingDirty(false);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Could not load saved format', description: error?.message });
@@ -122,17 +214,23 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
       const loaded: BatchEligibilityMember[] = data.members || [];
       setMembers(loaded);
       setMembersSyncedIso(data.lastSyncedIso || null);
-      setIncludedStatuses(
-        (prev) =>
-          prev ||
-          new Set(loaded.map((m) => m.calaimStatus).filter(isInactiveStatus))
-      );
+      setIncludedStatuses((prev) => {
+        if (prev) return prev;
+        if (plan === 'kaiser') {
+          return new Set(loaded.map((m) => m.calaimStatus).filter((s) => !isKaiserEligibilityStatus(s)));
+        }
+        return new Set(loaded.map((m) => m.calaimStatus).filter(isInactiveStatus));
+      });
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Could not load Health Net members', description: error?.message });
+      toast({
+        variant: 'destructive',
+        title: `Could not load ${planLabel} members`,
+        description: error?.message,
+      });
     } finally {
       setIsLoadingMembers(false);
     }
-  }, [authedFetch, plan, toast]);
+  }, [authedFetch, plan, planLabel, toast]);
 
   useEffect(() => {
     void loadTemplate();
@@ -181,11 +279,23 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
   };
 
   const listMembers = useMemo(() => {
-    const authorized = members.filter((m) => isAuthorizedStatus(m.calaimStatus));
-    const notAuthorized = members.filter((m) => isInactiveStatus(m.calaimStatus));
+    const authorized =
+      plan === 'kaiser'
+        ? members.filter((m) => isKaiserEligibilityStatus(m.calaimStatus))
+        : members.filter((m) => isAuthorizedStatus(m.calaimStatus));
+    const notAuthorized =
+      plan === 'kaiser'
+        ? members.filter((m) => !isKaiserEligibilityStatus(m.calaimStatus))
+        : members.filter((m) => isInactiveStatus(m.calaimStatus));
     const recheck = members.filter((m) => recheckIds.includes(m.clientId2));
     return { authorized, 'not-authorized': notAuthorized, recheck } as Record<MemberList, BatchEligibilityMember[]>;
-  }, [members, recheckIds]);
+  }, [members, recheckIds, plan]);
+
+  const setKaiserPayerModeAndMapping = (mode: KaiserClaimMdPayerMode) => {
+    setKaiserPayerMode(mode);
+    setTemplate((prev) => (prev ? applyKaiserClaimMdDefaults(prev, mode) : prev));
+    setMappingDirty(true);
+  };
 
   const startRecheck = useCallback(
     (clientIds: string[]) => {
@@ -193,7 +303,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
       setRecheckIds(unique);
       setList('recheck');
       try {
-        sessionStorage.setItem(RECHECK_STORAGE_KEY, JSON.stringify(unique));
+        sessionStorage.setItem(recheckKey, JSON.stringify(unique));
       } catch {
         // sessionStorage unavailable; the list still works for this page view
       }
@@ -203,14 +313,14 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
       });
       setTimeout(() => step3Ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     },
-    [toast]
+    [toast, recheckKey]
   );
 
   const clearRecheck = () => {
     setRecheckIds([]);
     setList('authorized');
     try {
-      sessionStorage.removeItem(RECHECK_STORAGE_KEY);
+      sessionStorage.removeItem(recheckKey);
     } catch {
       // ignore
     }
@@ -218,7 +328,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(sessionStorage.getItem(RECHECK_STORAGE_KEY) || '[]');
+      const saved = JSON.parse(sessionStorage.getItem(recheckKey) || '[]');
       if (Array.isArray(saved) && saved.length) {
         setRecheckIds(saved.map(String));
         setList('recheck');
@@ -226,7 +336,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
     } catch {
       // ignore
     }
-  }, []);
+  }, [recheckKey]);
 
   const pullLatestFromCaspio = async () => {
     setIsPullingCaspio(true);
@@ -261,19 +371,26 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
       list === 'not-authorized'
         ? listMembers['not-authorized'].filter((m) => includedStatuses?.has(m.calaimStatus))
         : listMembers[list];
-    const complete = byStatus.filter((m) => m.medicalId && m.birthDate && m.lastName && m.firstName);
+    // Claim.MD Kaiser eligibility needs Kaiser MRN as subscriber ID; Medi-Cal CIN is rejected.
+    const complete = byStatus.filter((m) =>
+      plan === 'kaiser'
+        ? m.mrn && m.birthDate && m.lastName && m.firstName
+        : m.medicalId && m.birthDate && m.lastName && m.firstName
+    );
     return {
       selectedMembers: skipIncomplete ? complete : byStatus,
       skippedIncomplete: skipIncomplete ? byStatus.length - complete.length : 0,
     };
-  }, [listMembers, list, includedStatuses, skipIncomplete]);
+  }, [listMembers, list, includedStatuses, skipIncomplete, plan]);
 
   const missingRequiredColumns = useMemo(() => {
     if (!template?.columnInfo) return [];
     return template.columns.filter((column) => {
       if (!template.columnInfo?.[column]?.required) return false;
       const source = template.mapping[column];
-      return !source || source.kind === 'blank' || (source.kind === 'constant' && !source.value.trim());
+      if (!source || source.kind === 'blank') return true;
+      if (source.kind === 'constant' && !source.value.trim()) return true;
+      return false;
     });
   }, [template]);
 
@@ -283,8 +400,15 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
     if (!template) return '';
     const fixed = template.columns
       .map((column) => [column, template.mapping[column]] as const)
-      .filter(([, source]) => source?.kind === 'constant')
-      .map(([column, source]) => `${column} ${(source as { value: string }).value}`);
+      .filter(([, source]) => source?.kind === 'constant' || source?.kind === 'kaiserPayer')
+      .map(([column, source]) => {
+        if (source?.kind === 'kaiserPayer') {
+          return source.mode === 'ils'
+            ? `${column} ILS ${KAISER_CLAIMMD_PAYER_IDS.ils}`
+            : `${column} North ${KAISER_CLAIMMD_PAYER_IDS.north} / South ${KAISER_CLAIMMD_PAYER_IDS.south}`;
+        }
+        return `${column} ${(source as { value: string }).value}`;
+      });
     return `Saved mapping · dates ${template.dateFormat}${fixed.length ? ` · ${fixed.join(', ')}` : ''}. Click to view or change.`;
   }, [template]);
 
@@ -296,7 +420,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
   const downloadCsv = async () => {
     if (!template) return;
     const csv = buildCsv(template.columns, selectedMembers.map((m) => buildRow(m, template)));
-    const fileName = `Health Net batch eligibility - ${MEMBER_LISTS[list].label} - ${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    const fileName = `${planLabel} batch eligibility - ${memberLists[list].label} - ${format(new Date(), 'yyyy-MM-dd')}.csv`;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -309,10 +433,12 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
     try {
       const statuses =
         list === 'authorized'
-          ? ['Authorized']
+          ? plan === 'kaiser'
+            ? [...KAISER_ELIGIBILITY_STATUSES]
+            : ['Authorized']
           : list === 'recheck'
             ? [...new Set(selectedMembers.map((m) => m.calaimStatus))]
-            : [...(includedStatuses || [])].filter(isInactiveStatus);
+            : [...(includedStatuses || [])];
       const form = new FormData();
       form.append('kind', 'batch');
       form.append('plan', plan);
@@ -321,11 +447,24 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
         'summary',
         JSON.stringify({
           memberCount: selectedMembers.length,
-          listLabel: MEMBER_LISTS[list].label,
+          listLabel: memberLists[list].label,
           statuses,
           skippedIncomplete,
           membersSyncedIso,
           templateFileName: template.fileName,
+          format: 'claimmd-csv',
+          ...(plan === 'kaiser'
+            ? {
+                payerMode: kaiserPayerMode,
+                payerIds:
+                  kaiserPayerMode === 'ils'
+                    ? { ils: KAISER_CLAIMMD_PAYER_IDS.ils }
+                    : {
+                        north: KAISER_CLAIMMD_PAYER_IDS.north,
+                        south: KAISER_CLAIMMD_PAYER_IDS.south,
+                      },
+              }
+            : {}),
         })
       );
       form.append('files', new File([blob], fileName, { type: 'text/csv' }));
@@ -345,8 +484,11 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
           <CardTitle>1. Claim.MD spreadsheet format</CardTitle>
           <CardDescription>
             Upload Claim.MD&apos;s &quot;Supported Column Definitions&quot; sheet (one row per field) or their Batch
-            Eligibility CSV example (first row = column names, second row = example values). The format is saved for
-            next time.
+            Eligibility CSV example (first row = column names, second row = example values). The format is saved for{' '}
+            {planLabel} separately.
+            {plan === 'kaiser'
+              ? ` Use the same Claim.MD layout as Health Net. Payerid is ILS ${KAISER_CLAIMMD_PAYER_IDS.ils}, Kaiser North ${KAISER_CLAIMMD_PAYER_IDS.north}, or Kaiser South ${KAISER_CLAIMMD_PAYER_IDS.south}.`
+              : null}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -471,6 +613,10 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
                                 const v = e.target.value;
                                 if (v.startsWith('member:')) {
                                   updateMapping(column, { kind: 'member', field: v.slice(7) as MemberFieldKey });
+                                } else if (v.startsWith('kaiserPayer:')) {
+                                  const mode = v.slice('kaiserPayer:'.length) as KaiserClaimMdPayerMode;
+                                  setKaiserPayerMode(mode);
+                                  updateMapping(column, { kind: 'kaiserPayer', mode });
                                 } else if (v === 'constant') {
                                   updateMapping(column, { kind: 'constant', value: template.exampleRow[i] || '' });
                                 } else if (v === 'today') {
@@ -483,6 +629,17 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
                               <option value="blank">Leave blank</option>
                               <option value="constant">Fixed value…</option>
                               <option value="today">Today&apos;s date</option>
+                              {plan === 'kaiser' ? (
+                                <>
+                                  <option value="kaiserPayer:region">
+                                    Kaiser by region (N {KAISER_CLAIMMD_PAYER_IDS.north} / S{' '}
+                                    {KAISER_CLAIMMD_PAYER_IDS.south})
+                                  </option>
+                                  <option value="kaiserPayer:ils">
+                                    ILS claims payer ({KAISER_CLAIMMD_PAYER_IDS.ils})
+                                  </option>
+                                </>
+                              ) : null}
                               {(Object.keys(MEMBER_FIELD_LABELS) as MemberFieldKey[]).map((field) => (
                                 <option key={field} value={`member:${field}`}>
                                   {MEMBER_FIELD_LABELS[field]}
@@ -512,7 +669,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
         <CardHeader>
           <CardTitle>3. Choose a member list</CardTitle>
           <CardDescription>
-            Health Net members from the synced Caspio members cache
+            {planLabel} members from the synced Caspio members cache
             {membersSyncedIso ? ` (last synced ${format(new Date(membersSyncedIso), 'MMM d, yyyy h:mm a')})` : ''}.
             Run each list as its own Claim.MD batch.
           </CardDescription>
@@ -535,10 +692,12 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
               )}
               Pull latest from Caspio
             </Button>
-            <span className="text-sm text-muted-foreground">{members.length.toLocaleString()} Health Net members</span>
+            <span className="text-sm text-muted-foreground">
+              {members.length.toLocaleString()} {planLabel} members
+            </span>
           </div>
           <div className={`grid gap-2 ${recheckIds.length ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
-            {(Object.keys(MEMBER_LISTS) as MemberList[])
+            {(Object.keys(memberLists) as MemberList[])
               .filter((key) => key !== 'recheck' || recheckIds.length > 0)
               .map((key) => (
               <button
@@ -550,12 +709,12 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{MEMBER_LISTS[key].label}</span>
+                  <span className="font-medium">{memberLists[key].label}</span>
                   <Badge variant={list === key ? 'default' : 'secondary'}>
                     {listMembers[key].length.toLocaleString()}
                   </Badge>
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">{MEMBER_LISTS[key].purpose}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{memberLists[key].purpose}</div>
               </button>
               ))}
           </div>
@@ -573,7 +732,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
               </div>
               {recheckIds.length > listMembers.recheck.length ? (
                 <div className="text-xs text-amber-700">
-                  {recheckIds.length - listMembers.recheck.length} selected member(s) are no longer in the Health Net
+                  {recheckIds.length - listMembers.recheck.length} selected member(s) are no longer in the {planLabel}{' '}
                   cache (deleted or plan changed).
                 </div>
               ) : null}
@@ -582,7 +741,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
                   <TableHeader>
                     <TableRow>
                       <TableHead>Member</TableHead>
-                      <TableHead>Medi-Cal CIN</TableHead>
+                      <TableHead>{plan === 'kaiser' ? 'Kaiser MRN' : 'Medi-Cal CIN'}</TableHead>
                       <TableHead>DOB</TableHead>
                       <TableHead>Caspio status</TableHead>
                       <TableHead>Client ID</TableHead>
@@ -596,7 +755,11 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
                           {m.firstName || <span className="text-destructive">missing first name</span>}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {m.medicalId || <span className="text-destructive">missing</span>}
+                          {plan === 'kaiser' ? (
+                            m.mrn || <span className="text-destructive">missing</span>
+                          ) : (
+                            m.medicalId || <span className="text-destructive">missing</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-xs">
                           {m.birthDate ? (
@@ -616,7 +779,9 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
           ) : null}
           {list === 'not-authorized' ? (
             <div className="text-xs text-muted-foreground">
-              Caspio has both spellings of Non_Active; untick either to leave it out:
+              {plan === 'kaiser'
+                ? 'Untick any status to leave it out of this batch:'
+                : 'Caspio has both spellings of Non_Active; untick either to leave it out:'}
             </div>
           ) : null}
           <div className={`flex flex-wrap gap-2 ${list !== 'not-authorized' ? 'hidden' : ''}`}>
@@ -647,9 +812,17 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
           </div>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={skipIncomplete} onCheckedChange={(value) => setSkipIncomplete(Boolean(value))} />
-            Leave out members missing a Medi-Cal CIN, birth date, or name
+            {plan === 'kaiser'
+              ? 'Leave out members missing a Kaiser MRN, birth date, or name'
+              : 'Leave out members missing a Medi-Cal CIN, birth date, or name'}
             {skippedIncomplete ? <Badge variant="outline">{skippedIncomplete} left out</Badge> : null}
           </label>
+          {plan === 'kaiser' ? (
+            <div className="text-xs text-muted-foreground">
+              Claim.MD Kaiser checks use the Kaiser MRN as subscriber ID. Medi-Cal CINs (e.g. 8 digits + letter) come
+              back as Rejected / Invalid subscriber ID.
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -662,6 +835,35 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {plan === 'kaiser' ? (
+            <div className="space-y-2 rounded-md border p-3 text-sm">
+              <div className="font-medium">Claim.MD payerid</div>
+              <div className="flex flex-wrap gap-3">
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="kaiser-payer-mode"
+                    checked={kaiserPayerMode === 'region'}
+                    onChange={() => setKaiserPayerModeAndMapping('region')}
+                  />
+                  By region — North {KAISER_CLAIMMD_PAYER_IDS.north} / South {KAISER_CLAIMMD_PAYER_IDS.south}
+                </label>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="kaiser-payer-mode"
+                    checked={kaiserPayerMode === 'ils'}
+                    onChange={() => setKaiserPayerModeAndMapping('ils')}
+                  />
+                  ILS claims payer {KAISER_CLAIMMD_PAYER_IDS.ils} (all rows)
+                </label>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Unknown region defaults to North {KAISER_CLAIMMD_PAYER_IDS.north}. Save mapping after changing before
+                download.
+              </div>
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={() => void downloadCsv()}
@@ -670,10 +872,14 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
               }
             >
               {isSavingRun ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-              Download {MEMBER_LISTS[list].label} CSV ({selectedMembers.length.toLocaleString()} members)
+              Download {memberLists[list].label} CSV ({selectedMembers.length.toLocaleString()} members)
             </Button>
             {!template ? (
-              <span className="text-sm text-muted-foreground">Upload the Claim.MD format first.</span>
+              <span className="text-sm text-muted-foreground">
+                {plan === 'kaiser'
+                  ? 'No Claim.MD format yet — upload one in step 1, or save Health Net’s format first so Kaiser can reuse it.'
+                  : 'Upload the Claim.MD format first.'}
+              </span>
             ) : missingRequiredColumns.length ? (
               <span className="text-sm text-destructive">
                 Fill the required column{missingRequiredColumns.length > 1 ? 's' : ''}{' '}
@@ -733,8 +939,8 @@ export default function BatchEligibilityCheckerPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Batch Eligibility Checker</h1>
           <p className="text-muted-foreground">
-            Build batch eligibility files from our members — Health Net as a Claim.MD CSV, Kaiser as an X12 270 for
-            Smart Data Solutions — and decode the 271 results.
+            Build Claim.MD batch eligibility CSVs for Health Net and Kaiser (same format), decode the 271 results, and
+            optionally build a Kaiser X12 270 for Smart Data Solutions when that path is ready.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -750,10 +956,17 @@ export default function BatchEligibilityCheckerPage() {
           <TabsTrigger value="kaiser">Kaiser</TabsTrigger>
         </TabsList>
         <TabsContent value="healthnet" className="mt-4">
-          <HealthNetBatchEligibility getIdToken={getIdToken} />
+          <ClaimMdBatchEligibility getIdToken={getIdToken} plan="healthnet" />
         </TabsContent>
-        <TabsContent value="kaiser" className="mt-4">
-          <KaiserBatchEligibility getIdToken={getIdToken} />
+        <TabsContent value="kaiser" className="mt-4 space-y-6">
+          <ClaimMdBatchEligibility getIdToken={getIdToken} plan="kaiser" />
+          <div className="rounded-md border border-dashed p-4">
+            <div className="mb-3 text-sm text-muted-foreground">
+              Optional — X12 270 for Smart Data Solutions (keep using Claim.MD above until SDS submission is figured
+              out).
+            </div>
+            <KaiserBatchEligibility getIdToken={getIdToken} mode="sds-optional" />
+          </div>
         </TabsContent>
       </Tabs>
     </div>

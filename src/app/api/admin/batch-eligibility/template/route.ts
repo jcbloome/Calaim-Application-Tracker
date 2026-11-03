@@ -22,6 +22,8 @@ function sanitizeMapping(raw: unknown, columns: string[]): Record<string, Column
     if (src?.kind === 'member' && s(src.field)) out[column] = { kind: 'member', field: s(src.field) as any };
     else if (src?.kind === 'constant') out[column] = { kind: 'constant', value: s(src.value) };
     else if (src?.kind === 'today') out[column] = { kind: 'today' };
+    else if (src?.kind === 'kaiserPayer')
+      out[column] = { kind: 'kaiserPayer', mode: src.mode === 'ils' ? 'ils' : 'region' };
     else out[column] = { kind: 'blank' };
   }
   return out;
