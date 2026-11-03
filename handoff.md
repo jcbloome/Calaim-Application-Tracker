@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-02
 
+- **ISP Tracker — stuck on “Loading ISP Tracker data…”.** Load no longer waits for every reauth member’s H2022 Caspio-cache `getDoc` before rendering. Rows paint after intake/assignment merge; H2022 warnings enrich in small batches afterward. Stale loads are ignored; a 40s watchdog clears the spinner if Firestore is slow.
+  - Files: `src/app/admin/tools/isp-tracker/page.tsx`, `handoff.md`.
+  - Commit: _(pending)_
+
 - **Batch Eligibility — Kaiser Claim.MD CSV.** Routine check list is **Authorized / H2022** only. Claim.MD subscriber/member ID uses **Kaiser MRN** (not Medi-Cal CIN — CIN gets Rejected / Invalid subscriber ID). `payerid` by region **North `94135` / South `94134`** or ILS **`81397`**. Members missing MRN are left out of the download by default. Same CSV layout as Health Net. SDS 270 optional.
   - Files: `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/lib/batch-eligibility.ts`, `src/lib/x12-270.ts`, `src/app/api/admin/batch-eligibility/template/route.ts`, `handoff.md`.
   - Commit: `face537f`.

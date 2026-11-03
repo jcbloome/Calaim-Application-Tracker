@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -1012,6 +1012,8 @@ export default function IspTrackerPage() {
   const [sentToIlsConfirmChecked, setSentToIlsConfirmChecked] = useState(false);
   const [sentToIlsSaving, setSentToIlsSaving] = useState(false);
   const [refreshingSwRnContacts, setRefreshingSwRnContacts] = useState(false);
+  /** Ignore stale loadRows results when Refresh / deps re-trigger mid-flight. */
+  const loadGenRef = useRef(0);
 
   useEffect(() => {
     setLayoutMode(readIspLayoutMode());
@@ -1030,9 +1032,19 @@ export default function IspTrackerPage() {
 
   const loadRows = useCallback(async () => {
     if (!firestore || !isAdmin) return;
+    const gen = ++loadGenRef.current;
     setLoading(true);
     setError('');
+    const isStale = () => loadGenRef.current !== gen;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     try {
+      watchdog = setTimeout(() => {
+        if (isStale()) return;
+        // Unblock the UI if Firestore is still grinding — partial rows may already be set.
+        setLoading(false);
+        setError((prev) => prev || 'ISP Tracker is taking longer than usual. Try Refresh if the list looks incomplete.');
+      }, 40000);
+
       let snap;
       try {
         snap = await getDocs(
@@ -1044,10 +1056,12 @@ export default function IspTrackerPage() {
           )
         );
       } catch {
+        if (isStale()) return;
         snap = await getDocs(
           query(collection(firestore, 'standalone_upload_submissions'), orderBy('updatedAt', 'desc'), limit(400))
         );
       }
+      if (isStale()) return;
 
       const intakeByMember = new Map<string, string>();
       const intakeRowByMember = new Map<string, IspRow>();
@@ -1791,6 +1805,13 @@ export default function IspTrackerPage() {
         };
       });
 
+      // Show the tracker immediately — do not block on per-member H2022 cache lookups.
+      if (isStale()) return;
+      setRows(withSentToIls);
+      setLoading(false);
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = undefined;
+
       // Reauth rows: look up H2022 end date from members cache for approaching/ended warning.
       const reauthMemberIds = [
         ...new Set(
@@ -1800,55 +1821,60 @@ export default function IspTrackerPage() {
             .filter(Boolean)
         ),
       ];
-      const h2022ByMember = new Map<
-        string,
-        ReturnType<typeof buildH2022EndWarning>
-      >();
       if (reauthMemberIds.length) {
-        await Promise.all(
-          reauthMemberIds.map(async (memberId) => {
-            try {
-              const snap = await getDoc(doc(firestore, 'caspio_members_cache', memberId));
-              if (!snap.exists()) return;
-              const data = snap.data() || {};
-              const plan =
-                clean(data.CalAIM_MCO) ||
-                clean(data.healthPlan) ||
-                clean(data.Health_Plan) ||
-                'Kaiser';
-              const endRaw =
-                data.Authorization_End_Date_H2022 ||
-                data.Auth_End_Date_H2022 ||
-                data.H2022_End_Date ||
-                '';
-              h2022ByMember.set(memberId, buildH2022EndWarning(plan, endRaw));
-            } catch {
-              // cache miss / permission — skip warning for this member
-            }
+        const h2022ByMember = new Map<string, ReturnType<typeof buildH2022EndWarning>>();
+        const BATCH = 20;
+        for (let i = 0; i < reauthMemberIds.length; i += BATCH) {
+          if (isStale()) return;
+          const chunk = reauthMemberIds.slice(i, i + BATCH);
+          await Promise.all(
+            chunk.map(async (memberId) => {
+              try {
+                const memberSnap = await getDoc(doc(firestore, 'caspio_members_cache', memberId));
+                if (!memberSnap.exists()) return;
+                const data = memberSnap.data() || {};
+                const plan =
+                  clean(data.CalAIM_MCO) ||
+                  clean(data.healthPlan) ||
+                  clean(data.Health_Plan) ||
+                  'Kaiser';
+                const endRaw =
+                  data.Authorization_End_Date_H2022 ||
+                  data.Auth_End_Date_H2022 ||
+                  data.H2022_End_Date ||
+                  '';
+                h2022ByMember.set(memberId, buildH2022EndWarning(plan, endRaw));
+              } catch {
+                // cache miss / permission — skip warning for this member
+              }
+            })
+          );
+        }
+        if (isStale() || !h2022ByMember.size) return;
+        setRows((prev) =>
+          prev.map((row) => {
+            if (normalizeIspAssessmentPurpose(row.assessmentPurpose) !== 'review') return row;
+            const memberId = clean(row.memberId);
+            const warn = memberId ? h2022ByMember.get(memberId) : undefined;
+            if (!warn) return row;
+            return {
+              ...row,
+              h2022EndWarning: warn.h2022EndWarning,
+              h2022DaysUntilEnd: warn.h2022DaysUntilEnd,
+              h2022WarningLabel: warn.h2022WarningLabel,
+              h2022EndDate: warn.h2022EndDate,
+            };
           })
         );
       }
-
-      setRows(
-        withSentToIls.map((row) => {
-          if (normalizeIspAssessmentPurpose(row.assessmentPurpose) !== 'review') return row;
-          const memberId = clean(row.memberId);
-          const warn = memberId ? h2022ByMember.get(memberId) : undefined;
-          if (!warn) return row;
-          return {
-            ...row,
-            h2022EndWarning: warn.h2022EndWarning,
-            h2022DaysUntilEnd: warn.h2022DaysUntilEnd,
-            h2022WarningLabel: warn.h2022WarningLabel,
-            h2022EndDate: warn.h2022EndDate,
-          };
-        })
-      );
     } catch (e: any) {
-      setError(String(e?.message || 'Failed to load ISP intakes'));
-      setRows([]);
+      if (!isStale()) {
+        setError(String(e?.message || 'Failed to load ISP intakes'));
+        setRows([]);
+      }
     } finally {
-      setLoading(false);
+      if (watchdog) clearTimeout(watchdog);
+      if (!isStale()) setLoading(false);
     }
   }, [firestore, isAdmin]);
 
