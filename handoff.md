@@ -12,7 +12,7 @@
 
 - **Batch Eligibility — Kaiser Claim.MD CSV.** Routine check list is **Authorized / H2022** only. Claim.MD subscriber/member ID uses **Kaiser MRN** (not Medi-Cal CIN — CIN gets Rejected / Invalid subscriber ID). `payerid` by region **North `94135` / South `94134`** or ILS **`81397`**. Members missing MRN are left out of the download by default. Same CSV layout as Health Net. SDS 270 optional.
   - Files: `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/lib/batch-eligibility.ts`, `src/lib/x12-270.ts`, `src/app/api/admin/batch-eligibility/template/route.ts`, `handoff.md`.
-  - Commit: _(pending)_
+  - Commit: `face537f`.
 
 - **Kaiser Cover Sheet — Total Costs appearance for staff browsers.** Final PDF pass re-applies room & board + Auto Calculated Total and rebuilds appearances so Chrome no longer shows stale `$0.00`. Generator UI also shows the expected Total Costs above the preview and cache-busts the iframe.
   - Files: `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`.
