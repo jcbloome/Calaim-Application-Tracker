@@ -23,6 +23,8 @@ export type BatchEligibilityMember = {
   county: string;
   /** Kaiser North / Kaiser South (Kaiser members only). */
   region: string;
+  /** Caspio CalAIM_MCO (Health Net / Kaiser). */
+  healthPlan: string;
 };
 
 export type MemberFieldKey = keyof BatchEligibilityMember;
@@ -42,6 +44,7 @@ export const MEMBER_FIELD_LABELS: Record<MemberFieldKey, string> = {
   authEndH2022: 'H2022 auth end',
   county: 'County',
   region: 'Kaiser region',
+  healthPlan: 'Health plan (CalAIM_MCO)',
 };
 
 const DATE_FIELDS = new Set<MemberFieldKey>([
@@ -59,7 +62,79 @@ export const KAISER_CLAIMMD_PAYER_IDS = {
   south: '94134',
 } as const;
 
+/** Claim.MD payer ID used for Health Net batch eligibility CSVs. */
+export const HEALTH_NET_CLAIMMD_PAYER_ID = '95567';
+
 export type KaiserClaimMdPayerMode = 'region' | 'ils';
+
+const KAISER_PAYER_ID_SET = new Set<string>(Object.values(KAISER_CLAIMMD_PAYER_IDS));
+
+/** Map a Claim.MD / 271 payer ID to Health Net or Kaiser. */
+export function planFromClaimMdPayerId(payerId: unknown): BatchEligibilityPlan | null {
+  const id = String(payerId || '').replace(/\D/g, '');
+  if (!id) return null;
+  if (KAISER_PAYER_ID_SET.has(id)) return 'kaiser';
+  if (id === HEALTH_NET_CLAIMMD_PAYER_ID) return 'healthnet';
+  return null;
+}
+
+/** Infer MCP from 271 payer IDs first (authoritative), then payer name. */
+export function inferBatchEligibilityPlanFrom271(
+  results: Array<{ payerName?: string; payerId?: string }>,
+  fallback: BatchEligibilityPlan = 'healthnet'
+): BatchEligibilityPlan {
+  let kaiserVotes = 0;
+  let healthNetVotes = 0;
+  for (const result of results) {
+    const fromId = planFromClaimMdPayerId(result.payerId);
+    if (fromId === 'kaiser') kaiserVotes++;
+    else if (fromId === 'healthnet') healthNetVotes++;
+    else {
+      const name = String(result.payerName || '').toLowerCase();
+      if (/kaiser|\bkp\b|kfhp/.test(name)) kaiserVotes++;
+      else if (/health\s*net|healthnet/.test(name)) healthNetVotes++;
+    }
+  }
+  if (kaiserVotes > healthNetVotes) return 'kaiser';
+  if (healthNetVotes > kaiserVotes) return 'healthnet';
+  return fallback;
+}
+
+/** Fast MCP detect from raw 271 / EDI text via known Claim.MD payer IDs. */
+export function inferBatchEligibilityPlanFromEdiText(
+  text: string,
+  fallback: BatchEligibilityPlan | null = null
+): BatchEligibilityPlan | null {
+  const sample = String(text || '').slice(0, 200_000);
+  const hasKaiserId = [...KAISER_PAYER_ID_SET].some((id) => sample.includes(id));
+  const hasHealthNetId = sample.includes(HEALTH_NET_CLAIMMD_PAYER_ID);
+  if (hasKaiserId && !hasHealthNetId) return 'kaiser';
+  if (hasHealthNetId && !hasKaiserId) return 'healthnet';
+  if (hasKaiserId && hasHealthNetId) {
+    // Prefer whichever ID appears first (matches the file's primary payer).
+    const kPos = Math.min(
+      ...[...KAISER_PAYER_ID_SET].map((id) => {
+        const i = sample.indexOf(id);
+        return i < 0 ? Number.POSITIVE_INFINITY : i;
+      })
+    );
+    const hPos = sample.indexOf(HEALTH_NET_CLAIMMD_PAYER_ID);
+    return kPos <= hPos ? 'kaiser' : 'healthnet';
+  }
+  if (/NM1\*PR\*[^*]*\*[^~]*KAISER/i.test(sample) || /\bKFHP\b|\bKP\s*HP\b/i.test(sample)) return 'kaiser';
+  if (/NM1\*PR\*[^*]*\*[^~]*HEALTH\s*NET/i.test(sample)) return 'healthnet';
+  return fallback;
+}
+
+/** Display MCP for a logged run (prefers payer-detected plan over the UI tab used at save time). */
+export function resolveBatchEligibilityRunPlan(run: {
+  plan?: string;
+  summary?: Record<string, any> | null;
+}): BatchEligibilityPlan {
+  const detected = String(run.summary?.detectedPlan || run.summary?.mcp || '').toLowerCase();
+  if (detected === 'kaiser' || detected === 'healthnet') return detected;
+  return run.plan === 'kaiser' ? 'kaiser' : 'healthnet';
+}
 
 /** Caspio statuses included in the routine Kaiser eligibility check batch. */
 export const KAISER_ELIGIBILITY_STATUSES = ['Authorized', 'H2022'] as const;

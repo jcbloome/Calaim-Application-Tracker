@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import {
   BATCH_ELIGIBILITY_PLAN_LABELS,
+  inferBatchEligibilityPlanFrom271,
   type BatchEligibilityMember,
   type BatchEligibilityPlan,
 } from '@/lib/batch-eligibility';
@@ -41,8 +42,10 @@ export function EligibilityResultsCard({
   plan = 'healthnet',
   getIdToken,
   preloaded,
-  title = '5. Decode Claim.MD 271 results',
+  title = '3. Decode Claim.MD 271 results',
   onRecheck,
+  onSavedToLog,
+  allowUploadWhenPreloaded = false,
 }: {
   members: BatchEligibilityMember[];
   plan?: BatchEligibilityPlan;
@@ -53,6 +56,10 @@ export function EligibilityResultsCard({
   title?: string;
   /** Called with the Client_ID2s of selected members to build a re-check batch. */
   onRecheck?: (clientIds: string[]) => void;
+  /** After a new 271 upload is saved to Firestore. */
+  onSavedToLog?: () => void;
+  /** Keep the upload control visible even when showing a reopened run. */
+  allowUploadWhenPreloaded?: boolean;
 }) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,12 +103,22 @@ export function EligibilityResultsCard({
     setIsSaving(true);
     try {
       const counts = countEligibilityRows(buildEligibilityResultRows(decoded, members));
+      const loggedPlan = inferBatchEligibilityPlanFrom271(decoded, plan);
+      const payerIds = [...new Set(decoded.map((r) => String(r.payerId || '').replace(/\D/g, '')).filter(Boolean))];
       const form = new FormData();
       form.append('kind', 'decode');
-      form.append('plan', plan);
+      form.append('plan', loggedPlan);
       form.append(
         'summary',
-        JSON.stringify({ responses: decoded.length, ...counts, membersLoaded: members.length > 0 })
+        JSON.stringify({
+          responses: decoded.length,
+          ...counts,
+          membersLoaded: members.length > 0,
+          uiPlan: plan,
+          detectedPlan: loggedPlan,
+          mcp: loggedPlan,
+          payerIds,
+        })
       );
       files.forEach((file) => form.append('files', file));
       const res = await fetch('/api/admin/batch-eligibility/runs', {
@@ -112,6 +129,7 @@ export function EligibilityResultsCard({
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || `HTTP ${res.status}`);
       toast({ title: 'Saved to the Batch Eligibility Log' });
+      onSavedToLog?.();
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Decoded, but could not save to the log', description: error?.message });
     } finally {
@@ -204,7 +222,7 @@ export function EligibilityResultsCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className={`flex flex-wrap items-center gap-2 ${preloaded ? 'hidden' : ''}`}>
+        <div className={`flex flex-wrap items-center gap-2 ${preloaded && !allowUploadWhenPreloaded ? 'hidden' : ''}`}>
           <input
             ref={fileInputRef}
             type="file"
@@ -391,7 +409,7 @@ export function EligibilityResultsCard({
                     <TableHead>Member</TableHead>
                     <TableHead>Result</TableHead>
                     <TableHead>Coverage</TableHead>
-                    <TableHead>Dates</TableHead>
+                    <TableHead>Plan begin</TableHead>
                     <TableHead>Caspio status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -432,6 +450,12 @@ export function EligibilityResultsCard({
                           <TableCell className="align-top">
                             <div className="font-medium">
                               {row.result.lastName}, {row.result.firstName}
+                              {row.member?.healthPlan || row.member?.region || row.result.payerName ? (
+                                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                                  {[row.member?.healthPlan, row.member?.region].filter(Boolean).join(' · ') ||
+                                    row.result.payerName}
+                                </span>
+                              ) : null}
                             </div>
                             <div className="text-xs text-muted-foreground">
                               {row.result.memberId || 'no ID'}
@@ -443,14 +467,11 @@ export function EligibilityResultsCard({
                               {ELIGIBILITY_OUTCOME_LABELS[row.result.outcome]}
                             </Badge>
                           </TableCell>
-                          <TableCell className="max-w-[22rem] align-top text-xs">
+                          <TableCell className="max-w-[18rem] align-top text-xs">
                             {row.coverage || '—'}
-                            {row.entities.length ? (
-                              <div className="text-muted-foreground">{row.entities.join('; ')}</div>
-                            ) : null}
                           </TableCell>
-                          <TableCell className="align-top text-xs">
-                            {row.dates.length ? row.dates.map((d) => <div key={d}>{d}</div>) : '—'}
+                          <TableCell className="align-top text-xs whitespace-nowrap">
+                            {row.primaryDate || '—'}
                           </TableCell>
                           <TableCell className="align-top text-xs">
                             {row.member ? (
@@ -468,6 +489,13 @@ export function EligibilityResultsCard({
                               >
                                 {ELIGIBILITY_FLAG_LABELS[row.flag]}
                               </Badge>
+                            ) : null}
+                            {row.flag === 'unmatched' ? (
+                              <div className="mt-1 text-[11px] text-muted-foreground">
+                                271 ID {row.result.memberId || '—'}
+                                {row.result.birthDate ? ` · DOB ${row.result.birthDate}` : ''}
+                                . Refresh the page (loads full Caspio cache) or Pull latest from Caspio.
+                              </div>
                             ) : null}
                           </TableCell>
                         </TableRow>

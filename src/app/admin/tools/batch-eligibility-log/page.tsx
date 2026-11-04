@@ -124,7 +124,7 @@ export default function BatchEligibilityLogPage() {
   useEffect(() => {
     if (!user) return;
     void loadRuns();
-    authedFetch(`/api/admin/batch-eligibility/members?plan=${plan}`)
+    authedFetch(`/api/admin/batch-eligibility/members?plan=all`)
       .then((res) => res.json())
       .then((data) => setMembers(data.members || []))
       .catch(() => setMembers([]));

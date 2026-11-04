@@ -6,10 +6,12 @@ import {
   type BatchEligibilityMember,
   type BatchEligibilityPlan,
 } from '@/lib/batch-eligibility';
+import { identityTokenLookupKeys } from '@/lib/member-identity';
 import {
   coverageDates,
   decode271,
   otherEntities,
+  primaryCoverageDate,
   summarizeCoverage,
   type EligibilityOutcome,
   type EligibilityResult,
@@ -24,6 +26,8 @@ export type EligibilityResultRow = {
   flag: EligibilityFlag;
   coverage: string;
   dates: string[];
+  /** Single current plan-begin (or empty) for the results table. */
+  primaryDate: string;
   entities: string[];
 };
 
@@ -37,11 +41,29 @@ export const ELIGIBILITY_OUTCOME_LABELS: Record<EligibilityOutcome, string> = {
 export const ELIGIBILITY_FLAG_LABELS: Record<Exclude<EligibilityFlag, 'none'>, string> = {
   lost: 'Authorized in Caspio, not active',
   gained: 'Not authorized in Caspio, now active',
-  unmatched: 'Not matched to one of our members',
+  unmatched: 'Not matched to Caspio cache (check plan tab, ID, or DOB)',
 };
 
-const normId = (value: string) => String(value || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-const dobKey = (value: string) => formatDate(value, 'YYYYMMDD');
+/** ID keys: leading-zero variants, 12-digit pad, and last 8 digits (Kaiser MRN core). */
+const idKeys = (value: string): string[] => {
+  const keys = new Set<string>();
+  for (const key of identityTokenLookupKeys(value)) {
+    const upper = key.toUpperCase();
+    if (upper) keys.add(upper);
+    if (/^\d+$/.test(upper) && upper.length > 8) keys.add(upper.slice(-8));
+  }
+  return [...keys];
+};
+const dobKey = (value: string) => {
+  const formatted = formatDate(value, 'YYYYMMDD');
+  if (/^\d{8}$/.test(formatted)) return formatted;
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 8 ? digits : formatted;
+};
+const normName = (value: string) =>
+  String(value || '')
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '');
 
 export const isEligibilityFlagged = (row: EligibilityResultRow) =>
   row.flag === 'lost' || row.flag === 'gained';
@@ -56,17 +78,43 @@ export function buildEligibilityResultRows(
   const byId = new Map<string, BatchEligibilityMember>();
   const byClientId = new Map<string, BatchEligibilityMember>();
   const byNameDob = new Map<string, BatchEligibilityMember>();
+  const byLastFirstDob = new Map<string, BatchEligibilityMember>();
+  const addId = (raw: string, member: BatchEligibilityMember) => {
+    for (const key of idKeys(raw)) {
+      if (key && !byId.has(key)) byId.set(key, member);
+    }
+  };
   for (const m of members) {
-    if (m.medicalId) byId.set(normId(m.medicalId), m);
-    if (m.mrn && !byId.has(normId(m.mrn))) byId.set(normId(m.mrn), m);
-    if (m.clientId2) byClientId.set(String(m.clientId2).trim(), m);
-    byNameDob.set(`${m.lastName.trim().toUpperCase()}|${dobKey(m.birthDate)}`, m);
+    if (m.medicalId) addId(m.medicalId, m);
+    if (m.mrn) addId(m.mrn, m);
+    if (m.clientId2) {
+      byClientId.set(String(m.clientId2).trim(), m);
+      addId(m.clientId2, m);
+    }
+    const dob = dobKey(m.birthDate);
+    if (dob && /^\d{8}$/.test(dob)) {
+      const last = normName(m.lastName);
+      const first = normName(m.firstName);
+      if (last) byNameDob.set(`${last}|${dob}`, m);
+      if (last && first) byLastFirstDob.set(`${last}|${first}|${dob}`, m);
+    }
   }
+  const lookupId = (raw: string) => {
+    for (const key of idKeys(raw)) {
+      const hit = byId.get(key);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
   return results.map((result, i) => {
+    const last = normName(result.lastName);
+    const first = normName(result.firstName);
+    const dob = dobKey(result.birthDate);
     const member =
-      result.traceNumbers.map((t) => byClientId.get(t.trim())).find(Boolean) ||
-      byId.get(normId(result.memberId)) ||
-      (result.birthDate ? byNameDob.get(`${result.lastName.trim().toUpperCase()}|${dobKey(result.birthDate)}`) : undefined) ||
+      result.traceNumbers.map((t) => byClientId.get(t.trim()) || lookupId(t)).find(Boolean) ||
+      lookupId(result.memberId) ||
+      (last && first && /^\d{8}$/.test(dob) ? byLastFirstDob.get(`${last}|${first}|${dob}`) : undefined) ||
+      (last && /^\d{8}$/.test(dob) ? byNameDob.get(`${last}|${dob}`) : undefined) ||
       null;
     let flag: EligibilityFlag = 'none';
     if (!member) flag = 'unmatched';
@@ -79,6 +127,7 @@ export function buildEligibilityResultRows(
       flag,
       coverage: summarizeCoverage(result),
       dates: coverageDates(result),
+      primaryDate: primaryCoverageDate(result),
       entities: otherEntities(result),
     };
   });
@@ -114,6 +163,7 @@ export function buildEligibilityRowsCsv(
     ...(options?.includeReviewBucket ? ['Review status'] : []),
     'Last name',
     'First name',
+    'Health plan',
     'Medi-Cal ID',
     'DOB',
     'Eligibility result',
@@ -129,11 +179,12 @@ export function buildEligibilityRowsCsv(
     ...(options?.includeReviewBucket ? [reviewBucketLabel(row)] : []),
     row.result.lastName,
     row.result.firstName,
+    [row.member?.healthPlan, row.member?.region].filter(Boolean).join(' · ') || row.result.payerName || '',
     row.result.memberId,
     row.result.birthDate,
     ELIGIBILITY_OUTCOME_LABELS[row.result.outcome],
     row.coverage,
-    row.dates.join('; '),
+    row.primaryDate || row.dates.join('; '),
     row.entities.join('; '),
     [...new Set(row.result.benefits.flatMap((b) => b.messages))].join('; '),
     row.member?.clientId2 || '',

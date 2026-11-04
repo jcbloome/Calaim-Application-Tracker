@@ -10,6 +10,26 @@
 
 ## Changes 2026-11-02
 
+- **Batch Eligibility results — health plan next to each member.** Decode table and CSV show Caspio `CalAIM_MCO` (and Kaiser region when set) beside the name; unmatched rows fall back to the 271 payer name.
+  - Files: `src/lib/batch-eligibility.ts`, `src/app/api/admin/batch-eligibility/members/route.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/lib/batch-eligibility-results.ts`, `handoff.md`.
+  - Commit: _(pending)_
+
+- **Batch Eligibility recent runs — time order + MCP from payer ID.** Recent runs stay newest-first by `createdAtIso`. MCP is Kaiser when payer ID is `94135`/`94134`/`81397`, Health Net when `95567` (saved on decode; older decode runs are corrected on list load by peeking the 271).
+  - Files: `src/lib/batch-eligibility.ts`, `src/app/api/admin/batch-eligibility/runs/route.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `handoff.md`.
+  - Commit: _(pending)_
+
+- **Batch Eligibility Checker — main flow is member list → download → decode.** Claim.MD format + column mapping collapses to one line at the top (expand only when changing setup). Primary steps: **1** choose members, **2** download CSV, **3** decode 271, plus **Recent runs**. Removed first-10-row preview. Runs API accepts `?limit=`.
+  - Files: `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/api/admin/batch-eligibility/runs/route.ts`, `handoff.md`.
+  - Commit: _(pending)_
+
+- **Batch Eligibility 271 — false “Not matched” + simpler Active display.** Decode was only loading the Health Net cache in practice, so Kaiser 271s (KP MEDICARE / MRNs like `000011923520`) showed “Not matched” even when members were in Caspio. Matching now loads `plan=all` (full `caspio_members_cache`), normalizes IDs (leading zeros, 12-digit pad, last-8 MRN), and DOB/name. Results table shows Active/Inactive coverage briefly with a single **Plan begin** date (no long historical date lists).
+  - Files: `src/app/api/admin/batch-eligibility/members/route.ts`, `src/lib/batch-eligibility-results.ts`, `src/lib/x12-271.ts`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-log/page.tsx`, `handoff.md`.
+  - Commit: _(pending)_
+
+- **Batch Eligibility 271 — false “Not matched to our members” (first pass).** Matching normalizes IDs (leading zeros), names, and DOBs (including Firestore Timestamps), indexes MRN + Medi-Cal CIN + Client_ID2. Superseded by `plan=all` fix above.
+  - Files: `src/lib/batch-eligibility-results.ts`, `src/app/api/admin/batch-eligibility/members/route.ts`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `handoff.md`.
+  - Commit: _(pending)_
+
 - **Batch Eligibility 271 decode — Needs review filter + download filtered list.** Re-check “Needs review / Unclear / Rejected” buttons filter the table to matching members (and select them). **Download filtered list** sits next to re-check and in a banner above the table when a filter is active.
   - Files: `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `handoff.md`.
   - Commit: `70d292ac`.

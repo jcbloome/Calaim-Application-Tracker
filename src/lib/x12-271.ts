@@ -354,6 +354,14 @@ export function summarizeCoverage(result: EligibilityResult): string {
   if (result.outcome === 'rejected') {
     return result.rejections.map((r) => r.label).join('; ');
   }
+  if (result.outcome === 'active') {
+    const active = result.benefits.filter((b) => ACTIVE_CODES.has(b.code));
+    const parts = active.slice(0, 2).map((b) =>
+      [b.insuranceType || b.label, b.planDescription].filter(Boolean).join(' · ')
+    );
+    return parts.length ? [...new Set(parts)].join('; ') : 'Active coverage';
+  }
+  if (result.outcome === 'inactive') return 'Inactive';
   const primary = result.benefits.filter((b) => ACTIVE_CODES.has(b.code) || INACTIVE_CODES.has(b.code));
   const parts = (primary.length ? primary : result.benefits.slice(0, 3)).map((b) =>
     [b.label, b.insuranceType, b.planDescription].filter(Boolean).join(' · ')
@@ -367,6 +375,19 @@ export function coverageDates(result: EligibilityResult): string[] {
     .filter((b) => ACTIVE_CODES.has(b.code) || INACTIVE_CODES.has(b.code))
     .flatMap((b) => b.dates);
   return [...new Set([...result.dates, ...fromBenefits])];
+}
+
+/** Single current plan-begin date for the results table (skip historical benefit periods). */
+export function primaryCoverageDate(result: EligibilityResult): string {
+  if (result.outcome !== 'active' && result.outcome !== 'inactive') return '';
+  const preferred = result.outcome === 'active' ? ACTIVE_CODES : INACTIVE_CODES;
+  const benefitDates = result.benefits.filter((b) => preferred.has(b.code)).flatMap((b) => b.dates);
+  const pool = [...benefitDates, ...result.dates];
+  const planBegin = pool.find((d) => /plan begin/i.test(d));
+  if (planBegin) return planBegin.replace(/^[^:]+:\s*/i, '').trim();
+  const benefit = pool.find((d) => /benefit/i.test(d));
+  if (benefit) return benefit.replace(/^[^:]+:\s*/i, '').trim();
+  return '';
 }
 
 /** Other payers / managed care plans named in the response (EB R, U, L, MC lines). */

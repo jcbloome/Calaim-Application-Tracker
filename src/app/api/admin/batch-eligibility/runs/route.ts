@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminStorage } from '@/firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { BATCH_ELIGIBILITY_RUNS_COLLECTION, type BatchEligibilityRun } from '@/lib/batch-eligibility';
+import {
+  BATCH_ELIGIBILITY_RUNS_COLLECTION,
+  inferBatchEligibilityPlanFromEdiText,
+  resolveBatchEligibilityRunPlan,
+  type BatchEligibilityPlan,
+  type BatchEligibilityRun,
+} from '@/lib/batch-eligibility';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,6 +16,35 @@ const MAX_FILES = 25;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const s = (value: unknown, max = 200) => String(value ?? '').trim().slice(0, max);
 
+/** Correct MCP on decode runs using payer IDs inside the saved 271 (fixes tab mis-labels). */
+async function withCorrectedMcp(
+  run: BatchEligibilityRun,
+  adminDb: { collection: (name: string) => { doc: (id: string) => { set: (data: any, opts: any) => Promise<unknown> } } }
+): Promise<BatchEligibilityRun> {
+  if (run.kind !== 'decode') return { ...run, plan: resolveBatchEligibilityRunPlan(run) };
+  if (run.summary?.detectedPlan === 'kaiser' || run.summary?.detectedPlan === 'healthnet') {
+    const plan = resolveBatchEligibilityRunPlan(run);
+    return plan === run.plan ? run : { ...run, plan };
+  }
+  const file = run.files?.[0];
+  if (!file?.storagePath) return run;
+  try {
+    const [bytes] = await adminStorage.bucket().file(file.storagePath).download({ start: 0, end: 200_000 });
+    const detected = inferBatchEligibilityPlanFromEdiText(bytes.toString('utf8'));
+    if (!detected) return run;
+    const summary = { ...(run.summary || {}), detectedPlan: detected, mcp: detected };
+    if (detected !== run.plan || run.summary?.detectedPlan !== detected) {
+      await adminDb.collection(BATCH_ELIGIBILITY_RUNS_COLLECTION).doc(run.id).set(
+        { plan: detected, summary },
+        { merge: true }
+      );
+    }
+    return { ...run, plan: detected, summary };
+  } catch {
+    return run;
+  }
+}
+
 /** Batch eligibility log: batch CSVs created and 271 result files decoded. */
 export async function GET(req: NextRequest) {
   const adminCheck = await requireAdminApiAuth(req);
@@ -17,15 +52,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
   }
   try {
+    const plan = s(req.nextUrl.searchParams.get('plan')).toLowerCase();
+    const limitRaw = Number(req.nextUrl.searchParams.get('limit') || 300);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, Math.floor(limitRaw)), 300) : 300;
+    // Fetch extra when filtering by plan so a small limit still yields enough matches.
+    const fetchLimit = plan ? Math.min(300, Math.max(limit * 5, limit)) : limit;
     const snap = await adminCheck.adminDb
       .collection(BATCH_ELIGIBILITY_RUNS_COLLECTION)
       .orderBy('createdAtIso', 'desc')
-      .limit(300)
+      .limit(fetchLimit)
       .get();
-    const plan = s(req.nextUrl.searchParams.get('plan')).toLowerCase();
-    const runs = (snap.docs as Array<{ id: string; data: () => any }>)
-      .map((doc) => ({ id: doc.id, ...doc.data() }) as BatchEligibilityRun)
-      .filter((run) => !plan || run.plan === plan);
+    const rawRuns = (snap.docs as Array<{ id: string; data: () => any }>).map(
+      (doc) => ({ id: doc.id, ...doc.data() }) as BatchEligibilityRun
+    );
+    // Newest-first order preserved; correct MCP from payer IDs when needed.
+    const corrected: BatchEligibilityRun[] = [];
+    for (const run of rawRuns) {
+      corrected.push(await withCorrectedMcp(run, adminCheck.adminDb));
+    }
+    const runs = corrected
+      .filter((run) => !plan || resolveBatchEligibilityRunPlan(run) === (plan as BatchEligibilityPlan))
+      .slice(0, limit);
     return NextResponse.json({ success: true, runs });
   } catch (error: any) {
     console.error('[batch-eligibility/runs] GET failed', error);
