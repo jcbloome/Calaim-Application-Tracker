@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-02
 
+- **View Files — CS Summary + full-text Waivers PDFs (no printable).** Removed Printable Forms. CS Summary and Waivers & Authorizations generate on demand as `Last, First - MRN - ….pdf`. Waivers download includes the full signed legal text (HIPAA, liability, FOC, room & board/SOC) plus acknowledgments/signature—not a short summary.
+  - Files: `src/lib/cs-summary-pdf-sections.ts`, `src/lib/waivers-pdf-sections.ts`, `src/lib/waivers-full-text-pdf.ts`, `src/app/api/admin/member-file-download/route.ts`, `src/app/api/admin/member-files-zip/route.ts`, `src/app/admin/applications/components/AdminApplicationsTable.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`, `handoff.md`.
+  - Commit: _(pending)_
+
 - **Batch Eligibility results — health plan next to each member.** Decode table and CSV show Caspio `CalAIM_MCO` (and Kaiser region when set) beside the name; unmatched rows fall back to the 271 payer name.
   - Files: `src/lib/batch-eligibility.ts`, `src/app/api/admin/batch-eligibility/members/route.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/lib/batch-eligibility-results.ts`, `handoff.md`.
   - Commit: `4fc8879b`.

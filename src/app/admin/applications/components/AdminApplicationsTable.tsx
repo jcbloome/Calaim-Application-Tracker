@@ -37,6 +37,14 @@ import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { ApplicationTrackerInline } from '@/components/admin/ApplicationTrackerInline';
 import { countPendingDocumentReviews, isCsSummaryFormName, isPendingDocumentReview } from '@/lib/review-queue';
+import {
+  buildCsSummaryMemberFileName,
+  buildCsSummaryPdfSectionsFromApplication,
+} from '@/lib/cs-summary-pdf-sections';
+import {
+  buildMemberLabeledPdfFileName,
+  buildWaiversPdfSectionsFromApplication,
+} from '@/lib/waivers-pdf-sections';
 
 type ApplicationStatusType = Application['status'];
 type IncomingDocumentSummary = {
@@ -643,6 +651,8 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
     downloadURL: string;
     filePath: string;
     dateCompleted: any;
+    inlineMode?: string;
+    inlineSections?: Array<{ title?: string; rows?: Array<{ label?: string; value?: string }> }>;
   };
 
   const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
@@ -730,7 +740,55 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
       })
       .filter(Boolean) as DocEntry[];
 
-    return [...fromForms, ...fromEligibility];
+    const csSections = buildCsSummaryPdfSectionsFromApplication(application as any);
+    const csForm = appForms.find((form) => isCsSummaryFormName(String(form?.name || '')));
+    const csSummaryEntry: DocEntry | null =
+      csSections.length > 0
+        ? {
+            id: 'generated-cs-summary-pdf',
+            category: 'Application form',
+            formName: 'CS Summary',
+            fileName: buildCsSummaryMemberFileName(application as any),
+            downloadURL: '',
+            filePath: '',
+            dateCompleted:
+              csForm?.dateCompleted ||
+              (application as any)?.csSummarySubmittedAt ||
+              (application as any)?.lastUpdated ||
+              null,
+            inlineMode: 'cs-summary-pdf',
+            inlineSections: csSections,
+          }
+        : null;
+
+    const waiverSections = buildWaiversPdfSectionsFromApplication(application as any);
+    const waiverForm = appForms.find((form) => {
+      const name = String(form?.name || '')
+        .trim()
+        .toLowerCase();
+      return name === 'waivers & authorizations' || name === 'waivers';
+    });
+    const waiversEntry: DocEntry | null =
+      waiverSections && waiverSections.length > 0
+        ? {
+            id: 'generated-waivers-pdf',
+            category: 'Pathway upload',
+            formName: 'Waivers & Authorizations',
+            fileName: buildMemberLabeledPdfFileName(application as any, 'Waivers & Authorizations'),
+            downloadURL: '',
+            filePath: '',
+            dateCompleted: waiverForm?.dateCompleted || (application as any)?.lastUpdated || null,
+            inlineMode: 'waivers-pdf',
+            inlineSections: waiverSections,
+          }
+        : null;
+
+    return [
+      ...(csSummaryEntry ? [csSummaryEntry] : []),
+      ...(waiversEntry ? [waiversEntry] : []),
+      ...fromForms,
+      ...fromEligibility,
+    ];
   }, [application]);
 
   useEffect(() => {
@@ -774,6 +832,56 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
   };
 
   const openOrResolveFile = async (doc: DocEntry) => {
+    if (
+      (doc.inlineMode === 'cs-summary-pdf' || doc.inlineMode === 'waivers-pdf') &&
+      Array.isArray(doc.inlineSections) &&
+      doc.inlineSections.length
+    ) {
+      setResolvingKeys((prev) => ({ ...prev, [doc.id]: true }));
+      try {
+        const idToken = await user?.getIdToken?.();
+        if (!idToken) throw new Error('Unable to verify admin session. Please refresh and try again.');
+        const response = await fetch('/api/admin/member-file-download', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            disposition: 'inline',
+            entry: {
+              category: doc.category,
+              documentName: doc.formName,
+              fileName: doc.fileName,
+              inlineMode: doc.inlineMode,
+              inlineSections: doc.inlineSections,
+            },
+          }),
+        });
+        if (!response.ok) {
+          const message = await response.text().catch(() => '');
+          throw new Error(message || `Open failed (${response.status})`);
+        }
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        window.open(objectUrl, '_blank', 'noopener,noreferrer');
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      } catch (error: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Could not open file',
+          description: String(error?.message || `Unable to open ${doc.fileName}`),
+        });
+      } finally {
+        setResolvingKeys((prev) => {
+          const next = { ...prev };
+          delete next[doc.id];
+          return next;
+        });
+      }
+      return;
+    }
+
     const existing = getEffectiveDownloadUrl(doc.downloadURL, doc.filePath);
     if (existing) {
       window.open(existing, '_blank', 'noopener,noreferrer');
@@ -830,6 +938,8 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
             fileName: doc.fileName,
             downloadURL: getEffectiveDownloadUrl(doc.downloadURL, doc.filePath) || doc.downloadURL,
             filePath: doc.filePath,
+            inlineMode: doc.inlineMode || '',
+            inlineSections: doc.inlineSections || [],
           },
         }),
       });
@@ -873,16 +983,6 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
       dateCompleted: form?.dateCompleted || null,
       type: String(form?.type || 'online-form'),
     }));
-  const printableCsSummaryHref = (() => {
-    const appId = String((application as any)?.id || '').trim();
-    const params = new URLSearchParams({ applicationId: appId });
-    const userId = String((application as any)?.userId || '').trim();
-    if (appId && !appId.startsWith('admin_app_') && userId) {
-      params.set('userId', userId);
-    }
-    return `/admin/forms/cs-summary-printable?${params.toString()}`;
-  })();
-
   const sanitizeZipToken = (value: unknown, fallback: string) => {
     const cleaned = String(value || '')
       .trim()
@@ -921,6 +1021,8 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
         fileName: doc.fileName,
         downloadURL: getEffectiveDownloadUrl(doc.downloadURL, doc.filePath) || doc.downloadURL,
         filePath: doc.filePath,
+        inlineMode: doc.inlineMode || '',
+        inlineSections: doc.inlineSections || [],
       }));
 
       const response = await fetch('/api/admin/member-files-zip', {
@@ -997,25 +1099,6 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
 
         <div className="space-y-6 py-2">
           <div>
-            <h3 className="text-lg font-semibold mb-2 text-primary">Printable Forms</h3>
-            <div className="rounded-md border p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold">CS Member Summary (Filled Printable)</p>
-                  <p className="text-xs text-muted-foreground">
-                    Opens the current printable CS Summary form for this application.
-                  </p>
-                </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href={printableCsSummaryHref}>
-                    Open Printable
-                  </Link>
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <div>
             <h3 className="text-lg font-semibold mb-2 text-primary">Uploaded Documents</h3>
             {uploadedDocuments.length === 0 ? (
               <p className="text-sm text-muted-foreground">No uploaded documents found.</p>
@@ -1025,17 +1108,23 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
                   const effectiveUrl = getEffectiveDownloadUrl(doc.downloadURL, doc.filePath);
                   const isResolving = Boolean(resolvingKeys[doc.id]);
                   const isDownloading = Boolean(downloadingKeys[doc.id]);
-                  const canDownload = Boolean(effectiveUrl || doc.filePath);
+                  const isGeneratedPdf =
+                    (doc.inlineMode === 'cs-summary-pdf' || doc.inlineMode === 'waivers-pdf') &&
+                    Array.isArray(doc.inlineSections) &&
+                    doc.inlineSections.length > 0;
+                  const canDownload = Boolean(effectiveUrl || doc.filePath || isGeneratedPdf);
                   return (
                     <div key={doc.id} className="flex flex-col gap-1 border-b last:border-b-0 pb-2 last:pb-0">
                       <p className="text-sm font-semibold">{doc.formName}</p>
                       <p className="text-xs text-muted-foreground">{doc.fileName}</p>
                       <p className="text-xs text-muted-foreground">
-                        Completed: {doc.dateCompleted ? formatDate(doc.dateCompleted) : 'N/A'}
+                        {isGeneratedPdf
+                          ? 'Generated from application data (ready for Google Drive).'
+                          : `Completed: ${doc.dateCompleted ? formatDate(doc.dateCompleted) : 'N/A'}`}
                       </p>
                       {canDownload ? (
                         <div className="flex flex-wrap items-center gap-3">
-                          {effectiveUrl ? (
+                          {effectiveUrl && !isGeneratedPdf ? (
                             <a
                               href={effectiveUrl}
                               target="_blank"

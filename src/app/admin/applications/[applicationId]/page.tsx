@@ -6144,11 +6144,25 @@ function ApplicationDetailPageContent() {
       const choiceLabel =
         choice === 'accept' ? 'Accept Community Supports' : choice === 'decline' ? 'Decline Community Supports' : choice;
 
+      const waiversFileName = (() => {
+        const clean = (value: unknown, fallback: string) => {
+          const cleaned = String(value || '')
+            .trim()
+            .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+            .replace(/\s+/g, ' ');
+          return cleaned || fallback;
+        };
+        const lastName = clean((application as any)?.memberLastName, 'UnknownLast');
+        const firstName = clean((application as any)?.memberFirstName, 'UnknownFirst');
+        const mrn = clean(memberMrn, 'UnknownMRN');
+        return `${lastName}, ${firstName} - ${mrn} - Waivers & Authorizations.pdf`;
+      })();
+
       return {
         id: 'waivers-authorizations-completed',
         category: 'Pathway upload',
         documentName: 'Waivers & Authorizations',
-        fileName: 'Waivers & Authorizations.pdf',
+        fileName: waiversFileName,
         downloadURL: '',
         filePath: '',
         uploadedAtIso: toIso(waiverForm?.dateCompleted || (application as any)?.lastUpdated),
@@ -6208,19 +6222,33 @@ function ApplicationDetailPageContent() {
       // Prefer completed/pushed apps, but still show when member CS data exists.
       if (!isCompleted && sections.every((section) => section.rows.length === 0)) return null;
 
-      const appId = String(applicationId || (application as any)?.id || '').trim();
-      const ownerUserId = String((application as any)?.userId || appUserId || '').trim();
-      const params = new URLSearchParams({ applicationId: appId });
-      if (appId && !appId.startsWith('admin_app_') && ownerUserId) {
-        params.set('userId', ownerUserId);
-      }
+      const identity = (() => {
+        const clean = (value: unknown, fallback: string) => {
+          const cleaned = String(value || '')
+            .trim()
+            .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+            .replace(/\s+/g, ' ');
+          return cleaned || fallback;
+        };
+        const lastName = clean((application as any)?.memberLastName, 'UnknownLast');
+        const firstName = clean((application as any)?.memberFirstName, 'UnknownFirst');
+        const mrn = clean(
+          (application as any)?.memberMrn ||
+            (application as any)?.memberMRN ||
+            (application as any)?.medicalRecordNumber ||
+            (application as any)?.mrn ||
+            (application as any)?.Member_MRN,
+          'UnknownMRN'
+        );
+        return `${lastName}, ${firstName} - ${mrn} - CS Summary.pdf`;
+      })();
 
       return {
-        id: 'cs-summary-completed-printable',
+        id: 'cs-summary-generated-pdf',
         category: 'Application form',
-        documentName: 'CS Member Summary',
-        fileName: 'CS Member Summary.pdf',
-        downloadURL: `/admin/forms/cs-summary-printable?${params.toString()}`,
+        documentName: 'CS Summary',
+        fileName: identity,
+        downloadURL: '',
         filePath: '',
         uploadedAtIso: toIso(csForm?.dateCompleted || (application as any)?.lastUpdated || (application as any)?.updatedAt),
         inlineMode: 'cs-summary-pdf',
@@ -6498,16 +6526,6 @@ function ApplicationDetailPageContent() {
   }) => {
     setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: true }));
     try {
-      const printableCsSummary =
-        String(entry.downloadURL || '').includes('/admin/forms/cs-summary-printable') ||
-        String((entry as any).inlineMode || '') === 'cs-summary-pdf';
-      if (printableCsSummary) {
-        const href = String(entry.downloadURL || '').trim();
-        if (href) {
-          openDocumentPreview(href, entry.fileName || entry.documentName || 'CS Member Summary');
-          return;
-        }
-      }
       const idToken = await user?.getIdToken?.();
       if (!idToken) throw new Error('Unable to verify admin session. Please refresh and try again.');
       const filePath = String(entry.filePath || '').trim();
