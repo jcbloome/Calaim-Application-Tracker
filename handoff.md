@@ -8,6 +8,20 @@
 
 ---
 
+## Changes 2026-11-04
+
+- **H2022 Reauth Visits — placed count + T2038 still valid filter.** Default filter is all placed Kaiser RCFE members (count on summary card). Added explicit **T2038 still valid** filter/card (do-not-charge set).
+  - Files: `src/app/admin/tools/h2022-reauth-visits/page.tsx`, `handoff.md`.
+
+- **H2022 Reauth Visits — exclude CalAIM Use RCFE.** Placeholder RCFE names (`CalAIM Use` / `CalAIM_Use`) are omitted via `isPlaceholderRcfeName`.
+  - Files: `src/lib/h2022-reauth-visits.ts`, `src/app/admin/tools/h2022-reauth-visits/page.tsx`, `handoff.md`.
+
+- **H2022 Reauth Visits — manual load + Kaiser only.** Page does not autoload; use **Load Kaiser list**. API/UI include only Kaiser RCFE members (Health Net excluded — reauth visits are Kaiser-only).
+  - Files: `src/app/admin/tools/h2022-reauth-visits/page.tsx`, `src/app/api/admin/h2022-reauth-visits/route.ts`, `handoff.md`.
+
+- **H2022 Reauth Visits tools datapage.** Lists members with `RCFE_Name` from `caspio_members_cache`. If T2038 is still open → **Do not charge**. If T2038 expired/missing → charge candidates; flags **Likely reauth done** when H2022 dates exist, and **Needs attention** when H2022 is missing or expired. Filters + CSV. Nav under Tools next to H2022 Status.
+  - Files: `src/lib/h2022-reauth-visits.ts`, `src/app/api/admin/h2022-reauth-visits/route.ts`, `src/app/admin/tools/h2022-reauth-visits/page.tsx`, `src/app/admin/layout.tsx`, `handoff.md`.
+
 ## Changes 2026-11-02
 
 - **View Files — CS Summary + full-text Waivers PDFs (no printable).** Removed Printable Forms. CS Summary and Waivers & Authorizations generate on demand as `Last, First - MRN - ….pdf`. Waivers download includes the full signed legal text (HIPAA, liability, FOC, room & board/SOC) plus acknowledgments/signature—not a short summary.
