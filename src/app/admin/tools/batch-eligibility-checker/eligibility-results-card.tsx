@@ -131,12 +131,14 @@ export function EligibilityResultsCard({
   const rows = useMemo(() => buildEligibilityResultRows(results, members), [results, members]);
   const counts = useMemo(() => countEligibilityRows(rows), [rows]);
 
-  const selectWhere = (predicate: (row: Row) => boolean) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      rows.filter(predicate).forEach((row) => next.add(row.key));
-      return next;
-    });
+  /** Filter the table to a bucket and select only those visible rows (for re-check / download). */
+  const filterAndSelect = (
+    filter: typeof outcomeFilter,
+    predicate: (row: Row) => boolean
+  ) => {
+    setOutcomeFilter(filter);
+    setSelected(new Set(rows.filter(predicate).map((row) => row.key)));
+  };
 
   const { selectedMembers, selectedUnmatched } = useMemo(() => {
     const byClientId = new Map<string, BatchEligibilityMember>();
@@ -152,7 +154,7 @@ export function EligibilityResultsCard({
   const visibleRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((row) => {
-      if (outcomeFilter === 'flagged' && row.flag !== 'lost' && row.flag !== 'gained') return false;
+      if (outcomeFilter === 'flagged' && !isEligibilityFlagged(row)) return false;
       if (outcomeFilter !== 'all' && outcomeFilter !== 'flagged' && row.result.outcome !== outcomeFilter) return false;
       if (!q) return true;
       return `${row.result.lastName} ${row.result.firstName} ${row.result.memberId} ${row.member?.clientId2 || ''}`
@@ -257,9 +259,15 @@ export function EligibilityResultsCard({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <Button size="sm" variant="outline" onClick={downloadResults}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!visibleRows.length}
+                onClick={downloadResults}
+                title="Downloads only the members currently shown by the filter above"
+              >
                 <Download className="mr-2 h-4 w-4" />
-                Download these results (CSV)
+                Download filtered list ({visibleRows.length.toLocaleString()})
               </Button>
               <Button
                 size="sm"
@@ -276,19 +284,41 @@ export function EligibilityResultsCard({
             {onRecheck ? (
               <div className="space-y-2 rounded-md border bg-muted/30 p-3">
                 <div className="text-sm font-medium">Re-check members after fixing them in Caspio</div>
+                <div className="text-xs text-muted-foreground">
+                  Each button filters the table to that bucket and selects those members for a re-check batch.
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Select:</span>
-                  <Button size="sm" variant="outline" onClick={() => selectWhere((r) => isEligibilityFlagged(r))}>
+                  <span className="text-xs text-muted-foreground">Show &amp; select:</span>
+                  <Button
+                    size="sm"
+                    variant={outcomeFilter === 'flagged' ? 'default' : 'outline'}
+                    onClick={() => filterAndSelect('flagged', (r) => isEligibilityFlagged(r))}
+                  >
                     Needs review ({counts.flagged})
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => selectWhere((r) => r.result.outcome === 'unknown')}>
+                  <Button
+                    size="sm"
+                    variant={outcomeFilter === 'unknown' ? 'default' : 'outline'}
+                    onClick={() => filterAndSelect('unknown', (r) => r.result.outcome === 'unknown')}
+                  >
                     Unclear ({counts.unknown})
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => selectWhere((r) => r.result.outcome === 'rejected')}>
+                  <Button
+                    size="sm"
+                    variant={outcomeFilter === 'rejected' ? 'default' : 'outline'}
+                    onClick={() => filterAndSelect('rejected', (r) => r.result.outcome === 'rejected')}
+                  >
                     Rejected / not found ({counts.rejected})
                   </Button>
-                  {selected.size ? (
-                    <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                  {selected.size || outcomeFilter !== 'all' ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setSelected(new Set());
+                        setOutcomeFilter('all');
+                      }}
+                    >
                       Clear selection
                     </Button>
                   ) : null}
@@ -302,6 +332,16 @@ export function EligibilityResultsCard({
                     <RotateCcw className="mr-2 h-4 w-4" />
                     Make re-check batch from {selectedMembers.length.toLocaleString()} selected
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!visibleRows.length}
+                    onClick={downloadResults}
+                    title="CSV of only the members currently shown in the table"
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Download filtered list ({visibleRows.length.toLocaleString()})
+                  </Button>
                   {selectedUnmatched ? (
                     <span className="text-xs text-amber-700">
                       {selectedUnmatched} selected response{selectedUnmatched === 1 ? ' is' : 's are'} not matched to a
@@ -309,6 +349,24 @@ export function EligibilityResultsCard({
                     </span>
                   ) : null}
                 </div>
+              </div>
+            ) : null}
+            {outcomeFilter !== 'all' ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
+                <span>
+                  Showing{' '}
+                  <span className="font-medium">{visibleRows.length.toLocaleString()}</span> of{' '}
+                  {rows.length.toLocaleString()} —{' '}
+                  {outcomeFilter === 'flagged'
+                    ? 'Needs review'
+                    : outcomeFilter === 'unknown'
+                      ? 'Unclear'
+                      : ELIGIBILITY_OUTCOME_LABELS[outcomeFilter]}
+                </span>
+                <Button size="sm" onClick={downloadResults} disabled={!visibleRows.length}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download this filtered list
+                </Button>
               </div>
             ) : null}
             <div className="overflow-x-auto">

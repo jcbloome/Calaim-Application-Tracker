@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-02
 
+- **Batch Eligibility 271 decode — Needs review filter + download filtered list.** Re-check “Needs review / Unclear / Rejected” buttons filter the table to matching members (and select them). **Download filtered list** sits next to re-check and in a banner above the table when a filter is active.
+  - Files: `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `handoff.md`.
+  - Commit: _(pending)_
+
 - **Kaiser Tracker — closed / unpushed draft still under staff (Catherine Tan) + notes 400.** Drafts no longer inherit `draftSubmittedByStaffName` as Staff Assigned. Closed/cancelled drafts and drafts whose MRN already exists in Caspio are excluded. Case Closed buckets under Case Closed, not a staff card. Notes sync skips `draft-*` Client_IDs (Caspio 400) and logs errors as strings so Next.js doesn’t show a fake unhandled overlay.
   - Files: `src/app/api/kaiser-members/route.ts`, `src/app/admin/kaiser-tracker/page.tsx`, `src/app/api/member-notes/route.ts`, `handoff.md`.
   - Commit: `038fd131`.
