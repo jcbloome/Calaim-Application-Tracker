@@ -12,6 +12,7 @@
 
 - **Proof of Income multi-upload unique names.** Each Proof of Income file gets a distinct title/filename (`Proof of Income 1 - YYYY-MM-DD`, `Proof of Income 2 - …`) on portal and admin upload. Files view uniquifies legacy rows; download names no longer double the member prefix.
   - Files: `src/lib/proof-of-income-file-names.ts`, `src/app/pathway/page.tsx`, `src/app/admin/applications/components/AdminApplicationsTable.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`, `handoff.md`.
+  - Commit: `70c1dc6a`.
 
 - **H2022 Reauth Visits tools datapage.** Manual-load Kaiser-only report of real-RCFE placements (`CalAIM Use` excluded). Summary shows placed count and **T2038 still valid**; charge-candidate / H2022 missing-expired filters for unpaid reauth review. CSV export.
   - Files: `src/lib/h2022-reauth-visits.ts`, `src/app/api/admin/h2022-reauth-visits/route.ts`, `src/app/admin/tools/h2022-reauth-visits/page.tsx`, `src/app/admin/layout.tsx`, `handoff.md`.
