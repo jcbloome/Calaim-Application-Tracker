@@ -35,6 +35,10 @@ import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { cn } from '@/lib/utils';
 import { LIC_602A_FORM_URL, resolveFormHref } from '@/lib/form-links';
 import { resolveKaiserRegion, stripMrnSeparators } from '@/lib/kaiser-region';
+import {
+  buildProofOfIncomeDisplayTitle,
+  buildProofOfIncomeFileLabel,
+} from '@/lib/proof-of-income-file-names';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
 import { useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
@@ -776,11 +780,19 @@ function PathwayPageContent() {
         return String(fileName).slice(idx).toLowerCase();
       };
       const incomeMonthLabel = sanitizePathwayFileComponent(String(options?.incomeMonthLabel || '').trim());
-      const getPathwayDocumentLabel = (formName: string) => {
+      const getPathwayDocumentLabel = (formName: string, sequence?: number) => {
+        if (formName === 'Proof of Income') {
+          const seq = Math.max(0, Math.floor(Number(sequence || 0)));
+          if (seq > 0) {
+            return sanitizePathwayFileComponent(
+              buildProofOfIncomeFileLabel({ sequence: seq, incomeMonth: incomeMonthLabel || undefined })
+            );
+          }
+          return sanitizePathwayFileComponent(
+            incomeMonthLabel ? `Proof of Income - ${incomeMonthLabel}` : 'Proof of Income'
+          );
+        }
         const labels: Record<string, string> = {
-          'Proof of Income': incomeMonthLabel
-            ? `Proof of Income - ${incomeMonthLabel}`
-            : 'Proof of Income',
           "LIC 602A - Physician's Report": 'LIC 602A Physician Report',
           'Medicine List': 'Med List',
           'SNF Facesheet': 'SNF Facesheet',
@@ -810,9 +822,14 @@ function PathwayPageContent() {
                 ''
             ).trim()
           ) || 'UnknownMRN';
-        const label = sanitizePathwayFileComponent(getPathwayDocumentLabel(requirementTitle));
-        const ext = getPathwayFileExtension(originalFileName);
         const sequence = Number(options?.sequence || 0);
+        const label = sanitizePathwayFileComponent(
+          getPathwayDocumentLabel(requirementTitle, sequence > 0 ? sequence : undefined)
+        );
+        const ext = getPathwayFileExtension(originalFileName);
+        if (requirementTitle === 'Proof of Income' && sequence > 0) {
+          return `${lastName}, ${firstName} - ${mrn} - ${label}${ext}`;
+        }
         const sequencedLabel =
           Number.isFinite(sequence) && sequence > 0 ? `${label} ${Math.floor(sequence)}` : label;
         if (sequence > 0) {
@@ -945,9 +962,6 @@ function PathwayPageContent() {
         : 0;
       const incomeMonthLabel = String(options?.incomeMonthLabel || options?.documentDate || '').trim();
       const documentDate = String(options?.documentDate || '').trim();
-      const displayTitle = incomeMonthLabel
-        ? `Proof of Income - ${incomeMonthLabel}`
-        : requirementTitle;
       const { uploadResults, uploadFailures } = await doUpload(files, requirementTitle, {
         existingUploadCount,
         sequenceNames:
@@ -978,17 +992,34 @@ function PathwayPageContent() {
           }))
           .filter((entry: any) => Boolean(entry.fileName || entry.filePath));
         const uploadTimeIso = new Date().toISOString();
+        const totalProofCount =
+          requirementTitle === 'Proof of Income'
+            ? preservedExistingUploads.length + uploadResults.length
+            : 0;
         const combinedUploads = [
           ...preservedExistingUploads,
-          ...uploadResults.map((entry) => ({
-            fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
-            filePath: entry.path,
-            downloadURL: String(entry.downloadURL || '').trim() || null,
-            uploadedAtIso: uploadTimeIso,
-            displayTitle: requirementTitle === 'Proof of Income' ? displayTitle : null,
-            incomeMonth: incomeMonthLabel || null,
-            documentDate: documentDate || null,
-          })),
+          ...uploadResults.map((entry, resultIdx) => {
+            const sequence = existingUploadCount + resultIdx + 1;
+            const displayTitle =
+              requirementTitle === 'Proof of Income'
+                ? buildProofOfIncomeDisplayTitle({
+                    sequence,
+                    incomeMonth: incomeMonthLabel || undefined,
+                    totalCount: totalProofCount,
+                    forceSequence: true,
+                  })
+                : null;
+            return {
+              fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
+              filePath: entry.path,
+              downloadURL: String(entry.downloadURL || '').trim() || null,
+              uploadedAtIso: uploadTimeIso,
+              displayTitle,
+              incomeMonth: incomeMonthLabel || null,
+              documentDate: documentDate || null,
+              sequence: requirementTitle === 'Proof of Income' ? sequence : null,
+            };
+          }),
         ];
         const primaryUpload = combinedUploads[0] || uploadResults[0];
         console.log('Updating form status...');

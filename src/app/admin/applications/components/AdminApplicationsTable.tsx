@@ -45,6 +45,10 @@ import {
   buildMemberLabeledPdfFileName,
   buildWaiversPdfSectionsFromApplication,
 } from '@/lib/waivers-pdf-sections';
+import {
+  isProofOfIncomeFormName,
+  uniquifyProofOfIncomeDisplayTitles,
+} from '@/lib/proof-of-income-file-names';
 
 type ApplicationStatusType = Application['status'];
 type IncomingDocumentSummary = {
@@ -673,7 +677,18 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
         const formName = String(form?.name || 'Uploaded Document');
         const dateCompleted = form?.dateCompleted || null;
         const uploadedFiles = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
-        const fromUploads = uploadedFiles
+        const titledUploads = isProofOfIncomeFormName(formName)
+          ? uniquifyProofOfIncomeDisplayTitles(uploadedFiles)
+          : uploadedFiles.map((item: any) => ({
+              ...item,
+              displayTitle:
+                String(item?.displayTitle || '').trim() ||
+                (String(item?.incomeMonth || '').trim()
+                  ? `Proof of Income - ${String(item.incomeMonth).trim()}`
+                  : '') ||
+                formName,
+            }));
+        const fromUploads = titledUploads
           .map((item: any, fileIdx: number) => {
             const fileName =
               String(item?.fileName || '').trim() ||
@@ -682,14 +697,9 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
             const downloadURL = String(item?.downloadURL || item?.url || item?.uploadUrl || '').trim();
             const filePath = String(item?.filePath || item?.storagePath || item?.path || '').trim();
             if (!downloadURL && !filePath) return null;
-            const displayTitle =
-              String(item?.displayTitle || '').trim() ||
-              (String(item?.incomeMonth || '').trim()
-                ? `Proof of Income - ${String(item.incomeMonth).trim()}`
-                : '') ||
-              formName;
+            const displayTitle = String(item?.displayTitle || '').trim() || formName;
             return {
-              id: `form-${formIdx}-file-${fileIdx}-${fileName}`,
+              id: `form-${formIdx}-file-${fileIdx}-${displayTitle}-${fileName}`,
               category: 'Application files',
               formName: displayTitle,
               fileName,

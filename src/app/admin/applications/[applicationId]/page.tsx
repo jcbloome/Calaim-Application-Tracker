@@ -54,6 +54,11 @@ import {
 import { mergeApplicationForms } from '@/lib/merge-application-forms';
 import { classifyProofIncomeDocumentDate } from '@/lib/proof-income-age';
 import {
+  buildProofOfIncomeDisplayTitle,
+  buildProofOfIncomeFileLabel,
+  uniquifyProofOfIncomeDisplayTitles,
+} from '@/lib/proof-of-income-file-names';
+import {
   dedupeIlsNotesBlocks,
   enrichSingleAuthAdminNotesFromApplication,
   looksLikeOriginalIlsImportNotes,
@@ -3809,11 +3814,18 @@ function ApplicationDetailPageContent() {
     options?: { sequence?: number }
   ) => {
     const { memberName, mrn } = getMemberFileIdentityParts();
-    const label = sanitizeFileComponent(getDocumentLabel(formName));
-    const ext = getFileExtension(originalFileName);
     const sequence = Number(options?.sequence || 0);
+    const label =
+      formName === 'Proof of Income' && sequence > 0
+        ? sanitizeFileComponent(buildProofOfIncomeFileLabel({ sequence: Math.floor(sequence) }))
+        : sanitizeFileComponent(getDocumentLabel(formName));
+    const ext = getFileExtension(originalFileName);
     const sequencedLabel =
-      Number.isFinite(sequence) && sequence > 0 ? `${label} ${Math.floor(sequence)}` : label;
+      formName === 'Proof of Income'
+        ? label
+        : Number.isFinite(sequence) && sequence > 0
+          ? `${label} ${Math.floor(sequence)}`
+          : label;
     return `${memberName} - ${mrn} - ${sequencedLabel}${ext}`;
   };
 
@@ -4313,13 +4325,26 @@ function ApplicationDetailPageContent() {
               }))
               .filter((entry: any) => Boolean(entry.fileName || entry.filePath));
             const uploadTimeIso = new Date().toISOString();
+            const totalAfterUpload = preservedExistingUploads.length + uploadResults.length;
             // Families can read their application doc, so new uploads store only the path; staff open them via open-upload.
-            const newUploads = uploadResults.map((entry) => ({
-              fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
-              filePath: entry.path,
-              downloadURL: null,
-              uploadedAtIso: uploadTimeIso,
-            }));
+            const newUploads = uploadResults.map((entry, resultIdx) => {
+              const sequence = baseUploadCount + resultIdx + 1;
+              const isProofIncome = requirementTitle === 'Proof of Income';
+              return {
+                fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
+                filePath: entry.path,
+                downloadURL: null,
+                uploadedAtIso: uploadTimeIso,
+                displayTitle: isProofIncome
+                  ? buildProofOfIncomeDisplayTitle({
+                      sequence,
+                      totalCount: totalAfterUpload,
+                      forceSequence: true,
+                    })
+                  : null,
+                sequence: isProofIncome ? sequence : null,
+              };
+            });
             const combinedUploads = [...preservedExistingUploads, ...newUploads];
             const primaryUpload = combinedUploads[0] || newUploads[0];
             const snfResidencyFields: Partial<ReturnType<typeof buildSnfResidencyFormFields>> =
@@ -5879,18 +5904,26 @@ function ApplicationDetailPageContent() {
       const documentName = String(form?.name || '').trim() || 'Application File';
       const category = PATHWAY_UPLOAD_FORM_NAMES.has(documentName) ? 'Pathway upload' : 'Application form';
       const uploadedAtIso = toIso(form?.dateCompleted || form?.uploadedAt || form?.createdAt);
-      const perFileEntries = (Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [])
+      const rawUploadedFiles = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
+      const titledUploads =
+        documentName === 'Proof of Income'
+          ? uniquifyProofOfIncomeDisplayTitles(rawUploadedFiles)
+          : rawUploadedFiles.map((item: any) => ({
+              ...item,
+              displayTitle:
+                String(item?.displayTitle || '').trim() ||
+                (String(item?.incomeMonth || '').trim()
+                  ? `Proof of Income - ${String(item.incomeMonth).trim()}`
+                  : '') ||
+                documentName,
+            }));
+      const perFileEntries = titledUploads
         .map((item: any, fileIdx: number) => {
           const fileName = String(item?.fileName || '').trim() || String(form?.fileName || '').trim() || `${documentName} ${fileIdx + 1}`;
           const downloadURL = String(item?.downloadURL || item?.url || item?.uploadUrl || '').trim();
           const filePath = String(item?.filePath || item?.storagePath || item?.path || '').trim();
           if (!downloadURL && !filePath) return null;
-          const titledDocumentName =
-            String(item?.displayTitle || '').trim() ||
-            (String(item?.incomeMonth || '').trim()
-              ? `Proof of Income - ${String(item.incomeMonth).trim()}`
-              : '') ||
-            documentName;
+          const titledDocumentName = String(item?.displayTitle || '').trim() || documentName;
           return {
             id: `form-uploaded-file-${idx}-${fileIdx}-${titledDocumentName}-${fileName}`,
             category,
@@ -6332,6 +6365,18 @@ function ApplicationDetailPageContent() {
       getFileExtension(fileName) ||
       getFileExtension(documentName) ||
       '';
+    const { label: memberLabel } = getMemberDownloadIdentity();
+    const memberLabelLower = memberLabel.toLowerCase();
+    const fileNameLower = fileName.toLowerCase();
+    // Pathway uploads already store "Last, First - MRN - Proof of Income N - …" — do not re-prefix.
+    if (
+      fileName &&
+      (fileNameLower === memberLabelLower ||
+        fileNameLower.startsWith(`${memberLabelLower} - `) ||
+        fileNameLower.startsWith(`${memberLabelLower}_`))
+    ) {
+      return buildMemberLabeledDownloadName(fileName);
+    }
     const docLabel = sanitizeMemberFileName(
       documentName ? getDocumentLabel(documentName) : '',
       'Document'
@@ -6355,7 +6400,6 @@ function ApplicationDetailPageContent() {
 
     let baseName = fileName || `${docLabel}${ext || ''}` || 'file';
     if (preferDocumentLabel) {
-      // Keep duplicates distinct: "Proof of Income - 20260323-statements-7200-.pdf"
       baseName =
         !looksGenericSourceName && originalStem
           ? `${docLabel} - ${originalStem}${ext || ''}`
@@ -6368,38 +6412,46 @@ function ApplicationDetailPageContent() {
     entry: { id?: string; documentName?: string; fileName?: string; category?: string; filePath?: string },
     allEntries: Array<{ id?: string; documentName?: string; fileName?: string; category?: string; filePath?: string }>
   ): string => {
-    const documentKey = String(entry.documentName || '').trim().toLowerCase();
-    const siblings = documentKey
-      ? allEntries.filter((row) => String(row.documentName || '').trim().toLowerCase() === documentKey)
-      : [entry];
+    const documentName = String(entry.documentName || '').trim();
+    const isProofIncome = /^proof\s+of\s+income\b/i.test(documentName);
+    // Group all Proof of Income variants together so multi-uploads stay uniquely numbered.
+    const siblings = isProofIncome
+      ? allEntries.filter((row) => /^proof\s+of\s+income\b/i.test(String(row.documentName || '').trim()))
+      : documentName
+        ? allEntries.filter(
+            (row) => String(row.documentName || '').trim().toLowerCase() === documentName.toLowerCase()
+          )
+        : [entry];
     const sourceExt =
       getFileExtension(String(entry.fileName || '')) ||
       getFileExtension(String(entry.filePath || '').split('/').pop() || '') ||
       '.pdf';
-    const docLabel = sanitizeMemberFileName(
-      entry.documentName ? getDocumentLabel(String(entry.documentName)) : '',
-      'Document'
-    );
-    const labeled =
-      siblings.length > 1
-        ? buildMemberFileEntryDownloadName({
-            ...entry,
-            // Shared document label so numbering is Proof of Income 1/2, not colliding unique stems.
-            fileName: `${docLabel}${sourceExt}`,
-          })
-        : buildMemberFileEntryDownloadName(entry);
+    const foundIdx = siblings.findIndex((row) => Boolean(entry.id) && row.id === entry.id);
+    const index = foundIdx >= 0 ? foundIdx + 1 : 1;
+
+    if (isProofIncome) {
+      const monthMatch = documentName.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+      const incomeMonth =
+        monthMatch?.[1] ||
+        documentName.replace(/^proof\s+of\s+income\s*\d*\s*[-–—:]?\s*/i, '').trim() ||
+        '';
+      const label = buildProofOfIncomeFileLabel({
+        sequence: siblings.length > 1 ? index : Math.max(1, index),
+        incomeMonth: incomeMonth || undefined,
+      });
+      return buildMemberLabeledDownloadName(`${label}${sourceExt}`);
+    }
+
+    const labeled = buildMemberFileEntryDownloadName(entry);
     if (siblings.length <= 1) {
       if (/\.[a-z0-9]{2,8}$/i.test(labeled)) return labeled;
       return `${labeled}${sourceExt}`;
     }
-    const foundIdx = siblings.findIndex((row) => Boolean(entry.id) && row.id === entry.id);
-    const index = foundIdx >= 0 ? foundIdx + 1 : 1;
     const extMatch = labeled.match(/(\.[a-z0-9]{2,8})$/i);
     const extension = extMatch?.[1] || sourceExt;
     const stem = extension && labeled.toLowerCase().endsWith(extension.toLowerCase())
       ? labeled.slice(0, -extension.length)
       : labeled;
-    // Strip prior " 1" / "1" suffixes so Proof of Income1 and Proof of Income 1 both renumber cleanly.
     const cleanStem = stem
       .replace(/\s+\d+$/, '')
       .replace(/(Proof of Income|Med List|Eligibility Screenshot|Medicine List)\d+$/i, '$1')
