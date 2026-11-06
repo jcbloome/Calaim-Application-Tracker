@@ -12,6 +12,7 @@
 
 - **Kaiser Referral Generator — Best Contact confirm more visible.** Unconfirmed Best Contact block uses stronger amber ring/border, “Required — check below” badge, and a larger checkbox row so the confirm step is hard to miss before Generate.
   - Files: `src/app/admin/kaiser-referral-generator/page.tsx`, `handoff.md`.
+  - Commit: `7a358ec7`.
 
 ## Changes 2026-11-04
 
