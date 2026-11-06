@@ -411,6 +411,8 @@ export function EligibilityResultsCard({
                     <TableHead>Coverage</TableHead>
                     <TableHead>Plan begin</TableHead>
                     <TableHead>Caspio status</TableHead>
+                    <TableHead>RCFE</TableHead>
+                    <TableHead>RCFE admin email</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -498,11 +500,27 @@ export function EligibilityResultsCard({
                               </div>
                             ) : null}
                           </TableCell>
+                          <TableCell className="align-top text-xs">
+                            {row.member?.rcfeName || <span className="text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="align-top text-xs">
+                            {row.member?.rcfeAdminEmail ? (
+                              <a
+                                className="text-primary hover:underline"
+                                href={`mailto:${row.member.rcfeAdminEmail}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {row.member.rcfeAdminEmail}
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
                         </TableRow>
                         {isOpen ? (
                           <TableRow>
                             <TableCell colSpan={onRecheck ? 2 : 1} />
-                            <TableCell colSpan={5} className="space-y-2 bg-muted/30 text-xs">
+                            <TableCell colSpan={7} className="space-y-2 bg-muted/30 text-xs">
                               {row.result.rejections.length ? (
                                 <div>
                                   <span className="font-medium">Rejection:</span>{' '}

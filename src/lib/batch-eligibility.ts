@@ -25,6 +25,10 @@ export type BatchEligibilityMember = {
   region: string;
   /** Caspio CalAIM_MCO (Health Net / Kaiser). */
   healthPlan: string;
+  /** Facility placement (for not-eligible RCFE outreach). */
+  rcfeName: string;
+  /** RCFE admin / owner email used for bulk RCFE notices. */
+  rcfeAdminEmail: string;
 };
 
 export type MemberFieldKey = keyof BatchEligibilityMember;
@@ -45,6 +49,8 @@ export const MEMBER_FIELD_LABELS: Record<MemberFieldKey, string> = {
   county: 'County',
   region: 'Kaiser region',
   healthPlan: 'Health plan (CalAIM_MCO)',
+  rcfeName: 'RCFE name',
+  rcfeAdminEmail: 'RCFE admin email',
 };
 
 const DATE_FIELDS = new Set<MemberFieldKey>([

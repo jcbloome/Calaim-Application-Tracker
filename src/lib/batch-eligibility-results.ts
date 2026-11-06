@@ -173,6 +173,8 @@ export function buildEligibilityRowsCsv(
     'Messages',
     'Client_ID2',
     'Caspio CalAIM status',
+    'RCFE name',
+    'RCFE admin email',
     'Needs review detail',
   ];
   const data = rowsToExport.map((row) => [
@@ -189,6 +191,8 @@ export function buildEligibilityRowsCsv(
     [...new Set(row.result.benefits.flatMap((b) => b.messages))].join('; '),
     row.member?.clientId2 || '',
     row.member?.calaimStatus || '',
+    row.member?.rcfeName || '',
+    row.member?.rcfeAdminEmail || '',
     row.flag === 'none' ? '' : ELIGIBILITY_FLAG_LABELS[row.flag],
   ]);
   return buildCsv(columns, data);

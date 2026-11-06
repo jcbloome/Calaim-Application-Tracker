@@ -111,6 +111,15 @@ export async function GET(req: NextRequest) {
         authStartH2022: first(d.Authorization_Start_Date_H2022),
         authEndH2022: first(d.Authorization_End_Date_H2022),
         county: first(d.Member_County, d.memberCounty),
+        rcfeName: first(d.RCFE_Name, d.rcfeName, d.Assisted_Living_Facility_Name),
+        rcfeAdminEmail: first(
+          d.CalAIM_RCFE_Owner_Email,
+          d.RCFE_Owner_Email,
+          d.CalAIM_RCFE_OwnerEmail,
+          d.RCFE_Admin_Email,
+          d.RCFE_Administrator_Email,
+          d.rcfeAdminEmail
+        ),
       });
     }
     members.sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`));
