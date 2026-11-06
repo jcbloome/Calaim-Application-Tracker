@@ -10,6 +10,9 @@
 
 ## Changes 2026-11-06
 
+- **Kaiser Referral printable Step 1 — highlight fields needed to proceed.** Incomplete required Step 1 items (living location, ALF usage Yes/No, Best Contact confirm, current cost, ALF name/confirm) show amber “Needed” rings/badges; completed ones turn green. “Still needed to proceed” list sits at top of Step 1.
+  - Files: `src/app/forms/kaiser-referral/printable/page.tsx`, `handoff.md`.
+
 - **Kaiser Referral Generator — Best Contact confirm more visible.** Unconfirmed Best Contact block uses stronger amber ring/border, “Required — check below” badge, and a larger checkbox row so the confirm step is hard to miss before Generate.
   - Files: `src/app/admin/kaiser-referral-generator/page.tsx`, `handoff.md`.
   - Commit: `7a358ec7`.

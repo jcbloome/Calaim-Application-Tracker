@@ -655,36 +655,55 @@ function KaiserReferralPrintableContent() {
           </div>
         ) : null}
         {!hasRequiredCaregiverConfirm ? (
-          <div className="mt-1 text-xs text-amber-700">
-            Step 1: confirm whether the Caspio Best Contact is the Caregiver/Support Person.
+          <div className="mt-1 rounded border border-amber-400 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-950">
+            Needed to proceed: confirm Best Contact as Caregiver/Support Person (highlighted in Step 1).
+          </div>
+        ) : null}
+        {!hasRequiredLocation ? (
+          <div className="mt-1 rounded border border-amber-400 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-950">
+            Needed to proceed: select 2.2 Current living location.
           </div>
         ) : null}
         {!hasRequiredSection1Usage ? (
-          <div className="mt-1 text-xs text-amber-700">
-            Section 1 current service usage is required: choose Yes/No for Assisted Living Facility Transitions.
+          <div className="mt-1 rounded border border-amber-400 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-950">
+            Needed to proceed: Section 1 current service usage — choose Yes/No for Assisted Living Facility Transitions.
           </div>
         ) : null}
         {!hasRequiredCurrentCost ? (
-          <div className="mt-1 text-xs text-amber-700">
-            Current cost and how it&apos;s being covered is required before generating the PDF.
+          <div className="mt-1 rounded border border-amber-400 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-950">
+            Needed to proceed: enter current cost and how it is being covered.
           </div>
         ) : null}
         {requiresFacilityLocationName && !hasRequiredFacilityLocationName ? (
-          <div className="mt-1 text-xs text-amber-700">
-            Section 2.2 Assisted Living / Board and Care name is required (type it in).
+          <div className="mt-1 rounded border border-amber-400 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-950">
+            Needed to proceed: Assisted Living / Board and Care name.
           </div>
         ) : null}
         {requiresLivingLocationConfirm && !livingLocationConfirmed ? (
-          <div className="mt-1 text-xs text-amber-700">
-            Confirm the Assisted Living / Board and Care name before generating the PDF.
+          <div className="mt-1 rounded border border-amber-400 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-950">
+            Needed to proceed: confirm the Assisted Living / Board and Care name.
           </div>
         ) : null}
       </div>
       <div className="rounded-md border bg-amber-50 p-3 text-sm print:hidden">
         <div className="font-medium text-amber-900">Step 1: Complete required Kaiser fields</div>
         <div className="mt-1 text-xs text-amber-900">
-          Select required values before moving to PDF review.
+          Highlighted amber boxes still need a selection or confirmation before PDF review.
         </div>
+        {pdfPreviewMissingRequirements.length > 0 ? (
+          <div className="mt-2 rounded-md border-2 border-amber-500 bg-amber-100/90 p-2 text-xs text-amber-950 ring-2 ring-amber-300/60">
+            <div className="font-bold uppercase tracking-wide text-amber-900">Still needed to proceed</div>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4 font-medium">
+              {pdfPreviewMissingRequirements.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="mt-2 rounded-md border border-green-400 bg-green-50 px-2 py-1.5 text-xs font-semibold text-green-900">
+            Step 1 complete — you can continue to PDF review.
+          </div>
+        )}
         <div className="mt-2 text-xs text-amber-900">
           Required member fields in Section A: <strong>Member Phone Number</strong> and <strong>Member Mailing Address</strong>.
         </div>
@@ -707,11 +726,30 @@ function KaiserReferralPrintableContent() {
               </span>
             </div>
           </label>
-          <div className="space-y-2">
+          <div
+            className={`space-y-2 rounded-md border-2 p-2.5 ${
+              hasRequiredLocation && hasLivingLocationConfirm
+                ? 'border-green-400 bg-green-50/70 ring-1 ring-green-200'
+                : 'border-amber-500 bg-amber-100 ring-2 ring-amber-300/70'
+            }`}
+          >
             <label className="space-y-1 block">
-              <span className="text-xs font-medium text-amber-900">2.2 Current living location</span>
+              <span className="flex flex-wrap items-center gap-2 text-xs font-semibold text-amber-950">
+                2.2 Current living location *
+                {!hasRequiredLocation ? (
+                  <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    Needed
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    Ready
+                  </span>
+                )}
+              </span>
               <select
-                className="w-full rounded border bg-white px-2 py-1"
+                className={`w-full rounded border bg-white px-2 py-1.5 ${
+                  hasRequiredLocation ? 'border-green-300' : 'border-amber-500 ring-1 ring-amber-300'
+                }`}
                 value={alft22Choice}
                 onChange={(e) => {
                   const next = e.target.value;
@@ -732,13 +770,24 @@ function KaiserReferralPrintableContent() {
               </select>
             </label>
             {requiresFacilityLocationName ? (
-              <div className="space-y-2 rounded-md border-2 border-amber-400 bg-amber-50/80 p-2.5 shadow-sm">
+              <div
+                className={`space-y-2 rounded-md border-2 p-2.5 shadow-sm ${
+                  hasRequiredFacilityLocationName && livingLocationConfirmed
+                    ? 'border-green-400 bg-green-50/80'
+                    : 'border-amber-500 bg-amber-50 ring-2 ring-amber-300/60'
+                }`}
+              >
                 <label className="space-y-1 block">
                   <span className="text-xs font-semibold text-amber-950">
                     Name of Assisted Living / Board and Care *
+                    {!hasRequiredFacilityLocationName ? ' — needed' : ''}
                   </span>
                   <input
-                    className="w-full rounded border border-amber-300 bg-white px-2 py-1.5 text-sm ring-1 ring-amber-200 focus:border-amber-500 focus:outline-none focus:ring-amber-400"
+                    className={`w-full rounded border bg-white px-2 py-1.5 text-sm focus:outline-none ${
+                      hasRequiredFacilityLocationName
+                        ? 'border-green-300 focus:border-green-500 focus:ring-green-300'
+                        : 'border-amber-500 ring-1 ring-amber-300 focus:border-amber-600 focus:ring-amber-400'
+                    }`}
                     value={formFieldOverrides.currentLocationName}
                     onChange={(e) => {
                       setLivingLocationConfirmed(false);
@@ -750,10 +799,16 @@ function KaiserReferralPrintableContent() {
                     placeholder="Prefills from Caspio Name_Where_Residing — edit if needed"
                   />
                 </label>
-                <label className="flex items-start gap-2 rounded border border-amber-300 bg-white p-2 text-xs text-amber-950">
+                <label
+                  className={`flex items-start gap-2 rounded border p-2 text-xs font-medium ${
+                    livingLocationConfirmed
+                      ? 'border-green-400 bg-white text-green-900'
+                      : 'border-amber-500 bg-white text-amber-950 shadow'
+                  }`}
+                >
                   <input
                     type="checkbox"
-                    className="mt-0.5 h-4 w-4"
+                    className="mt-0.5 h-4 w-4 accent-amber-600"
                     checked={livingLocationConfirmed}
                     disabled={!hasRequiredFacilityLocationName}
                     onChange={(e) => setLivingLocationConfirmed(e.target.checked)}
@@ -768,12 +823,29 @@ function KaiserReferralPrintableContent() {
             ) : null}
           </div>
           <div className="space-y-2">
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-amber-900">
-                1) Current service usage: Assisted Living Facility Transitions
+            <label
+              className={`block space-y-1 rounded-md border-2 p-2.5 ${
+                hasRequiredSection1Usage
+                  ? 'border-green-400 bg-green-50/70 ring-1 ring-green-200'
+                  : 'border-amber-500 bg-amber-100 ring-2 ring-amber-300/70'
+              }`}
+            >
+              <span className="flex flex-wrap items-center gap-2 text-xs font-semibold text-amber-950">
+                1) Current service usage: Assisted Living Facility Transitions *
+                {!hasRequiredSection1Usage ? (
+                  <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    Needed
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    Ready
+                  </span>
+                )}
               </span>
               <select
-                className="w-full rounded border bg-white px-2 py-1"
+                className={`w-full rounded border bg-white px-2 py-1.5 ${
+                  hasRequiredSection1Usage ? 'border-green-300' : 'border-amber-500 ring-1 ring-amber-300'
+                }`}
                 value={section1AlfUsage}
                 onChange={(e) => {
                   const next = e.target.value;
@@ -787,14 +859,27 @@ function KaiserReferralPrintableContent() {
               </select>
             </label>
             <div
-              className={`space-y-2 rounded-md border p-2.5 ${
-                hasBestContact && caregiverBestContactConfirmed
-                  ? 'border-green-300 bg-green-50'
-                  : 'border-amber-300 bg-white/70'
+              className={`space-y-2 rounded-md border-2 p-2.5 ${
+                !hasBestContact
+                  ? 'border-slate-300 bg-slate-50'
+                  : caregiverBestContactConfirmed
+                    ? 'border-green-500 bg-green-50 ring-1 ring-green-200'
+                    : 'border-amber-500 bg-amber-100 ring-2 ring-amber-300/70'
               }`}
             >
-              <div className="text-xs font-medium text-amber-900">
-                Confirm Caregiver/Support Person (Email / Phone / Relationship){hasBestContact ? ' *' : ''}
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-amber-950">
+                Confirm Caregiver/Support Person (Email / Phone / Relationship)
+                {hasBestContact ? ' *' : ''}
+                {hasBestContact && !caregiverBestContactConfirmed ? (
+                  <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    Needed
+                  </span>
+                ) : null}
+                {hasBestContact && caregiverBestContactConfirmed ? (
+                  <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    Confirmed
+                  </span>
+                ) : null}
               </div>
               {hasBestContact ? (
                 <>
@@ -816,20 +901,22 @@ function KaiserReferralPrintableContent() {
                     </div>
                   </div>
                   <label
-                    className={`flex items-start gap-2 text-xs font-medium ${
-                      caregiverBestContactConfirmed ? 'text-green-800' : 'text-amber-900'
+                    className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-xs font-semibold ${
+                      caregiverBestContactConfirmed
+                        ? 'border-green-400 bg-white/80 text-green-900'
+                        : 'border-amber-600 bg-white text-amber-950 shadow'
                     }`}
                   >
                     <input
                       type="checkbox"
-                      className="mt-0.5 h-4 w-4"
+                      className="mt-0.5 h-5 w-5 accent-amber-600"
                       checked={caregiverBestContactConfirmed}
                       onChange={(e) => handleCaregiverBestContactConfirmed(e.target.checked)}
                     />
                     <span>
                       {caregiverBestContactConfirmed
                         ? 'Best Contact confirmed as Caregiver/Support Person.'
-                        : 'Confirm Best Contact (from Caspio) as Caregiver/Support Person.'}
+                        : 'Confirm Best Contact (from Caspio) as Caregiver/Support Person (required to proceed).'}
                     </span>
                   </label>
                 </>
@@ -838,12 +925,29 @@ function KaiserReferralPrintableContent() {
               )}
             </div>
           </div>
-          <label className="space-y-1 md:col-span-2">
-            <span className="text-xs font-medium text-amber-900">
+          <label
+            className={`space-y-1 rounded-md border-2 p-2.5 md:col-span-2 ${
+              hasRequiredCurrentCost
+                ? 'border-green-400 bg-green-50/70 ring-1 ring-green-200'
+                : 'border-amber-500 bg-amber-100 ring-2 ring-amber-300/70'
+            }`}
+          >
+            <span className="flex flex-wrap items-center gap-2 text-xs font-semibold text-amber-950">
               Current cost and how it&apos;s being covered? *
+              {!hasRequiredCurrentCost ? (
+                <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                  Needed
+                </span>
+              ) : (
+                <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                  Ready
+                </span>
+              )}
             </span>
             <textarea
-              className="min-h-[64px] w-full rounded border bg-white px-2 py-1.5 text-sm"
+              className={`min-h-[64px] w-full rounded border bg-white px-2 py-1.5 text-sm ${
+                hasRequiredCurrentCost ? 'border-green-300' : 'border-amber-500 ring-1 ring-amber-300'
+              }`}
               value={formFieldOverrides.alft22CurrentCost}
               onChange={(e) =>
                 setFormFieldOverrides((prev) => ({
@@ -853,7 +957,7 @@ function KaiserReferralPrintableContent() {
               }
               placeholder="e.g. $3,500/month room & board paid by family / SSI / private pay"
             />
-            <span className="text-[11px] text-amber-800">
+            <span className="text-[11px] font-medium text-amber-900">
               Required before generating the Kaiser referral PDF.
             </span>
           </label>
