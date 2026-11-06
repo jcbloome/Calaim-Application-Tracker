@@ -802,16 +802,35 @@ export default function KaiserReferralGeneratorPage() {
                         })}
                       </div>
                       <div
-                        className={`mt-3 rounded border p-2 text-xs ${
+                        className={`mt-4 rounded-lg border-2 p-3 text-sm shadow-sm ${
                           bestContactConfirmed
-                            ? 'border-green-300 bg-green-50 text-green-800'
+                            ? 'border-green-500 bg-green-50 text-green-900 ring-2 ring-green-200'
                             : selectedBestContact?.name
-                              ? 'border-amber-300 bg-amber-50 text-amber-900'
-                              : 'border-red-200 bg-red-50 text-red-800'
+                              ? 'border-amber-500 bg-amber-100 text-amber-950 ring-4 ring-amber-300/70'
+                              : 'border-red-500 bg-red-50 text-red-900 ring-2 ring-red-200'
                         }`}
                       >
-                        <div className="font-semibold">Best Contact (Caregiver/Support Person)</div>
-                        <div className="mt-1 grid gap-x-3 gap-y-0.5 sm:grid-cols-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="text-base font-bold tracking-tight">
+                            Best Contact (Caregiver/Support Person)
+                          </div>
+                          {!bestContactConfirmed && selectedBestContact?.name ? (
+                            <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+                              Required — check below
+                            </span>
+                          ) : null}
+                          {bestContactConfirmed ? (
+                            <span className="rounded-full bg-green-600 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+                              Confirmed
+                            </span>
+                          ) : null}
+                        </div>
+                        {!bestContactConfirmed && selectedBestContact?.name ? (
+                          <p className="mt-1 text-xs font-semibold text-amber-900">
+                            You must confirm Best Contact before Generate unlocks.
+                          </p>
+                        ) : null}
+                        <div className="mt-2 grid gap-x-3 gap-y-1 text-xs sm:grid-cols-2">
                           {[
                             { label: 'Name (Best_Contact_First / Last)', value: selectedBestContact?.name },
                             { label: 'Phone (Best_Contact_Phone)', value: selectedBestContact?.bestContactPhone },
@@ -822,26 +841,33 @@ export default function KaiserReferralGeneratorPage() {
                             },
                           ].map((field) => (
                             <div key={field.label}>
-                              {field.label}: {clean(field.value) || 'Not on file'}
+                              <span className="font-medium">{field.label}:</span>{' '}
+                              {clean(field.value) || 'Not on file'}
                             </div>
                           ))}
                         </div>
                         {selectedBestContact?.name ? (
-                          <label className="mt-2 flex items-start gap-2 font-medium">
+                          <label
+                            className={`mt-3 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 font-semibold ${
+                              bestContactConfirmed
+                                ? 'border-green-400 bg-white/80 text-green-900'
+                                : 'border-amber-600 bg-white text-amber-950 shadow'
+                            }`}
+                          >
                             <input
                               type="checkbox"
-                              className="mt-0.5 h-4 w-4"
+                              className="mt-0.5 h-5 w-5 accent-amber-600"
                               checked={bestContactConfirmed}
                               onChange={(event) => setBestContactConfirmed(event.target.checked)}
                             />
-                            <span>
+                            <span className="leading-snug">
                               {bestContactConfirmed
                                 ? 'Best Contact confirmed as Caregiver/Support Person.'
                                 : 'Confirm Best Contact as Caregiver/Support Person (required to generate).'}
                             </span>
                           </label>
                         ) : (
-                          <div className="mt-2 font-medium">
+                          <div className="mt-2 font-semibold">
                             No Best Contact on file in Caspio — add Best_Contact_First / Last in Caspio, then Pull Selected from Caspio.
                           </div>
                         )}

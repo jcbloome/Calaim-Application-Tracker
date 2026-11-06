@@ -8,6 +8,11 @@
 
 ---
 
+## Changes 2026-11-06
+
+- **Kaiser Referral Generator — Best Contact confirm more visible.** Unconfirmed Best Contact block uses stronger amber ring/border, “Required — check below” badge, and a larger checkbox row so the confirm step is hard to miss before Generate.
+  - Files: `src/app/admin/kaiser-referral-generator/page.tsx`, `handoff.md`.
+
 ## Changes 2026-11-04
 
 - **Proof of Income multi-upload unique names.** Each Proof of Income file gets a distinct title/filename (`Proof of Income 1 - YYYY-MM-DD`, `Proof of Income 2 - …`) on portal and admin upload. Files view uniquifies legacy rows; download names no longer double the member prefix.
