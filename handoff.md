@@ -10,6 +10,9 @@
 
 ## Changes 2026-11-06
 
+- **Kaiser Referral Step 1 — yellow/green field highlighting.** Only the required inputs/selects/checkboxes highlight: soft yellow until filled, green when complete (no full section color blocks).
+  - Files: `src/app/forms/kaiser-referral/printable/page.tsx`, `handoff.md`.
+
 - **Kaiser Referral printable Step 1 — highlight fields needed to proceed.** Incomplete required Step 1 items (living location, ALF usage Yes/No, Best Contact confirm, current cost, ALF name/confirm) show amber “Needed” rings/badges; completed ones turn green. “Still needed to proceed” list sits at top of Step 1.
   - Files: `src/app/forms/kaiser-referral/printable/page.tsx`, `handoff.md`.
   - Commit: `07268ef7`.

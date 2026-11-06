@@ -806,7 +806,7 @@ export default function KaiserReferralGeneratorPage() {
                           bestContactConfirmed
                             ? 'border-green-500 bg-green-50 text-green-900 ring-2 ring-green-200'
                             : selectedBestContact?.name
-                              ? 'border-amber-500 bg-amber-100 text-amber-950 ring-4 ring-amber-300/70'
+                              ? 'border-amber-300 bg-amber-50/70 text-amber-900 ring-1 ring-amber-100'
                               : 'border-red-500 bg-red-50 text-red-900 ring-2 ring-red-200'
                         }`}
                       >
@@ -815,7 +815,7 @@ export default function KaiserReferralGeneratorPage() {
                             Best Contact (Caregiver/Support Person)
                           </div>
                           {!bestContactConfirmed && selectedBestContact?.name ? (
-                            <span className="rounded-full bg-amber-600 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+                            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
                               Required — check below
                             </span>
                           ) : null}
@@ -851,7 +851,7 @@ export default function KaiserReferralGeneratorPage() {
                             className={`mt-3 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 font-semibold ${
                               bestContactConfirmed
                                 ? 'border-green-400 bg-white/80 text-green-900'
-                                : 'border-amber-600 bg-white text-amber-950 shadow'
+                                : 'border-amber-300 bg-white text-amber-900'
                             }`}
                           >
                             <input
