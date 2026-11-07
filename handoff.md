@@ -12,7 +12,7 @@
 
 - **Batch Eligibility Log — MCP on runs + not-eligible RCFE list + Kaiser inactive RCFE email.** Log table shows MCP (Health Net / Kaiser) on every run. **Not eligible** opens the inactive member list with Caspio `RCFE_Name` + `RCFE_Admin_Email` (supports multiple emails) plus owner/registration contacts — same sources as RCFE Bulk Email. 271 matching prefers Caspio rows that have RCFE name/email when IDs collide. CSV export. For Kaiser runs: NCAL/SCAL guest eligibility buttons (new window) plus per-row Check by region; group by RCFE; send/resend inactive Medi-Cal notice (member/POA call Kaiser to reinstate); always CC `jason@carehomefinders.com`. Decode results table also shows RCFE columns.
   - Files: `src/lib/kaiser-inactive-rcfe-notice.ts`, `src/lib/rcfe-bulk-email-fields.ts`, `src/app/api/admin/batch-eligibility/kaiser-inactive-notify/route.ts`, `src/app/admin/tools/batch-eligibility-log/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/lib/batch-eligibility-results.ts`, `src/lib/batch-eligibility.ts`, `src/app/api/admin/batch-eligibility/members/route.ts`, `handoff.md`.
-  - Commit: `05da876c` (RCFE_Admin_Email multi-email follow-up pending).
+  - Commits: `05da876c`, `61439271`.
 
 - **Kaiser Referral Step 1 — yellow/green field highlighting.** Only the required inputs/selects/checkboxes highlight: soft yellow until filled, green when complete (no full section color blocks). Softened Best Contact callout on the generator page.
   - Files: `src/app/forms/kaiser-referral/printable/page.tsx`, `src/app/admin/kaiser-referral-generator/page.tsx`, `handoff.md`.
