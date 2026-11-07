@@ -412,7 +412,7 @@ export function EligibilityResultsCard({
                     <TableHead>Plan begin</TableHead>
                     <TableHead>Caspio status</TableHead>
                     <TableHead>RCFE</TableHead>
-                    <TableHead>RCFE admin email</TableHead>
+                    <TableHead>RCFE owner email</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

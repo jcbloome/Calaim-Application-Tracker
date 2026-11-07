@@ -27,7 +27,10 @@ export type BatchEligibilityMember = {
   healthPlan: string;
   /** Facility placement (for not-eligible RCFE outreach). */
   rcfeName: string;
-  /** RCFE admin / owner email used for bulk RCFE notices. */
+  /**
+   * RCFE contact emails for Bulk RCFE Email (semicolon-joined when multiple):
+   * RCFE_Admin_Email, owner emails, and registration matches by RCFE_Name.
+   */
   rcfeAdminEmail: string;
 };
 
@@ -50,7 +53,7 @@ export const MEMBER_FIELD_LABELS: Record<MemberFieldKey, string> = {
   region: 'Kaiser region',
   healthPlan: 'Health plan (CalAIM_MCO)',
   rcfeName: 'RCFE name',
-  rcfeAdminEmail: 'RCFE admin email',
+  rcfeAdminEmail: 'RCFE owner email',
 };
 
 const DATE_FIELDS = new Set<MemberFieldKey>([

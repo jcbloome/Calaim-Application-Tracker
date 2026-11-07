@@ -566,8 +566,10 @@ export default function BatchEligibilityLogPage() {
                   </Badge>
                 </CardTitle>
                 <CardDescription>
-                  Decoded {format(new Date(notEligibleRun.createdAtIso), 'MMM d, yyyy h:mm a')}. Includes RCFE name and
-                  admin email from Caspio (same Owner email list used for bulk RCFE notices).
+                  Decoded {format(new Date(notEligibleRun.createdAtIso), 'MMM d, yyyy h:mm a')}. Name from Caspio{' '}
+                  <span className="font-medium">RCFE_Name</span>. Emails from{' '}
+                  <span className="font-medium">RCFE_Admin_Email</span> (may list more than one), plus owner /
+                  registration contacts — same sources as RCFE Bulk Email.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -583,7 +585,7 @@ export default function BatchEligibilityLogPage() {
                     ) : (
                       <Download className="mr-2 h-4 w-4" />
                     )}
-                    Download CSV (with RCFE + admin email)
+                    Download CSV (with RCFE + owner email)
                   </Button>
                   {notEligibleRunPlan === 'kaiser' ? (
                     <>
@@ -654,7 +656,7 @@ export default function BatchEligibilityLogPage() {
                         <TableHead>Medi-Cal / MRN</TableHead>
                         <TableHead>Caspio status</TableHead>
                         <TableHead>RCFE name</TableHead>
-                        <TableHead>RCFE admin email</TableHead>
+                        <TableHead>RCFE owner email</TableHead>
                         {notEligibleRunPlan === 'kaiser' ? <TableHead>Check eligibility</TableHead> : null}
                       </TableRow>
                     </TableHeader>
@@ -693,12 +695,21 @@ export default function BatchEligibilityLogPage() {
                             </TableCell>
                             <TableCell className="align-top text-sm">
                               {row.member?.rcfeAdminEmail ? (
-                                <a
-                                  className="text-primary hover:underline"
-                                  href={`mailto:${row.member.rcfeAdminEmail}`}
-                                >
-                                  {row.member.rcfeAdminEmail}
-                                </a>
+                                <div className="space-y-0.5">
+                                  {row.member.rcfeAdminEmail.split(/[;,/]+/).map((part) => {
+                                    const email = part.trim();
+                                    if (!email) return null;
+                                    return (
+                                      <a
+                                        key={email}
+                                        className="block text-primary hover:underline"
+                                        href={`mailto:${email}`}
+                                      >
+                                        {email}
+                                      </a>
+                                    );
+                                  })}
+                                </div>
                               ) : (
                                 <span className="text-muted-foreground">No email</span>
                               )}
@@ -755,8 +766,9 @@ export default function BatchEligibilityLogPage() {
                   <CardHeader>
                     <CardTitle>RCFEs to notify (Kaiser inactive)</CardTitle>
                     <CardDescription>
-                      Grouped by facility. Select RCFEs with admin email, then send the Kaiser Medi-Cal inactive
-                      notice. Each email is CC'd to {KAISER_INACTIVE_NOTICE_CC}.
+                      Grouped by facility using Caspio RCFE_Name and the same owner/registration emails as RCFE Bulk
+                      Email. Select RCFEs with email, then send the Kaiser Medi-Cal inactive notice. Each email is
+                      CC&apos;d to {KAISER_INACTIVE_NOTICE_CC}.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">

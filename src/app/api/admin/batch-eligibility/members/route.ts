@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import type { BatchEligibilityMember } from '@/lib/batch-eligibility';
 import { resolveKaiserRegion, stripMrnSeparators } from '@/lib/kaiser-region';
+import {
+  buildRcfeBulkEmailIndexes,
+  joinRcfeEmails,
+  resolveRcfeBulkEmailContact,
+} from '@/lib/rcfe-bulk-email-fields';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 const PLAN_MCO: Record<string, { cacheMco: string | null; matches: (value: string) => boolean }> = {
   healthnet: {
@@ -53,6 +59,27 @@ const toBirthDateString = (value: unknown): string => {
   return raw;
 };
 
+async function loadRcfeRegistrationRows(): Promise<Array<Record<string, unknown>>> {
+  try {
+    const { getCaspioCredentialsFromEnv, getCaspioToken, fetchCaspioRecords } = await import(
+      '@/lib/caspio-api-utils'
+    );
+    const credentials = getCaspioCredentialsFromEnv();
+    const token = await getCaspioToken(credentials);
+    const records = await fetchCaspioRecords(
+      credentials,
+      token,
+      'CalAIM_tbl_New_RCFE_Registration',
+      '1=1',
+      1000
+    );
+    return Array.isArray(records) ? (records as Array<Record<string, unknown>>) : [];
+  } catch (error) {
+    console.warn('[batch-eligibility/members] RCFE registration email lookup skipped', error);
+    return [];
+  }
+}
+
 /** Members of one plan from the synced Caspio cache, for batch eligibility files. */
 export async function GET(req: NextRequest) {
   const adminCheck = await requireAdminApiAuth(req);
@@ -64,19 +91,37 @@ export async function GET(req: NextRequest) {
   if (!plan) return NextResponse.json({ success: false, error: 'Unknown plan' }, { status: 400 });
 
   try {
-    let snap: { docs: Array<{ id: string; data: () => Record<string, any> }> };
-    if (plan.cacheMco) {
-      snap = await adminCheck.adminDb
-        .collection('caspio_members_cache')
-        .where('CalAIM_MCO', '==', plan.cacheMco)
-        .limit(10000)
-        .get();
-    } else {
-      snap = await adminCheck.adminDb.collection('caspio_members_cache').limit(15000).get();
+    // Always pull a wide cache slice for RCFE owner-email indexing (same fields as RCFE Bulk Email).
+    const [planSnap, indexSnap, registrations] = await Promise.all([
+      plan.cacheMco
+        ? adminCheck.adminDb
+            .collection('caspio_members_cache')
+            .where('CalAIM_MCO', '==', plan.cacheMco)
+            .limit(10000)
+            .get()
+        : adminCheck.adminDb.collection('caspio_members_cache').limit(15000).get(),
+      planKey === 'all'
+        ? Promise.resolve(null)
+        : adminCheck.adminDb.collection('caspio_members_cache').limit(15000).get(),
+      loadRcfeRegistrationRows(),
+    ]);
+
+    const indexDocs =
+      planKey === 'all'
+        ? (planSnap.docs as Array<{ id: string; data: () => Record<string, any> }>)
+        : (indexSnap?.docs as Array<{ id: string; data: () => Record<string, any> }>) || [];
+
+    const indexRows: Array<Record<string, unknown>> = [];
+    for (const doc of indexDocs) {
+      const d = doc.data();
+      if (d.deletedFromCaspio === true) continue;
+      indexRows.push(d);
     }
+    const indexes = buildRcfeBulkEmailIndexes(indexRows, registrations);
+
     let latestSyncMs = 0;
     const members: BatchEligibilityMember[] = [];
-    for (const doc of snap.docs as Array<{ id: string; data: () => Record<string, any> }>) {
+    for (const doc of planSnap.docs as Array<{ id: string; data: () => Record<string, any> }>) {
       const d = doc.data();
       if (d.deletedFromCaspio === true) continue;
       const mco = s(d.CalAIM_MCO).toLowerCase();
@@ -91,6 +136,8 @@ export async function GET(req: NextRequest) {
           : first(d.memberMrn, d.MRN, d.Member_MRN)
       );
       const healthPlan = first(d.CalAIM_MCO) || (isKaiser ? 'Kaiser' : '');
+      // RCFE_Name + RCFE_Admin_Email (multi) / owner / registration — same as RCFE Bulk Email.
+      const bulkContact = resolveRcfeBulkEmailContact(d, indexes);
       members.push({
         clientId2: first(d.Client_ID2, d.client_ID2, doc.id),
         firstName: first(d.Senior_First, d.memberFirstName),
@@ -111,15 +158,8 @@ export async function GET(req: NextRequest) {
         authStartH2022: first(d.Authorization_Start_Date_H2022),
         authEndH2022: first(d.Authorization_End_Date_H2022),
         county: first(d.Member_County, d.memberCounty),
-        rcfeName: first(d.RCFE_Name, d.rcfeName, d.Assisted_Living_Facility_Name),
-        rcfeAdminEmail: first(
-          d.CalAIM_RCFE_Owner_Email,
-          d.RCFE_Owner_Email,
-          d.CalAIM_RCFE_OwnerEmail,
-          d.RCFE_Admin_Email,
-          d.RCFE_Administrator_Email,
-          d.rcfeAdminEmail
-        ),
+        rcfeName: bulkContact.rcfeName,
+        rcfeAdminEmail: joinRcfeEmails(bulkContact.emails),
       });
     }
     members.sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`));

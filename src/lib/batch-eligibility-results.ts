@@ -79,24 +79,36 @@ export function buildEligibilityResultRows(
   const byClientId = new Map<string, BatchEligibilityMember>();
   const byNameDob = new Map<string, BatchEligibilityMember>();
   const byLastFirstDob = new Map<string, BatchEligibilityMember>();
+  const preferMember = (existing: BatchEligibilityMember | undefined, next: BatchEligibilityMember) => {
+    if (!existing) return next;
+    // Prefer the Caspio row that has RCFE_Name / owner email when IDs collide (e.g. MRN last-8).
+    const existingScore = (existing.rcfeName ? 2 : 0) + (existing.rcfeAdminEmail ? 1 : 0);
+    const nextScore = (next.rcfeName ? 2 : 0) + (next.rcfeAdminEmail ? 1 : 0);
+    return nextScore > existingScore ? next : existing;
+  };
   const addId = (raw: string, member: BatchEligibilityMember) => {
     for (const key of idKeys(raw)) {
-      if (key && !byId.has(key)) byId.set(key, member);
+      if (!key) continue;
+      byId.set(key, preferMember(byId.get(key), member));
     }
   };
   for (const m of members) {
     if (m.medicalId) addId(m.medicalId, m);
     if (m.mrn) addId(m.mrn, m);
     if (m.clientId2) {
-      byClientId.set(String(m.clientId2).trim(), m);
+      const cid = String(m.clientId2).trim();
+      byClientId.set(cid, preferMember(byClientId.get(cid), m));
       addId(m.clientId2, m);
     }
     const dob = dobKey(m.birthDate);
     if (dob && /^\d{8}$/.test(dob)) {
       const last = normName(m.lastName);
       const first = normName(m.firstName);
-      if (last) byNameDob.set(`${last}|${dob}`, m);
-      if (last && first) byLastFirstDob.set(`${last}|${first}|${dob}`, m);
+      if (last) byNameDob.set(`${last}|${dob}`, preferMember(byNameDob.get(`${last}|${dob}`), m));
+      if (last && first) {
+        const key = `${last}|${first}|${dob}`;
+        byLastFirstDob.set(key, preferMember(byLastFirstDob.get(key), m));
+      }
     }
   }
   const lookupId = (raw: string) => {
@@ -174,7 +186,7 @@ export function buildEligibilityRowsCsv(
     'Client_ID2',
     'Caspio CalAIM status',
     'RCFE name',
-    'RCFE admin email',
+    'RCFE owner email',
     'Needs review detail',
   ];
   const data = rowsToExport.map((row) => [

@@ -1,4 +1,5 @@
 import type { EligibilityResultRow } from '@/lib/batch-eligibility-results';
+import { splitEmailList } from '@/lib/rcfe-bulk-email-fields';
 
 /** Kaiser Medi-Cal inactive notice to RCFEs after batch eligibility decode. */
 
@@ -51,6 +52,7 @@ const normalizeRcfeKey = (name: unknown) =>
 export function rowToKaiserInactiveMember(row: EligibilityResultRow): KaiserInactiveMember | null {
   if (row.result.outcome !== 'inactive') return null;
   const member = row.member;
+  const emails = splitEmailList(member?.rcfeAdminEmail);
   return {
     clientId2: String(member?.clientId2 || '').trim(),
     firstName: String(member?.firstName || row.result.firstName || '').trim(),
@@ -60,7 +62,7 @@ export function rowToKaiserInactiveMember(row: EligibilityResultRow): KaiserInac
     birthDate: String(member?.birthDate || row.result.birthDate || '').trim(),
     region: String(member?.region || '').trim(),
     rcfeName: String(member?.rcfeName || '').trim() || 'No RCFE on file',
-    rcfeAdminEmail: normalizeEmail(member?.rcfeAdminEmail),
+    rcfeAdminEmail: emails.join('; '),
     calaimStatus: String(member?.calaimStatus || '').trim(),
   };
 }
@@ -72,17 +74,18 @@ export function groupKaiserInactiveByRcfe(rows: EligibilityResultRow[]): KaiserI
     const member = rowToKaiserInactiveMember(row);
     if (!member) continue;
     const key = normalizeRcfeKey(member.rcfeName);
+    const emails = splitEmailList(member.rcfeAdminEmail);
     const existing = byKey.get(key);
     if (existing) {
       existing.members.push(member);
-      if (member.rcfeAdminEmail && !existing.emails.includes(member.rcfeAdminEmail)) {
-        existing.emails.push(member.rcfeAdminEmail);
+      for (const email of emails) {
+        if (!existing.emails.includes(email)) existing.emails.push(email);
       }
     } else {
       byKey.set(key, {
         key,
         rcfeName: member.rcfeName,
-        emails: member.rcfeAdminEmail ? [member.rcfeAdminEmail] : [],
+        emails: [...emails],
         members: [member],
       });
     }
@@ -154,7 +157,7 @@ export function buildKaiserInactiveMembersCsv(members: KaiserInactiveMember[]): 
     'Client_ID2',
     'CalAIM status',
     'RCFE name',
-    'RCFE admin email',
+    'RCFE owner email',
   ];
   const rows = members.map((m) =>
     [
