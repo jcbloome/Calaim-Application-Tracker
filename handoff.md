@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-09
 
+- **Kaiser application duplicate check API.** Auth-required `POST /api/applications/check-duplicate` looks up MRN across root + collectionGroup applications, blocks same-person Kaiser duplicates, and can return a single linkable admin seed instead of a hard block.
+  - Files: `src/lib/application-duplicate-check.ts`, `src/app/api/applications/check-duplicate/route.ts`, `handoff.md`.
+  - Commit: _(pending)_.
+
 - **App Hosting build — unused `yesNo` in waivers PDF.** Removed unused helper so Next.js ESLint no longer fails the Firebase App Hosting framework build.
   - Files: `src/lib/waivers-full-text-pdf.ts`, `handoff.md`.
   - Commit: `98c13f96`.
