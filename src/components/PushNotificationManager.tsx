@@ -5,7 +5,6 @@ import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { shouldSuppressWebAlerts, WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
-import { isRealDesktop } from '@/lib/is-real-desktop';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface PushNotificationManagerProps {
@@ -15,8 +14,8 @@ interface PushNotificationManagerProps {
 const shouldSuppressBrowserNotifications = () => shouldSuppressWebAlerts();
 
 export default function PushNotificationManager(props: PushNotificationManagerProps) {
-  // Electron is the single notification system. Also, web notifications are mothballed.
-  if (WEB_NOTIFICATIONS_MOTHBALLED || isRealDesktop()) return null;
+  // Web notifications are mothballed.
+  if (WEB_NOTIFICATIONS_MOTHBALLED) return null;
   return <PushNotificationManagerContent {...props} />;
 }
 

@@ -38,7 +38,6 @@
     "node_modules",
     "admin",
     "functions",
-    "desktop",
     "calaim-pathfinder"
   ]
 }

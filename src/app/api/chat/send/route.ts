@@ -150,8 +150,8 @@ export async function POST(request: NextRequest) {
       senderId: senderUid,
       timestamp: nowTs,
       threadId: resolvedThreadId,
-      actionUrl: '/admin/desktop-chat-window',
-      source: 'electron',
+      actionUrl: '/admin/my-notes',
+      source: 'web',
       participants: storedParticipants,
       participantNames: participantNames.length ? participantNames : undefined,
     };

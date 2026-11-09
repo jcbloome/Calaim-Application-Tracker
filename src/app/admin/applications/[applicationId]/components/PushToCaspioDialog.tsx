@@ -91,7 +91,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { MultiUploadCard } from '@/components/MultiUploadCard';
 import { useAdmin } from '@/hooks/use-admin';
-import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 import {
   Dialog,
   DialogContent,

@@ -19,7 +19,6 @@ import {
 } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
-import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 import { buildMemberActionLogEntry, MEMBER_ACTION_KEYS, type MemberActionLogEntry } from '@/lib/member-action-log';
@@ -58,8 +57,6 @@ export function StaffAssignmentDropdown({
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
     const [staffFilterLabel, setStaffFilterLabel] = useState<string>('Showing all staff');
-    const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
-    const { isActiveByUid } = useDesktopPresenceMap(staffUids);
     useEffect(() => {
         // Filter staff list based on the application's health plan.
         let staff: StaffCandidate[] = [];
@@ -435,16 +432,7 @@ export function StaffAssignmentDropdown({
           <SelectContent>
             {staffList.map((staff) => (
               <SelectItem key={staff.uid} value={staff.uid}>
-                <div className="flex items-center gap-2">
-                  {isActiveByUid[staff.uid] ? (
-                    <span
-                      className="inline-block h-2 w-2 rounded-full bg-emerald-500"
-                      aria-label="Electron active"
-                      title="Electron active"
-                    />
-                  ) : null}
-                  <span>{staff.displayName}</span>
-                </div>
+                {staff.displayName}
               </SelectItem>
             ))}
           </SelectContent>

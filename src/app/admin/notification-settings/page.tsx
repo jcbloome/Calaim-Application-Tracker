@@ -381,37 +381,6 @@ export default function NotificationSettingsPage() {
             />
           </div>
 
-          {/* Suppress Web When Desktop Active */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-base font-medium">Suppress In-App Alerts When Desktop Is Active</Label>
-              <p className="text-sm text-muted-foreground">
-                Prevent duplicate in-app alerts while the desktop app is running
-              </p>
-            </div>
-            <Switch
-              checked={settings.suppressWebWhenDesktopActive}
-              onCheckedChange={(checked) =>
-                setSettings(prev => ({ ...prev, suppressWebWhenDesktopActive: checked }))
-              }
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-base font-medium">Caspio Announcements In Electron</Label>
-              <p className="text-sm text-muted-foreground">
-                Show Caspio note announcements in the desktop tray/pill notifications
-              </p>
-            </div>
-            <Switch
-              checked={settings.caspioAnnouncementsInElectronEnabled}
-              onCheckedChange={(checked) =>
-                setSettings(prev => ({ ...prev, caspioAnnouncementsInElectronEnabled: checked }))
-              }
-            />
-          </div>
-
           {/* Email Notifications */}
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">

@@ -506,14 +506,6 @@ function KaiserReferralPrintableContent() {
   );
 
   const openExternalPdfUrl = useCallback((url: string) => {
-    try {
-      if (window.desktopNotificationPill?.open) {
-        window.desktopNotificationPill.open(url);
-        return;
-      }
-    } catch {
-      // fall through
-    }
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 

@@ -172,14 +172,7 @@ export default function WindowsNotification({
       ? 'animate-[pulse_2s_ease-in-out_infinite]'
       : '';
 
-  // In Electron, keep the notification window sized to the current card mode.
-  useEffect(() => {
-    try {
-      window.desktopNotificationPill?.setMode?.(isMinimized ? 'compact' : 'panel');
-    } catch {
-      // ignore
-    }
-  }, [isMinimized]);
+  // Desktop notification pill removed (Electron deprecated)
 
   // Play notification sound
   const playSound = async () => {

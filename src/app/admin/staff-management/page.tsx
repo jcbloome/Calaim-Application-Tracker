@@ -18,7 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
-import { INTEROFFICE_NOTES_MOTHBALLED, ELECTRON_POPUPS_MOTHBALLED } from '@/lib/notification-utils';
+import { INTEROFFICE_NOTES_MOTHBALLED } from '@/lib/notification-utils';
 import { cn } from '@/lib/utils';
 import { appConfirm } from '@/components/AppDialogHost';
 interface StaffMember {
@@ -196,12 +196,6 @@ export default function StaffManagementPage() {
 
     // Web in-app notifications (cards/toasts) for staff notes
     const [webAppNotificationsEnabled, setWebAppNotificationsEnabled] = useState(true);
-    const [suppressWebWhenDesktopActive, setSuppressWebWhenDesktopActive] = useState(true);
-
-    // Electron review popups (incoming forms)
-    const [reviewPopupsEnabled, setReviewPopupsEnabled] = useState(true);
-    const [alftElectronEnabled, setAlftElectronEnabled] = useState(true);
-    const [reviewPollIntervalSeconds, setReviewPollIntervalSeconds] = useState(180);
     const [kaiserManagerDigestIntervalHours, setKaiserManagerDigestIntervalHours] = useState(2);
     const [kaiserDigestStatus, setKaiserDigestStatus] = useState<KaiserDigestStatus | null>(null);
     const [reviewRecipients, setReviewRecipients] = useState<Record<string, ReviewRecipientSettings>>({});
@@ -549,7 +543,6 @@ export default function StaffManagementPage() {
                         : []
                 );
                 setWebAppNotificationsEnabled(Boolean((data as any)?.webAppNotificationsEnabled ?? true));
-                setSuppressWebWhenDesktopActive(Boolean((data as any)?.suppressWebWhenDesktopActive ?? true));
             } else {
                 setNotificationRecipientsHadField(false);
                 setInterofficeElectronEnabled(false);
@@ -576,18 +569,12 @@ export default function StaffManagementPage() {
 
             if (reviewSnap?.exists()) {
                 const data = reviewSnap.data() as any;
-                setReviewPopupsEnabled(ELECTRON_POPUPS_MOTHBALLED ? false : Boolean(data?.enabled ?? true));
-                setAlftElectronEnabled(ELECTRON_POPUPS_MOTHBALLED ? false : Boolean(data?.alftElectronEnabled ?? true));
-                setReviewPollIntervalSeconds(Number(data?.pollIntervalSeconds || 180));
                 const cadence = Number(data?.kaiserManagerDigestIntervalHours || 2);
                 setKaiserManagerDigestIntervalHours(
                     Number.isFinite(cadence) ? Math.max(1, Math.min(24, Math.round(cadence))) : 2
                 );
                 setReviewRecipients((data?.recipients || {}) as Record<string, ReviewRecipientSettings>);
             } else {
-                setReviewPopupsEnabled(false);
-                setAlftElectronEnabled(false);
-                setReviewPollIntervalSeconds(180);
                 setKaiserManagerDigestIntervalHours(2);
                 setReviewRecipients({});
             }
@@ -1378,7 +1365,7 @@ export default function StaffManagementPage() {
                     new Set((claimsDepartmentNotifyRecipientUids || []).map((x) => String(x || '').trim()).filter(Boolean))
                 ),
                 webAppNotificationsEnabled: Boolean(webAppNotificationsEnabled),
-                suppressWebWhenDesktopActive: Boolean(suppressWebWhenDesktopActive),
+                suppressWebWhenDesktopActive: false,
             };
 
             const adminAccessRef = doc(firestore, 'system_settings', 'admin_access');
@@ -1398,9 +1385,10 @@ export default function StaffManagementPage() {
 
             const reviewRef = doc(firestore, 'system_settings', 'review_notifications');
             const reviewData = {
-                enabled: ELECTRON_POPUPS_MOTHBALLED ? false : Boolean(reviewPopupsEnabled),
-                alftElectronEnabled: ELECTRON_POPUPS_MOTHBALLED ? false : Boolean(alftElectronEnabled),
-                pollIntervalSeconds: Math.max(30, Math.min(3600, Math.round(Number(reviewPollIntervalSeconds || 180)))),
+                // Desktop Electron review popups removed — keep disabled in Firestore.
+                enabled: false,
+                alftElectronEnabled: false,
+                pollIntervalSeconds: 180,
                 kaiserManagerDigestIntervalHours: Math.max(
                     1,
                     Math.min(24, Math.round(Number(kaiserManagerDigestIntervalHours || 2)))
@@ -3034,103 +3022,25 @@ export default function StaffManagementPage() {
                 </CardContent>
             </Card>
 
-            <Card id="desktop-controls-section" className="border-border/70 shadow-sm">
+            <Card id="web-notification-controls-section" className="border-border/70 shadow-sm">
                 <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                        Desktop notification controls
-                        {ELECTRON_POPUPS_MOTHBALLED ? <Badge variant="secondary">Electron mothballed</Badge> : null}
-                    </CardTitle>
+                    <CardTitle className="text-lg">Web notification controls</CardTitle>
                     <CardDescription>
-                        {ELECTRON_POPUPS_MOTHBALLED
-                            ? 'Electron desktop app is retired. Staff use browser Action Items and My Notifications only.'
-                            : 'Electron and web notification behavior for staff alerts.'}
+                        Browser Action Items and My Notifications only (desktop Electron app removed).
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    {ELECTRON_POPUPS_MOTHBALLED ? (
-                        <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
-                            Electron tray popups and desktop presence controls are disabled. Leave these switches off.
-                        </div>
-                    ) : null}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 border rounded-lg bg-muted/20">
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="space-y-1">
-                                <div className="text-sm font-semibold">ALFT Electron activation (global)</div>
-                                <div className="text-xs text-muted-foreground">
-                                    Master on/off for ALFT Electron notifications.
-                                </div>
+                    <div className="flex items-center justify-between gap-4 p-3 border rounded-lg bg-muted/20">
+                        <div className="space-y-1">
+                            <div className="text-sm font-semibold">Web in-app notifications</div>
+                            <div className="text-xs text-muted-foreground">
+                                Turns on/off the web notification cards for staff notes.
                             </div>
-                            <Switch
-                                checked={ELECTRON_POPUPS_MOTHBALLED ? false : alftElectronEnabled}
-                                disabled={ELECTRON_POPUPS_MOTHBALLED}
-                                onCheckedChange={(v) => { setAlftElectronEnabled(Boolean(v)); queueAutoSave(); }}
-                            />
                         </div>
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="space-y-1">
-                                <div className="text-sm font-semibold">Electron notifications (incoming forms)</div>
-                                <div className="text-xs text-muted-foreground">
-                                    Controls CS Summary + Documents review popups for selected staff.
-                                </div>
-                            </div>
-                            <Switch
-                                checked={ELECTRON_POPUPS_MOTHBALLED ? false : reviewPopupsEnabled}
-                                disabled={ELECTRON_POPUPS_MOTHBALLED}
-                                onCheckedChange={(v) => { setReviewPopupsEnabled(Boolean(v)); queueAutoSave(); }}
-                            />
-                        </div>
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="space-y-1">
-                                <div className="text-sm font-semibold">Web in-app notifications</div>
-                                <div className="text-xs text-muted-foreground">
-                                    Turns on/off the web notification cards for staff notes.
-                                </div>
-                            </div>
-                            <Switch
-                                checked={webAppNotificationsEnabled}
-                                onCheckedChange={(v) => { setWebAppNotificationsEnabled(Boolean(v)); queueAutoSave(); }}
-                            />
-                        </div>
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="space-y-1">
-                                <div className="text-sm font-semibold">Suppress web when Electron is active</div>
-                                <div className="text-xs text-muted-foreground">
-                                    {ELECTRON_POPUPS_MOTHBALLED
-                                        ? 'Not used while Electron is mothballed.'
-                                        : 'Prevents duplicate notifications inside the desktop app.'}
-                                </div>
-                            </div>
-                            <Switch
-                                checked={ELECTRON_POPUPS_MOTHBALLED ? false : suppressWebWhenDesktopActive}
-                                disabled={ELECTRON_POPUPS_MOTHBALLED}
-                                onCheckedChange={(v) => { setSuppressWebWhenDesktopActive(Boolean(v)); queueAutoSave(); }}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="max-w-sm space-y-2">
-                        <Label htmlFor="reviewPollIntervalSeconds">Electron poll interval (seconds)</Label>
-                        <Input
-                            id="reviewPollIntervalSeconds"
-                            type="number"
-                            min={30}
-                            max={3600}
-                            disabled={ELECTRON_POPUPS_MOTHBALLED}
-                            value={String(reviewPollIntervalSeconds)}
-                            onChange={(e) => {
-                                const next = Number(e.target.value);
-                                if (Number.isFinite(next)) {
-                                    setReviewPollIntervalSeconds(next);
-                                    queueAutoSave();
-                                }
-                            }}
-                            placeholder="180"
+                        <Switch
+                            checked={webAppNotificationsEnabled}
+                            onCheckedChange={(v) => { setWebAppNotificationsEnabled(Boolean(v)); queueAutoSave(); }}
                         />
-                        <div className="text-xs text-muted-foreground">
-                            {ELECTRON_POPUPS_MOTHBALLED
-                                ? 'Disabled — Electron desktop app is mothballed.'
-                                : 'Minimum 30 seconds. Maximum 1 hour.'}
-                        </div>
                     </div>
                 </CardContent>
             </Card>

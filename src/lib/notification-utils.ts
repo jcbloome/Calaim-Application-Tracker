@@ -2,7 +2,6 @@ export type NotePriority = 'General' | 'Priority' | 'Urgent';
 
 export const WEB_NOTIFICATIONS_MOTHBALLED = false;
 export const INTEROFFICE_NOTES_MOTHBALLED = true;
-export const ELECTRON_POPUPS_MOTHBALLED = true;
 
 const PRIORITY_ORDER: Record<NotePriority, number> = {
   Urgent: 3,
@@ -60,14 +59,7 @@ export const isNotificationClosedLike = (input: Record<string, any> | null | und
 
 type NotificationSettings = {
   userControls?: {
-    suppressWebWhenDesktopActive?: boolean;
     webAppNotificationsEnabled?: boolean;
-  };
-};
-
-type NotificationSettingsGlobal = {
-  globalControls?: {
-    forceSuppressWebWhenDesktopActive?: boolean;
   };
 };
 
@@ -92,14 +84,9 @@ export const shouldSuppressWebAlerts = () => {
   if (WEB_NOTIFICATIONS_MOTHBALLED) return true;
   if (typeof window === 'undefined') return false;
   const settings = readLocalStorageJson<NotificationSettings>('notificationSettings');
-  const globalSettings = readLocalStorageJson<NotificationSettingsGlobal>('notificationSettingsGlobal');
-  const userSuppress = settings?.userControls?.suppressWebWhenDesktopActive;
   const webAppEnabled = settings?.userControls?.webAppNotificationsEnabled;
-  const globalForce = Boolean(globalSettings?.globalControls?.forceSuppressWebWhenDesktopActive);
-
-  if (webAppEnabled === true) return globalForce;
   if (webAppEnabled === false) return true;
-  return globalForce || userSuppress === true;
+  return false;
 };
 
 export const NOTIFICATION_SETTINGS_EVENT = 'notification-settings:changed';

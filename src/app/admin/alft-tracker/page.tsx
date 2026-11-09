@@ -1256,7 +1256,7 @@ export default function AdminAlftTrackerPage() {
 
       toast({
         title: 'Assigned',
-        description: `${assignKind === 'rn' ? 'RN' : 'Staff'} assigned and notified via Electron/My Notifications.`,
+        description: `${assignKind === 'rn' ? 'RN' : 'Staff'} assigned and notified via My Notifications/My Notifications.`,
       });
       setAssignOpen(false);
       setAssignRow(null);
@@ -3718,7 +3718,7 @@ export default function AdminAlftTrackerPage() {
           <DialogHeader>
             <DialogTitle>{assignKind === 'rn' ? 'Assign RN reviewer' : 'Assign staff reviewer'}</DialogTitle>
             <DialogDescription>
-              This will save the assignment on the ALFT intake and notify the assigned person via Electron/My Notifications.
+              This will save the assignment on the ALFT intake and notify the assigned person via My Notifications/My Notifications.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

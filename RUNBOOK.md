@@ -36,16 +36,6 @@ From `functions/`:
 - **Logs**: `npm run logs`
 - **Deploy**: `npm run deploy`
 
-### Desktop app (Electron)
-From repo root:
-- **Run**: `npm run desktop:dev`
-- **Build**: `npm run desktop:build`
-- **Create Windows installer**: `npm run desktop:dist:win`
-- **Create macOS build (DMG + ZIP)**: `npm run desktop:dist:mac`
-
-Desktop URL override:
-- **`CALAIM_DESKTOP_URL`** (defaults to `https://connectcalaim.com` per `README.md`)
-
 ---
 
 ## Environments, secrets, and config
@@ -168,36 +158,10 @@ Deploy after web deploy **when API or scheduled jobs changed**.
 
 ---
 
-## Desktop companion app (Electron) + update feed
-
-### Release artifacts (GitHub Releases)
-A desktop release should include at minimum:
-- `.exe` installer
-- `.exe.blockmap`
-- `latest.yml`
-
-The web app provides a “download installer” experience via:
-- `src/app/admin/desktop-installer/route.ts` (serves local fallback or redirects to latest GitHub asset)
-- `src/app/admin/desktop-installer/meta/route.ts` (JSON metadata: version/url/sha256)
-
-### Preparing local fallback installer bundle
-- Build desktop installer (creates `desktop/release/*`)
-- Run: `npm run desktop:installer:prepare`
-  - Copies latest installer + metadata into `public/downloads/`
-  - Writes `public/downloads/installer.json` and sha256 file
-
-### Windows code signing (recommended)
-See `desktop/CODE_SIGNING.md` and set:
-- `CSC_LINK`
-- `CSC_KEY_PASSWORD`
-
----
-
 ## Routine maintenance (weekly / monthly)
 - Verify **Firestore export backups** are running (nightly) and retention is correct.
 - Check Cloud Logging for spikes in 5xx and auth failures.
 - Confirm Caspio webhook health (recent events, successful processing).
-- Confirm desktop download route works (`/admin/desktop-installer` redirect/metadata).
 - Add notable changes to `PROJECT_LOG.md` and update `SESSION_LOG.md` after major ships.
 
 ### Daily Caspio members cache sync (recommended)

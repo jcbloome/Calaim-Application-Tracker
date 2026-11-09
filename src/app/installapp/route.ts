@@ -1,22 +1,11 @@
 import { NextResponse } from 'next/server';
 
-export function GET(request: Request) {
-  const url = new URL(request.url);
-  const platform = String(url.searchParams.get('platform') || '').trim().toLowerCase();
-  const target =
-    platform === 'mac'
-      ? '/admin/desktop-installer?platform=mac'
-      : '/admin/desktop-installer';
-  // IMPORTANT: use a relative redirect here.
-  // In some hosting setups (Cloud Run / App Hosting), `request.url` can reflect the
-  // internal container address (e.g. `0.0.0.0:8080`). A relative redirect avoids
-  // leaking that internal host into the Location header.
-  // Some platforms still normalize `NextResponse.redirect()` to an absolute URL using
-  // internal host headers. Setting Location manually guarantees it stays relative.
+// Desktop installer removed - redirect to admin dashboard
+export function GET() {
   return new NextResponse(null, {
     status: 307,
     headers: {
-      location: target,
+      location: '/admin',
       'cache-control': 'no-store',
     },
   });

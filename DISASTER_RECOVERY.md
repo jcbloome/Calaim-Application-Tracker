@@ -5,13 +5,12 @@ This guide covers the minimum steps to restore service after a critical failure.
 ### Scope
 - Web app (Next.js)
 - Firebase (Auth, Firestore, Storage, Functions)
-- Electron desktop auto-update feed
 
 ---
 
 ## 1) Immediate Triage (First 15 minutes)
-- Confirm impact: web app down, Firebase errors, auth failures, update feed issues.
-- Check current deploy and version: note `NEXT_PUBLIC_BUILD_TIME` (web) and desktop version.
+- Confirm impact: web app down, Firebase errors, auth failures.
+- Check current deploy and version: note `NEXT_PUBLIC_BUILD_TIME` (web).
 - Identify blast radius: only admin, only users, or full outage.
 
 ---

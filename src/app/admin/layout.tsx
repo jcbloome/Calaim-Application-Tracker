@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils';
 import { adminFetch } from '@/lib/admin-fetch';
 import { useAdmin } from '@/hooks/use-admin';
 import { useSocialWorker } from '@/hooks/use-social-worker';
-import { DesktopNotificationsDevShim } from '@/components/DesktopNotificationsDevShim';
 import { WebNotificationsDevTester } from '@/components/WebNotificationsDevTester';
 import { RealTimeNotifications } from '@/components/RealTimeNotifications';
 import {
@@ -87,10 +86,8 @@ import {
 } from '@/components/ui/navigation-menu';
 import { collection, collectionGroup, doc, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
-import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon';
 import { AuthGuard } from '@/components/AuthGuard';
 import {
-  ELECTRON_POPUPS_MOTHBALLED,
   INTEROFFICE_NOTES_MOTHBALLED,
   isNotificationClosedLike,
   isNotificationSoftDeleted,
@@ -702,18 +699,12 @@ function AdminHeader() {
     } catch {
       // best-effort cookie cleanup
     }
-    const isRealDesktop =
-      typeof window !== 'undefined' &&
-      Boolean((window as any).desktopNotifications) &&
-      !ELECTRON_POPUPS_MOTHBALLED &&
-      !Boolean((window as any).desktopNotifications?.__shim);
     try {
       localStorage.removeItem(ADMIN_LAST_ACTIVITY_KEY);
     } catch {
       // ignore
     }
-    // In Electron, keep users in the admin flow (full-size window), not the public site.
-    window.location.href = isRealDesktop ? '/admin/login' : '/';
+    window.location.href = '/';
   };
 
   const toggleSubmenu = (label: string) => {
@@ -1249,62 +1240,8 @@ function AdminHeader() {
         cs: allowCsDesktop ? { count: csSummaryCount, latestMs: csLatestMs } : prev.cs,
       };
 
-      // Always keep the Electron review pill summary updated (CS + Docs),
-      // but only auto-expand on newly-arrived CS (docs never auto-expand).
-      try {
-        const isRealDesktop =
-          typeof window !== 'undefined' &&
-          Boolean((window as any).desktopNotifications) &&
-          !ELECTRON_POPUPS_MOTHBALLED &&
-          !Boolean((window as any).desktopNotifications?.__shim);
-        if (isRealDesktop) {
-          // Keep CS/docs/ALFT as Action Items counters only (no Electron review notification cards).
-          const csItems: any[] = [];
-          const docItems: any[] = [];
-          const standaloneItems = allowStandaloneDesktop
-            ? standaloneNotes
-                .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
-                .slice(0, 6)
-                .map((d) => ({
-                  title: 'Standalone upload received',
-                  message: d.message,
-                  kind: 'standalone',
-                  memberName: '',
-                  timestamp: d.timestampMs ? new Date(d.timestampMs).toLocaleString() : undefined,
-                  actionUrl: d.url || '/admin/standalone-uploads',
-                }))
-            : [];
-          const alftItems: any[] = [];
-          const eligibilityItems = allowEligibilityDesktop && eligibilityPendingCount > 0
-            ? [
-                {
-                  title: 'Eligibility checks pending',
-                  message: `${eligibilityPendingCount} eligibility check${eligibilityPendingCount === 1 ? '' : 's'} need review`,
-                  kind: 'elig',
-                  memberName: '',
-                  timestamp: new Date().toLocaleString(),
-                  actionUrl: '/admin/eligibility-checks',
-                },
-              ]
-            : [];
-          const reviewCount =
-            (allowStandaloneDesktop ? standaloneCount : 0) +
-            (allowEligibilityDesktop ? eligibilityPendingCount : 0);
-          const notes = [...csItems, ...docItems, ...standaloneItems, ...alftItems, ...eligibilityItems];
-          const shouldSend = reviewCount > 0 || desktopReviewInitializedRef.current;
-          if (shouldSend) {
-            window.desktopNotifications?.setReviewPillSummary?.({
-              count: reviewCount,
-              // Keep review updates compact; do not auto-expand on incoming CS/docs.
-              openPanel: false,
-              notes,
-            });
-            desktopReviewInitializedRef.current = true;
-          }
-        }
-      } catch {
-        // ignore
-      }
+      // Review tracking (no Electron desktop notifications)
+      // Action Items counters remain visible in the admin UI
 
       if (csIsNew && allowCsPopup) {
         const actionUrl = getDashboardActionHref(undefined, 'cs');
@@ -2839,8 +2776,6 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
 
   // Allow access to login page without authentication
   const isLoginPage = pathname === '/admin/login';
-  const isDesktopNotificationWindow = pathname === '/admin/desktop-notification-window';
-  const isDesktopChatWindow = pathname === '/admin/desktop-chat-window';
   const alftPreviewView = String(searchParams?.get('view') || '').trim().toLowerCase();
   const alftSilentOrAutoDownload =
     String(searchParams?.get('silent') || '').trim() === '1' ||
@@ -2949,9 +2884,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
       pathname?.startsWith('/admin/tools/ils-status-check') ||
       pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
       pathname?.startsWith('/admin/tools/h2022-claim-checker') ||
-      pathname?.startsWith('/admin/h2022-claim-checker') ||
-      pathname === '/admin/desktop-notification-window' ||
-      pathname === '/admin/desktop-chat-window';
+      pathname?.startsWith('/admin/h2022-claim-checker');
 
     // If the page requires admin and we don't have admin yet, attempt to sync claims once.
     if (isAdmin || allowNonAdmin) return;
@@ -3012,11 +2945,9 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
         pathname?.startsWith('/admin/ils-report-editor') ||
         pathname?.startsWith('/admin/ils-package-review') ||
         pathname?.startsWith('/admin/tools/ils-status-check') ||
-        pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
-        pathname?.startsWith('/admin/tools/h2022-claim-checker') ||
-        pathname?.startsWith('/admin/h2022-claim-checker') ||
-        pathname === '/admin/desktop-notification-window' ||
-        pathname === '/admin/desktop-chat-window';
+      pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
+      pathname?.startsWith('/admin/tools/h2022-claim-checker') ||
+      pathname?.startsWith('/admin/h2022-claim-checker');
 
       const bootstrapUid = String(adminBootstrapRef.current || '');
       const bootstrapAgeMs = adminBootstrapStartedAtRef.current ? Date.now() - adminBootstrapStartedAtRef.current : 0;
@@ -3116,7 +3047,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (isLoading || !user || !isAdmin || isLoginPage || isDesktopNotificationWindow || isDesktopChatWindow) return;
+    if (isLoading || !user || !isAdmin || isLoginPage) return;
 
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -3218,8 +3149,6 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
     auth,
     firestore,
     isAdmin,
-    isDesktopChatWindow,
-    isDesktopNotificationWindow,
     isLoading,
     isLoginPage,
     user,
@@ -3262,24 +3191,6 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
     );
   }
 
-  // Desktop windows should be a minimal shell (no header/sidebar/context menu).
-  if (isDesktopNotificationWindow) {
-    return (
-      <>
-        <DesktopPresenceBeacon />
-        <div className="min-h-screen bg-transparent">{children}</div>
-      </>
-    );
-  }
-  if (isDesktopChatWindow) {
-    return (
-      <>
-        <DesktopPresenceBeacon />
-        <div className="min-h-screen bg-slate-50">{children}</div>
-      </>
-    );
-  }
-
   const allowNonAdmin =
     canAccessAllTools ||
     canAccessIlsPackagePortal ||
@@ -3313,11 +3224,9 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
     <AuthGuard require2FA>
       <>
         <SocialWorkerRedirect />
-        <DesktopNotificationsDevShim />
         <WebNotificationsDevTester />
         <RealTimeNotifications />
         <CaspioUsageAlert />
-        <DesktopPresenceBeacon />
         {isEmbeddedAlftPdfPreview ? (
           <div className="min-h-screen bg-slate-50/50">{children}</div>
         ) : (

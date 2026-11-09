@@ -17,7 +17,6 @@ import {
 import { useGlobalNotifications } from './NotificationProvider';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
-  ELECTRON_POPUPS_MOTHBALLED,
   INTEROFFICE_NOTES_MOTHBALLED,
   getPriorityRank,
   isNotificationClosedLike,
@@ -113,7 +112,6 @@ export function RealTimeNotifications() {
     followUpDate?: string;
     followUpNoteId?: string;
   } | null>(null);
-  const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
   const [notificationPrefs, setNotificationPrefs] = useState({
     enabled: true,
     newNotes: true,
@@ -146,91 +144,11 @@ export function RealTimeNotifications() {
     interofficeNotificationsEnabled: true,
     caspioAnnouncementsInElectronEnabled: false
   });
-  const [electronPresenceActive, setElectronPresenceActive] = useState(false);
-  const desktopPriorityPillRef = useRef<
-    Array<{
-      kind?: 'note' | 'docs' | 'cs';
-      source?: string;
-      clientId2?: string;
-      title: string;
-      message: string;
-      author?: string;
-      recipientName?: string;
-      memberName?: string;
-      timestamp?: string;
-      noteId?: string;
-      senderId?: string;
-      replyUrl?: string;
-      actionUrl?: string;
-      type?: string;
-      priority?: 'General' | 'Priority' | 'Urgent' | string;
-    }>
-  >([]);
-
-  const desktopEffectivePaused = Boolean(desktopState?.effectivePaused);
-
-  const emitDesktopPill = useCallback((params?: { openPanel?: boolean }) => {
-    try {
-      if (typeof window === 'undefined') return;
-      if (ELECTRON_POPUPS_MOTHBALLED) {
-        window.desktopNotifications?.setPendingCount?.(0);
-        window.desktopNotifications?.setPillSummary?.({ count: 0, openPanel: false, notes: [] });
-        return;
-      }
-      if (!window.desktopNotifications?.setPillSummary) return;
-      const priorityNotes = desktopPriorityPillRef.current || [];
-      const count = priorityNotes.length;
-      const openPanel = Boolean(params?.openPanel);
-      const title = count === 1 ? 'Priority item' : 'Priority items';
-      const message = count === 1 ? '1 priority item pending' : `${count} priority items pending`;
-
-      window.desktopNotifications.setPillSummary({
-        count,
-        openPanel,
-        notes: priorityNotes as any,
-        title,
-        message,
-        actionUrl: '/admin/my-notes',
-      });
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const clearDesktopIndicators = useCallback(() => {
-    try {
-      if (typeof window === 'undefined') return;
-      window.desktopNotifications?.setPendingCount?.(0);
-      window.desktopNotifications?.setPillSummary?.({ count: 0, openPanel: false, notes: [] });
-    } catch {
-      // ignore
-    }
-  }, []);
 
   useEffect(() => {
     firestoreRef.current = firestore;
   }, [firestore]);
 
-  // When Electron is snoozed/paused, suppress all desktop counters + pill entirely.
-  // When it resumes, restore counts from the current unread refs.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!window.desktopNotifications) return;
-    if (ELECTRON_POPUPS_MOTHBALLED) {
-      clearDesktopIndicators();
-      return;
-    }
-    if (desktopEffectivePaused) {
-      clearDesktopIndicators();
-      return;
-    }
-    try {
-      window.desktopNotifications?.setPendingCount?.(desktopPriorityPillRef.current?.length || 0);
-    } catch {
-      // ignore
-    }
-    emitDesktopPill({ openPanel: false });
-  }, [clearDesktopIndicators, desktopEffectivePaused, emitDesktopPill]);
 
   // Super Admin global toggles for web in-app notifications (stored in system_settings/notifications).
   useEffect(() => {
@@ -310,33 +228,6 @@ export function RealTimeNotifications() {
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
-  useEffect(() => {
-    if (!firestore || !user?.uid) {
-      setElectronPresenceActive(false);
-      return;
-    }
-
-    const presenceRef = doc(firestore, 'desktop_presence', user.uid);
-    const unsubscribe = onSnapshot(
-      presenceRef,
-      (snap) => {
-        if (!snap.exists()) {
-          setElectronPresenceActive(false);
-          return;
-        }
-        const data = snap.data() as any;
-        const lastSeenMs = toMs(data?.lastSeenAt);
-        const fresh = lastSeenMs > 0 ? Date.now() - lastSeenMs <= 2 * 60 * 1000 : false;
-        const active = Boolean(data?.active);
-        const effectivePaused = Boolean(data?.effectivePaused);
-        setElectronPresenceActive(Boolean(active && fresh && !effectivePaused));
-      },
-      () => {
-        setElectronPresenceActive(false);
-      }
-    );
-    return () => unsubscribe();
-  }, [firestore, user?.uid]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -389,140 +280,10 @@ export function RealTimeNotifications() {
     loadGlobalSettings();
   }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!window.desktopNotifications) return;
-    window.desktopNotifications.getState()
-      .then((state) => setDesktopState(state))
-      .catch((error) => console.warn('Failed to read desktop notification state:', error));
-    const unsubscribe = window.desktopNotifications.onChange((state) => {
-      setDesktopState(state);
-    });
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!window.desktopNotifications?.onExpand) return;
-    const unsubscribe = window.desktopNotifications.onExpand(() => {
-      const summary = latestSummaryRef.current;
-      if (!summary) return;
-      if (summaryNotificationIdRef.current) {
-        removeNotification(summaryNotificationIdRef.current);
-        summaryNotificationIdRef.current = null;
-      }
-      const summaryId = showNotification({
-        keyId: 'staff-note-summary-expanded',
-        type: summary.type,
-        title: summary.title,
-        message: summary.message,
-        author: summary.author,
-        recipientName: summary.recipientName,
-        memberName: summary.memberName || '',
-        timestamp: summary.timestamp,
-        notes: summary.notes,
-        priority: undefined,
-        tagLabel: summary.tagLabel,
-        startMinimized: false,
-        lockToTray: true,
-        duration: 0,
-        minimizeAfter: 12000,
-        pendingLabel: summary.pendingLabel,
-        sound: false,
-        soundType: summary.soundType as any,
-        animation: 'slide',
-        links: summary.links,
-        replyUrl: summary.replyUrl,
-        followUpDate: summary.followUpDate,
-        disableCardClick: true,
-        onFollowUpSave: summary.followUpNoteId
-          ? (date) => {
-              const db = firestoreRef.current;
-              if (!db || !summary.followUpNoteId) return;
-              updateDoc(doc(db, 'staff_notifications', summary.followUpNoteId), {
-                followUpDate: new Date(date),
-                followUpRequired: true,
-                updatedAt: new Date()
-              }).catch((error) => {
-                console.warn('Failed to save follow-up date:', error);
-              });
-            }
-          : undefined,
-        requiresSecondClick: false,
-        onClick: () => {
-          if (typeof window === 'undefined') return;
-          window.location.href = '/admin/my-notes';
-        }
-      });
-      summaryNotificationIdRef.current = summaryId;
+  // Desktop notification expand handler removed (Electron deprecated)
 
-    });
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [removeNotification, showNotification]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!window.desktopNotifications?.onQuickReply) return;
-    const unsubscribe = window.desktopNotifications.onQuickReply(async (payload) => {
-      if (!firestoreRef.current || !user?.uid || !payload?.senderId || !payload?.message) {
-        return;
-      }
-      try {
-        const message = payload.message.trim();
-        const now = serverTimestamp();
-        const createdByName = user.displayName || user.email || 'Staff';
-
-        const base = {
-          title: 'Reply from Desktop',
-          message,
-          type: 'interoffice_reply',
-          priority: 'General',
-          status: 'Open',
-          isRead: false,
-          createdBy: user.uid,
-          createdByName,
-          senderName: createdByName,
-          senderId: user.uid,
-          timestamp: now,
-          replyToId: payload.noteId || null,
-          threadId: payload.noteId || null,
-          actionUrl: payload.noteId
-            ? `/admin/my-notes?replyTo=${encodeURIComponent(payload.noteId)}`
-            : '/admin/my-notes',
-        };
-
-        const targetUid = String(payload.senderId || '').trim();
-        const myUid = String(user.uid || '').trim();
-
-        // Recipient copy (the person you're replying to).
-        if (targetUid) {
-          await addDoc(collection(firestoreRef.current, 'staff_notifications'), {
-            ...base,
-            userId: targetUid,
-          });
-        }
-
-        // Sender copy (so the replier can see what they sent in My Notifications).
-        if (myUid && myUid !== targetUid) {
-          await addDoc(collection(firestoreRef.current, 'staff_notifications'), {
-            ...base,
-            userId: myUid,
-            title: `You replied: ${base.title}`,
-            recipientName: 'Self',
-          });
-        }
-      } catch (error) {
-        console.warn('Failed to send quick reply:', error);
-      }
-    });
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [user?.uid]);
+  // Desktop quick reply removed (Electron deprecated)
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -531,7 +292,6 @@ export function RealTimeNotifications() {
       const parsed = raw ? JSON.parse(raw) as any : {};
       const nextWebEnabled = parsed?.userControls?.webAppNotificationsEnabled;
       const normalizedWebEnabled = nextWebEnabled === undefined ? true : Boolean(nextWebEnabled);
-      const desktopPresent = Boolean((window as any).desktopNotifications);
       const nextSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
       const nextCaspioDesktopEnabled = parsed?.userControls?.caspioAnnouncementsInElectronEnabled;
       setWebAppEnabled(normalizedWebEnabled);
@@ -545,7 +305,7 @@ export function RealTimeNotifications() {
         ...parsed,
         userControls: {
           ...(parsed?.userControls || {}),
-          suppressWebWhenDesktopActive: nextSuppress === undefined ? desktopPresent : nextSuppress,
+          suppressWebWhenDesktopActive: nextSuppress === undefined ? false : nextSuppress,
           webAppNotificationsEnabled: normalizedWebEnabled,
           caspioAnnouncementsInElectronEnabled:
             nextCaspioDesktopEnabled === undefined ? false : Boolean(nextCaspioDesktopEnabled)
@@ -578,7 +338,6 @@ export function RealTimeNotifications() {
     if (!notificationPrefs.enabled) return false;
     if (!globalControls.masterSwitch) return false;
     if (isWithinQuietHours()) return false;
-    if (desktopState?.effectivePaused) return false;
     return true;
   };
 
@@ -606,14 +365,6 @@ export function RealTimeNotifications() {
     }
 
     return '/admin/my-notes';
-  };
-  const isDesktopNotifiable = (input: { priority?: unknown; type?: unknown; isGeneral?: unknown; source?: unknown }) => {
-    const type = String(input?.type || '').toLowerCase();
-    const interoffice = Boolean(input?.isGeneral) || type.includes('interoffice');
-    if (interoffice) return true;
-    const source = String((input as any)?.source || '').toLowerCase();
-    const caspioAssigned = source === 'caspio' || type.includes('note_assignment');
-    return webToastPolicy.caspioAnnouncementsInElectronEnabled && caspioAssigned;
   };
 
   const sanitizeFieldLabel = (value?: string) => {
@@ -652,19 +403,9 @@ export function RealTimeNotifications() {
       notificationsQuery,
       (snapshot) => {
         const pending: NotificationData[] = [];
-        const deliveryCandidates: string[] = [];
         let hasNew = false;
-        let hasNewDesktopAlert = false;
         let hasNewPriority = false;
         let hasNewUrgent = false;
-        const shouldTrackDesktopDelivery =
-          typeof window !== 'undefined' &&
-          Boolean(window.desktopNotifications) &&
-          !Boolean(window.desktopNotifications?.__shim) &&
-          !ELECTRON_POPUPS_MOTHBALLED &&
-          !desktopEffectivePaused;
-
-        const shouldMarkSeenNow = !desktopEffectivePaused;
 
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as StaffNotification;
@@ -678,9 +419,6 @@ export function RealTimeNotifications() {
           const isClosedLike = isNotificationClosedLike(data as any);
           if (isClosedLike || isSoftDeleted) return;
           if (data.isRead === true) return;
-          if (shouldTrackDesktopDelivery && !Boolean((data as any)?.desktopDeliveredAt)) {
-            deliveryCandidates.push(docSnap.id);
-          }
 
           const priority = normalizePriorityLabel(data.priority);
           const isUrgent = priority === 'Urgent';
@@ -716,22 +454,9 @@ export function RealTimeNotifications() {
           };
 
           const isNew = !seenNotificationsRef.current.has(notification.id);
-          const isDesktopAlert = isDesktopNotifiable({
-            priority: notification.priority,
-            type: notification.type,
-            isGeneral: notification.isGeneral,
-            source: notification.source,
-          });
           if (isNew) {
-            // Do not consume "new" while desktop notifications are effectively paused
-            // (dormant/off-hours/snooze). This allows alerts to fire when staff re-activates.
-            if (shouldMarkSeenNow) {
-              seenNotificationsRef.current.add(notification.id);
-            }
+            seenNotificationsRef.current.add(notification.id);
             hasNew = true;
-            if (isDesktopAlert) {
-              hasNewDesktopAlert = true;
-            }
             if (isPriority) {
               hasNewPriority = true;
             }
@@ -744,17 +469,6 @@ export function RealTimeNotifications() {
         });
 
         pendingNotesRef.current = new Map(pending.map((item) => [item.id, item]));
-        if (deliveryCandidates.length > 0) {
-          const ids = Array.from(new Set(deliveryCandidates)).slice(0, 50);
-          void Promise.all(
-            ids.map((id) =>
-              updateDoc(doc(firestore, 'staff_notifications', id), {
-                desktopDeliveredAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              }).catch(() => undefined)
-            )
-          );
-        }
         
 
         if (flushTimeoutRef.current) {
@@ -768,8 +482,6 @@ export function RealTimeNotifications() {
               summaryNotificationIdRef.current = null;
             }
             pendingNotesRef.current = new Map();
-            desktopPriorityPillRef.current = [];
-            clearDesktopIndicators();
             return;
           }
 
@@ -779,24 +491,10 @@ export function RealTimeNotifications() {
             return b.timestamp.getTime() - a.timestamp.getTime();
           });
 
-          if (window.desktopNotifications?.setPendingCount) {
-            const desktopPending = sortedPending.filter((n) =>
-              isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral, source: n.source })
-            );
-            const nextCount = ELECTRON_POPUPS_MOTHBALLED ? 0 : (desktopEffectivePaused ? 0 : desktopPending.length);
-            window.desktopNotifications.setPendingCount(nextCount);
-          }
-
           if (sortedPending.length === 0) {
             if (summaryNotificationIdRef.current) {
               removeNotification(summaryNotificationIdRef.current);
               summaryNotificationIdRef.current = null;
-            }
-            desktopPriorityPillRef.current = [];
-            if (desktopEffectivePaused) {
-              clearDesktopIndicators();
-            } else {
-              emitDesktopPill({ openPanel: false });
             }
             return;
           }
@@ -864,12 +562,8 @@ export function RealTimeNotifications() {
           const isRecent =
             Boolean(latestPending?.timestamp) &&
             Date.now() - latestPending.timestamp.getTime() <= recentThresholdMs;
-          const forceExpanded = hasNewUrgent || hasNewPriority || hasNewDesktopAlert || isRecent;
-          const desktopPresent = !ELECTRON_POPUPS_MOTHBALLED && typeof window !== 'undefined'
-            && Boolean(window.desktopNotifications)
-            && !Boolean(window.desktopNotifications?.__shim);
-          const desktopAppActivelyNotifying = desktopPresent && !desktopEffectivePaused;
-          const hasActiveDesktopChannel = desktopAppActivelyNotifying || electronPresenceActive;
+          const forceExpanded = hasNewUrgent || hasNewPriority || isRecent;
+          const hasActiveDesktopChannel = false;
           const shouldShowWebToast = (() => {
             if (!webToastPolicy.webAppNotificationsEnabled) return false;
             if (hasActiveDesktopChannel && webToastPolicy.suppressWebWhenDesktopActive) return false;
@@ -881,34 +575,6 @@ export function RealTimeNotifications() {
             if (summaryNotificationIdRef.current) {
               removeNotification(summaryNotificationIdRef.current);
               summaryNotificationIdRef.current = null;
-            }
-            // Even when web popups are suppressed (quiet hours / user pause / Electron snooze),
-            // keep Electron pill/tray state accurate so it disappears when counts go to zero.
-            if (desktopEffectivePaused) {
-              clearDesktopIndicators();
-            } else if (window.desktopNotifications?.setPillSummary) {
-              const desktopPending = sortedPending.filter((n) =>
-                isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral, source: n.source })
-              );
-              const desktopCount = desktopPending.length;
-              const desktopTitle = desktopCount === 1 ? 'Priority note' : 'Priority notes';
-              desktopPriorityPillRef.current = desktopPending.map((note) => ({
-                kind: 'note',
-                source: note.source,
-                clientId2: note.clientId2,
-                title: sanitizeFieldLabel(note.title) || desktopTitle,
-                message: sanitizeNoteMessage(note.message) || sanitizeFieldLabel(note.message) || '',
-                author: sanitizeFieldLabel(note.senderName) || undefined,
-                recipientName: recipientLabel,
-                memberName: sanitizeFieldLabel(note.memberName) || undefined,
-                timestamp: note.timestamp?.toLocaleString?.() || undefined,
-                noteId: note.id,
-                senderId: note.senderId,
-                replyUrl: note.id ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}` : undefined,
-                actionUrl: note.id ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}` : '/admin/my-notes',
-                priority: note.priority,
-              }));
-              emitDesktopPill({ openPanel: false });
             }
             return;
           }
@@ -945,36 +611,6 @@ export function RealTimeNotifications() {
             followUpNoteId: highlightNote?.id
           };
 
-          if (desktopEffectivePaused) {
-            clearDesktopIndicators();
-          } else if (window.desktopNotifications?.setPillSummary) {
-            const desktopPending = sortedPending.filter((n) =>
-              isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral, source: n.source })
-            );
-            const desktopCount = desktopPending.length;
-            const desktopTitle = desktopCount === 1 ? 'Priority note' : 'Priority notes';
-            desktopPriorityPillRef.current = desktopPending.map((note) => ({
-              kind: 'note',
-              source: note.source,
-              clientId2: note.clientId2,
-              title: sanitizeFieldLabel(note.title) || desktopTitle,
-              message: sanitizeNoteMessage(note.message) || sanitizeFieldLabel(note.message) || '',
-              author: sanitizeFieldLabel(note.senderName) || undefined,
-              recipientName: recipientLabel,
-              memberName: sanitizeFieldLabel(note.memberName) || undefined,
-              timestamp: note.timestamp?.toLocaleString?.() || undefined,
-              noteId: note.id,
-              senderId: note.senderId,
-              priority: note.priority,
-              replyUrl: note.id
-                ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
-                : undefined,
-              actionUrl: note.id ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}` : '/admin/my-notes',
-            }));
-
-            // Keep the desktop pill compact; expand only when user clicks.
-            emitDesktopPill({ openPanel: false });
-          }
 
           if (shouldShowWebToast) {
             if (!hasNew && !isRecent && summaryNotificationIdRef.current) {
@@ -1060,7 +696,7 @@ export function RealTimeNotifications() {
     return () => {
       unsubscribe();
     };
-  }, [desktopEffectivePaused, user, firestore, webToastPolicy.interofficeNotificationsEnabled]);
+  }, [user, firestore, webToastPolicy.interofficeNotificationsEnabled, webToastPolicy.webAppNotificationsEnabled, webToastPolicy.suppressWebWhenDesktopActive]);
 
   return null;
 }

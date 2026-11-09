@@ -9,7 +9,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { normalizePriorityLabel, shouldSuppressWebAlerts, WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
-import { isRealDesktop } from '@/lib/is-real-desktop';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 // Types
@@ -40,8 +39,8 @@ const normalizePriorityLevel = (value: string) => {
 };
 
 export default function NotificationSystem(props: NotificationSystemProps) {
-  // Electron is the single notification system. Also, web notifications are mothballed.
-  if (WEB_NOTIFICATIONS_MOTHBALLED || isRealDesktop() || !props.userId) return null;
+  // Web notifications are mothballed.
+  if (WEB_NOTIFICATIONS_MOTHBALLED || !props.userId) return null;
   return <NotificationSystemContent {...props} />;
 }
 

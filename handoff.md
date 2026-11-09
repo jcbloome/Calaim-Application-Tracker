@@ -10,9 +10,9 @@
 
 ## Changes 2026-11-09
 
-- **App Hosting — exclude Electron desktop from Next typecheck.** `next build` was failing on `desktop/main.ts` (`Cannot find module 'electron'`). Root `tsconfig.json` now excludes `desktop` and `calaim-pathfinder` (same pattern as `functions`).
-  - Files: `tsconfig.json`, `handoff.md`.
-  - Commit: `68eb2b4c`.
+- **Remove Electron desktop app entirely (web-only).** Deleted `desktop/`, desktop GitHub workflows, installer script, Electron admin pages/APIs (`electron-controls`, `desktop-installer`, notification/chat windows, presence beacon), and all web bridges (`window.desktopNotifications`, presence map, mothballed Electron UI). Staff notifications stay web-only (Action Items / My Notifications). `tsc --noEmit` passes.
+  - Files: `desktop/**` (deleted), `.github/workflows/desktop-*.yml` (deleted), `package.json`, `tsconfig.json`, admin layout/staff-management/notification settings, RealTimeNotifications, ReviewNotificationPoller, and related helpers/docs/`handoff.md`.
+  - Commit: _(pending)_.
 
 - **ALFT tracker final review — green Completed + RN suggested tier banner.** At the top of the member ISP/ALFT review form (Final / Download), show a green status card with **Status: Completed** and **RN suggested tier** (notes that admin may request a different tier later). Also used as a small App Hosting build-smoke change.
   - Files: `src/app/admin/alft-tracker/components/IspTrackerProgression.tsx`, `src/app/admin/alft-tracker/page.tsx`, `handoff.md`.
@@ -915,7 +915,7 @@
 
 It lets members/families apply and track documents, while staff run day-to-day work in a large admin portal: applications, ALFT/ISP clinical workflow, Caspio member sync, ILS packaging, SW visits/claims, RCFE tools, and related reporting.
 
-**Stack:** Next.js 15 + React/TypeScript/Tailwind · Firebase Auth / Firestore / Storage / Functions (Node 22) · Caspio (system of record for members) · Google Drive migration tooling · Resend email · Electron desktop tray app.
+**Stack:** Next.js 15 + React/TypeScript/Tailwind · Firebase Auth / Firestore / Storage / Functions (Node 22) · Caspio (system of record for members) · Google Drive migration tooling · Resend email.
 
 **Firebase project:** `studio-2881432245-f1d94` (see also production host `connectcalaim.com`).
 
@@ -957,8 +957,6 @@ It lets members/families apply and track documents, while staff run day-to-day w
 ### Auth & sessions
 - Firebase Auth; admins via hardcoded emails + `roles_admin` / `roles_super_admin`
 - Separate SW portal session isolation; 2FA Functions; app-access via `system_settings`
-- Electron desktop wrapper with business-hours notifications
-
 ### Form separator
 - UI exists but still largely **mock/beta** page separation — do not treat as production PDF splitting
 

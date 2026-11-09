@@ -37,11 +37,7 @@ export default function ForceLogoutPage() {
       
       // Redirect to home after a short delay
       setTimeout(() => {
-        const isRealDesktop =
-          typeof window !== 'undefined' &&
-          Boolean((window as any).desktopNotifications) &&
-          !Boolean((window as any).desktopNotifications?.__shim);
-        window.location.href = isRealDesktop ? '/admin/login' : '/';
+        window.location.href = '/';
       }, 2000);
       
     } catch (err: any) {

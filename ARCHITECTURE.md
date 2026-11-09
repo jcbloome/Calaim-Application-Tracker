@@ -44,7 +44,6 @@
 | Hosting | Firebase App Hosting + Firebase Hosting | — |
 | Email (app) | Resend | — |
 | Email (functions) | SendGrid + Gmail (Nodemailer) | — |
-| Desktop | Electron (calaim-desktop) | — |
 | External data | Caspio REST API v3 | — |
 | Maps | Google Maps + Google Geocoding API | — |
 | Push notifications | Firebase Cloud Messaging (FCM) | — |
@@ -132,7 +131,6 @@ Storage bucket: `studio-2881432245-f1d94.firebasestorage.app`
 │   └── firebase-admin.ts       # Firebase Admin SDK initialization
 ├── functions/
 │   └── src/                    # Firebase Cloud Functions source (~40 modules)
-├── desktop/                    # Electron desktop app
 ├── public/                     # Static assets (logos, icons)
 ├── scripts/ / tools/           # One-off scripts (ERA parser, PDF tooling)
 ├── firebase.json               # Firebase project configuration
@@ -267,7 +265,6 @@ npm run dev          # Next.js dev server
 | Collection | Purpose |
 |---|---|
 | `chat_conversations` + `messages` subcollection | Admin chat |
-| `desktop_presence` | Electron desktop presence beacons |
 | `eligibilityChecks` | Eligibility check records |
 | `eligibilityVerifications` | Eligibility verification docs |
 | `emailLogs` | Email send logs |

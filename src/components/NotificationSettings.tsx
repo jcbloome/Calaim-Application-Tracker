@@ -126,9 +126,6 @@ export default function NotificationSettings() {
   const [, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [testingSound, setTestingSound] = useState(false);
-  const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
-  const [desktopAvailable, setDesktopAvailable] = useState(false);
-  const [showInstallerInfo, setShowInstallerInfo] = useState(false);
   const { toast } = useToast();
 
   const persistSettings = (nextSettings: NotificationSettings) => {
@@ -635,110 +632,9 @@ export default function NotificationSettings() {
     loadSettings();
   }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const desktopNotifications = window.desktopNotifications;
-    const isRealDesktop = Boolean(desktopNotifications && !desktopNotifications.__shim);
-    if (!desktopNotifications || !isRealDesktop) return;
-    setDesktopAvailable(true);
-    desktopNotifications.getState()
-      .then((state) => setDesktopState(state))
-      .catch((error) => console.warn('Failed to read desktop notification state:', error));
-    const unsubscribe = desktopNotifications.onChange((state) => {
-      setDesktopState(state);
-    });
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, []);
-
-  const toggleDesktopPause = async () => {
-    if (!window.desktopNotifications || !desktopState) return;
-    try {
-      const nextState = await window.desktopNotifications.setPaused(!desktopState.pausedByUser);
-      setDesktopState(nextState);
-    } catch (error) {
-      console.warn('Failed to toggle desktop notifications:', error);
-    }
-  };
-
-  const handleCheckForUpdates = async () => {
-    if (typeof window === 'undefined') return;
-    if (window.desktopNotifications?.checkForUpdates) {
-      try {
-        await window.desktopNotifications.checkForUpdates();
-        toast({
-          title: 'Checking for updates',
-          description: 'The desktop app is checking for updates in the background.'
-        });
-      } catch  {
-        toast({
-          title: 'Update check failed',
-          description: 'Unable to check for updates right now.',
-          variant: 'destructive'
-        });
-      }
-      return;
-    }
-
-    setShowInstallerInfo(true);
-    toast({
-      title: 'Installer link available',
-      description: 'Open My Notifications to access the desktop installer.'
-    });
-  };
 
   return (
     <div className="space-y-6">
-      {desktopAvailable && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              Desktop App Status
-            </CardTitle>
-            <CardDescription>
-              Controls for the desktop tray notifications.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label className="text-base font-medium">System Notifications</Label>
-                <p className="text-sm text-muted-foreground">
-                  {desktopState?.effectivePaused
-                    ? 'Paused (silent outside business hours or by staff)'
-                    : 'Active during business hours'}
-                </p>
-              </div>
-              <Button onClick={toggleDesktopPause} variant="outline" disabled={!desktopState}>
-                {desktopState?.pausedByUser ? 'Resume' : 'Pause'}
-              </Button>
-            </div>
-            {desktopState && (
-              <div className="flex items-center gap-2">
-                <Badge variant={desktopState.isWithinBusinessHours ? 'default' : 'secondary'}>
-                  {desktopState.isWithinBusinessHours ? 'Business Hours' : 'Silent Hours'}
-                </Badge>
-                {desktopState.pausedByUser && <Badge variant="secondary">Paused by Staff</Badge>}
-              </div>
-            )}
-            <div>
-              <Button variant="outline" onClick={handleCheckForUpdates}>
-                Check for Updates
-              </Button>
-            </div>
-            {showInstallerInfo && (
-              <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                Desktop installer downloads are available in My Notifications.
-                <Button asChild variant="link" className="ml-2 p-0 h-auto">
-                  <a href="/admin/my-notes">Open My Notifications</a>
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -824,39 +720,6 @@ export default function NotificationSettings() {
             )}
           </div>
 
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label className="text-base font-medium">Force Web Alerts Off When Desktop Is Active</Label>
-              <p className="text-xs text-muted-foreground">
-                Global switch to suppress browser notifications when the desktop app is running
-              </p>
-            </div>
-            <Switch
-              checked={settings.globalControls.forceSuppressWebWhenDesktopActive}
-              onCheckedChange={(checked) =>
-                updateSettings(['globalControls', 'forceSuppressWebWhenDesktopActive'], checked)
-              }
-            />
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label className="text-base font-medium">Caspio Announcements In Electron</Label>
-              <p className="text-xs text-muted-foreground">
-                Global default for showing Caspio note announcements in desktop tray/pill alerts
-              </p>
-            </div>
-            <Switch
-              checked={settings.globalControls.caspioAnnouncementsInElectronEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings(['globalControls', 'caspioAnnouncementsInElectronEnabled'], checked)
-              }
-            />
-          </div>
         </CardContent>
       </Card>
 

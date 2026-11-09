@@ -40,8 +40,6 @@ const ADMIN_PATHS_WITHOUT_SESSION = [
   '/admin/tools/ils-mif-monthly-report',
   '/admin/tools/h2022-claim-checker',
   '/admin/h2022-claim-checker',
-  '/admin/desktop-notification-window',
-  '/admin/desktop-chat-window',
 ];
 
 const SUPER_ADMIN_PATHS = ['/admin/super-admin-tools'];
