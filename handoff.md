@@ -12,7 +12,7 @@
 
 - **App Hosting — stop weeks of ESLint-killed deploys.** Remaining Errors fixed (`prefer-const` in batch eligibility checker; unused `ispRcfeComparison` in ISP workflow). Set `eslint.ignoreDuringBuilds: true` so App Hosting no longer fails the whole framework build on unused-vars / prefer-const; TypeScript build errors still fail. Use `npm run lint -- --quiet` before push to catch Errors locally.
   - Files: `next.config.ts`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/isp-workflow/page.tsx`, `handoff.md`.
-  - Commit: _(pending)_.
+  - Commit: `bf825756`.
 
 - **Kaiser application duplicate check API.** Auth-required `POST /api/applications/check-duplicate` looks up MRN across root + collectionGroup applications, blocks same-person Kaiser duplicates, and can return a single linkable admin seed instead of a hard block.
   - Files: `src/lib/application-duplicate-check.ts`, `src/app/api/applications/check-duplicate/route.ts`, `handoff.md`.
