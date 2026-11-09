@@ -12,7 +12,7 @@
 
 - **App Hosting build — unused `yesNo` in waivers PDF.** Removed unused helper so Next.js ESLint no longer fails the Firebase App Hosting framework build.
   - Files: `src/lib/waivers-full-text-pdf.ts`, `handoff.md`.
-  - Commit: _(pending)_.
+  - Commit: `98c13f96`.
 
 - **Kaiser ISP Cover Sheet — Auto calculated Total Costs no longer stuck at $0.00.** Total Costs still starts as member room & board, then adds the KP-approved tier rate when Kaiser picks the tier. Acrobat Calculate scripts now bake the room & board amount and try multiple field-name aliases, so production PDFs do not wipe Total Costs to `$0.00` when `getField` fails. Catch paths fall back to baked room & board instead of `$0.00`.
   - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `handoff.md`.
