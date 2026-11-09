@@ -12,7 +12,7 @@
 
 - **Remove Electron desktop app entirely (web-only).** Deleted `desktop/`, desktop GitHub workflows, installer script, Electron admin pages/APIs (`electron-controls`, `desktop-installer`, notification/chat windows, presence beacon), and all web bridges (`window.desktopNotifications`, presence map, mothballed Electron UI). Staff notifications stay web-only (Action Items / My Notifications). `tsc --noEmit` passes.
   - Files: `desktop/**` (deleted), `.github/workflows/desktop-*.yml` (deleted), `package.json`, `tsconfig.json`, admin layout/staff-management/notification settings, RealTimeNotifications, ReviewNotificationPoller, and related helpers/docs/`handoff.md`.
-  - Commit: _(pending)_.
+  - Commit: `f450461c`.
 
 - **ALFT tracker final review — green Completed + RN suggested tier banner.** At the top of the member ISP/ALFT review form (Final / Download), show a green status card with **Status: Completed** and **RN suggested tier** (notes that admin may request a different tier later). Also used as a small App Hosting build-smoke change.
   - Files: `src/app/admin/alft-tracker/components/IspTrackerProgression.tsx`, `src/app/admin/alft-tracker/page.tsx`, `handoff.md`.
