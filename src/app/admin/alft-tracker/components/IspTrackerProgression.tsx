@@ -16,6 +16,8 @@ export interface IspTrackerProgressionProps {
   editRowLive: StandaloneUpload | null;
   editRow: StandaloneUpload | null;
   canRunFinalReviewFromEdit: boolean;
+  canSendCompletedFromEdit?: boolean;
+  rnSuggestedTier?: string;
 }
 
 export function IspTrackerProgression({
@@ -26,11 +28,52 @@ export function IspTrackerProgression({
   editRowLive,
   editRow,
   canRunFinalReviewFromEdit,
+  canSendCompletedFromEdit = false,
+  rnSuggestedTier = '',
 }: IspTrackerProgressionProps) {
+  const row = editRowLive || editRow;
+  const rnTier =
+    String(rnSuggestedTier || '').trim() ||
+    String((row as any)?.alftRnTierRecommendation?.tier || '').trim();
+  const finalStep = editIspProgress.find((step) => step.key === 'final_download');
+  const showCompletedStatusBanner =
+    canSendCompletedFromEdit ||
+    canRunFinalReviewFromEdit ||
+    finalStep?.state === 'done' ||
+    finalStep?.state === 'current';
+
   return (
     <>
       {managerActionsOnly ? (
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
+          {showCompletedStatusBanner ? (
+            <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-emerald-950">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                  Status: Completed
+                </span>
+                <span className="text-xs font-medium text-emerald-800">
+                  {canSendCompletedFromEdit
+                    ? 'Final / Download approved — ready to download or send'
+                    : 'Final / Download — RN signed; admin final check'}
+                </span>
+              </div>
+              {rnTier ? (
+                <div className="mt-1.5 text-sm">
+                  <span className="font-medium">RN suggested tier:</span>{' '}
+                  <span className="text-base font-semibold">Tier {rnTier}</span>
+                  <span className="ml-1 text-xs font-normal text-emerald-800">
+                    (admin may still request a different tier later)
+                  </span>
+                </div>
+              ) : (
+                <div className="mt-1.5 text-xs text-amber-800">
+                  RN suggested tier not on file yet — required before final approval.
+                </div>
+              )}
+            </div>
+          ) : null}
           <div className="text-sm font-semibold">ISP tracker progression</div>
           <div className="flex flex-wrap items-center gap-3">
             {editIspProgress.map((step) => (
@@ -115,22 +158,24 @@ export function IspTrackerProgression({
               {String((editRowLive || editRow as any)?.alftManagerReview?.rejectionReason || '').trim()}
             </div>
           ) : null}
-          {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
+          {!showCompletedStatusBanner && rnTier ? (
             <div className="rounded border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
               <div className="font-semibold">
-                RN tier agreement / suggestion:{' '}
-                <span className="text-base">
-                  Tier {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()}
-                </span>
+                RN tier agreement / suggestion: <span className="text-base">Tier {rnTier}</span>
               </div>
               <div className="mt-1 text-xs text-violet-800">
                 Approve this tier at the bottom of the form (admin final review before download).
               </div>
             </div>
-          ) : canRunFinalReviewFromEdit ? (
+          ) : !showCompletedStatusBanner && canRunFinalReviewFromEdit ? (
             <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               Waiting for RN tier agreement or suggestion (required before final approval / tier-level
               request).
+            </div>
+          ) : showCompletedStatusBanner && rnTier ? (
+            <div className="text-xs text-muted-foreground">
+              Approve RN suggested Tier {rnTier} at the bottom of the form before download (or request a
+              different tier later).
             </div>
           ) : null}
         </div>

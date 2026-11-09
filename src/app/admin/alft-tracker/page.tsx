@@ -3463,6 +3463,8 @@ export default function AdminAlftTrackerPage() {
               editRowLive={editRowLive}
               editRow={editRow}
               canRunFinalReviewFromEdit={canRunFinalReviewFromEdit}
+              canSendCompletedFromEdit={canSendCompletedFromEdit}
+              rnSuggestedTier={editEffectiveRnTier.tier}
             />
             <PreSubmissionWorkflowQueue
               managerActionsOnly={managerActionsOnly}

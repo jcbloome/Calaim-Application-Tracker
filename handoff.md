@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-09
 
+- **ALFT tracker final review — green Completed + RN suggested tier banner.** At the top of the member ISP/ALFT review form (Final / Download), show a green status card with **Status: Completed** and **RN suggested tier** (notes that admin may request a different tier later). Also used as a small App Hosting build-smoke change.
+  - Files: `src/app/admin/alft-tracker/components/IspTrackerProgression.tsx`, `src/app/admin/alft-tracker/page.tsx`, `handoff.md`.
+  - Commit: _(pending)_.
+
 - **App Hosting — stop weeks of ESLint-killed deploys.** Remaining Errors fixed (`prefer-const` in batch eligibility checker; unused `ispRcfeComparison` in ISP workflow). Set `eslint.ignoreDuringBuilds: true` so App Hosting no longer fails the whole framework build on unused-vars / prefer-const; TypeScript build errors still fail. Use `npm run lint -- --quiet` before push to catch Errors locally.
   - Files: `next.config.ts`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/isp-workflow/page.tsx`, `handoff.md`.
   - Commit: `bf825756`.
