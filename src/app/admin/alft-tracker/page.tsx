@@ -626,12 +626,14 @@ export default function AdminAlftTrackerPage() {
     const ispFacilityType = pickPreview('p2_current_type', 'isp_location_type', 'currentLocationType');
     const ispStreet = pickPreview('p2_current_street', 'isp_location_address', 'ispCurrentAddressStreet');
     const ispCity = pickPreview('p2_current_city', 'isp_location_city', 'ispCurrentAddressCity');
-    const ispState = pickPreview('p2_current_state', 'isp_location_state', 'ispCurrentAddressState');
+    const ispState =
+      pickPreview('p2_current_state', 'isp_location_state', 'ispCurrentAddressState') || 'CA';
     const ispZip = pickPreview('p2_current_zip', 'isp_location_zip', 'ispCurrentAddressZip');
     const ispAddress = [ispStreet, ispCity, ispState, ispZip].filter(Boolean).join(', ');
     // Do not show a facility/location name when street+city are missing — avoids stale/app-invented names
     // (e.g. "100 Sterling Court") that are not a real Caspio ISP location for this member.
-    const ispLocationComplete = Boolean(ispStreet && ispCity && ispState && ispZip);
+    // State defaults to CA when Caspio leaves ISP_Contact_State blank.
+    const ispLocationComplete = Boolean(ispStreet && ispCity && ispZip);
     const ispFacilityName = ispLocationComplete ? ispFacilityNameRaw : '';
     const ispPhone = pickPreview('isp_contact_phone', 'ispContactPhone');
     const ispEmail = pickPreview('isp_contact_email', 'ispContactEmail');

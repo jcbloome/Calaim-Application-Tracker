@@ -64,15 +64,22 @@ const normalizeForCompare = (value: string) =>
     .trim();
 
 /**
- * ISP Contact / Current Physical fields only — never invents RCFE or app addresses.
- * Empty Caspio ISP location must stay empty so staff fill it before SW invite / ALFT.
+ * ISP Contact / Current Physical fields only — never invents RCFE or app street/city/zip.
+ * Empty Caspio ISP street/city/zip must stay empty so staff fill it before SW invite / ALFT.
+ * State defaults to CA when blank (all members are California).
  */
 export function getIspLocationSnapshot(source: Record<string, unknown>): IspLocationSnapshot {
+  const rawState = pick(source, ['ISP_Contact_State', 'ISP_Current_State']);
+  const state = rawState
+    ? /^[A-Za-z]{2}$/.test(rawState)
+      ? rawState.toUpperCase()
+      : rawState
+    : 'CA';
   return {
     name: pick(source, ['ISP_Contact_Location', 'ISP_Current_Location']),
     street: pick(source, ['ISP_Contact_Address', 'ISP_Current_Address']),
     city: pick(source, ['ISP_Contact_City', 'ISP_Current_City']),
-    state: pick(source, ['ISP_Contact_State', 'ISP_Current_State']),
+    state,
     zip: pick(source, ['ISP_Contact_Zip', 'ISP_Current_Zip']),
     phone: pick(source, ['ISP_Contact_Phone']),
     type: pick(source, ['ISP_Location_Type']),
@@ -89,7 +96,7 @@ export function hasCompleteIspLocationInCaspio(source: Record<string, unknown>):
   const reasons: string[] = [];
   if (!snapshot.street) reasons.push('ISP_Contact_Address is empty in Caspio');
   if (!snapshot.city) reasons.push('ISP_Contact_City is empty in Caspio');
-  if (!snapshot.state) reasons.push('ISP_Contact_State is empty in Caspio');
+  // State is always treated as California when Caspio leaves ISP_Contact_State blank.
   if (!snapshot.zip) reasons.push('ISP_Contact_Zip is empty in Caspio');
   if (!snapshot.name && !snapshot.type) {
     reasons.push('ISP_Contact_Location (or ISP_Location_Type) is empty in Caspio');
@@ -319,13 +326,12 @@ export function applyIspVisitLocationFromCaspio(
   const street = preferRcfe ? rcfe.street : isp.street;
   const city = preferRcfe ? rcfe.city : isp.city;
   const rawState = preferRcfe ? rcfe.state : isp.state;
+  // All members are in California — blank Caspio state must not block SW assignment.
   const state = rawState
     ? /^[A-Za-z]{2}$/.test(rawState.trim())
       ? rawState.trim().toUpperCase()
       : rawState.trim()
-    : preferRcfe
-      ? 'CA'
-      : '';
+    : 'CA';
   const zip = preferRcfe ? rcfe.zip : isp.zip;
   const phone = preferRcfe ? rcfe.phone : isp.phone;
   const type = preferRcfe ? rcfe.type || 'RCFE' : isp.type;
