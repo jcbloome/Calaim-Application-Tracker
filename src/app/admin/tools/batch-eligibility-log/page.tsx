@@ -47,7 +47,10 @@ import {
   KAISER_INACTIVE_NOTICE_SUBJECT,
   type KaiserInactiveRcfeGroup,
 } from '@/lib/kaiser-inactive-rcfe-notice';
-import { EligibilityResultsCard } from '../batch-eligibility-checker/eligibility-results-card';
+import {
+  CaspioMemberStatusCell,
+  EligibilityResultsCard,
+} from '../batch-eligibility-checker/eligibility-results-card';
 
 type KindFilter = 'all' | 'batch' | 'decode';
 
@@ -654,7 +657,7 @@ export default function BatchEligibilityLogPage() {
                       <TableRow>
                         <TableHead>Member</TableHead>
                         <TableHead>Medi-Cal / MRN</TableHead>
-                        <TableHead>Caspio status</TableHead>
+                        <TableHead>Caspio / Kaiser status</TableHead>
                         <TableHead>RCFE name</TableHead>
                         <TableHead>RCFE owner email</TableHead>
                         {notEligibleRunPlan === 'kaiser' ? <TableHead>Check eligibility</TableHead> : null}
@@ -683,10 +686,7 @@ export default function BatchEligibilityLogPage() {
                               ) : null}
                             </TableCell>
                             <TableCell className="align-top text-xs">
-                              {row.member?.calaimStatus || '-'}
-                              {row.member?.clientId2 ? (
-                                <div className="text-muted-foreground">Client ID {row.member.clientId2}</div>
-                              ) : null}
+                              <CaspioMemberStatusCell member={row.member} />
                             </TableCell>
                             <TableCell className="align-top text-sm">
                               {row.member?.rcfeName || (

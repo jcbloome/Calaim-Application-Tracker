@@ -330,7 +330,7 @@ export function KaiserBatchEligibility({
           <CardDescription>
             From the synced Caspio members cache
             {membersSyncedIso ? ` (last synced ${format(new Date(membersSyncedIso), 'MMM d, yyyy h:mm a')})` : ''}.
-            Only CalAIM statuses Authorized, Pending and H2022 are checked; untick any to leave it out.
+            CalAIM_Status Authorized or H2022 are included; untick either to leave it out.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

@@ -50,7 +50,7 @@ import {
   type KaiserClaimMdPayerMode,
   type MemberFieldKey,
 } from '@/lib/batch-eligibility';
-import { EligibilityResultsCard } from './eligibility-results-card';
+import { CaspioMemberStatusCell, EligibilityResultsCard } from './eligibility-results-card';
 import { KaiserBatchEligibility } from './kaiser-batch-eligibility';
 
 const DATE_FORMATS: DateFormat[] = ['MM/DD/YYYY', 'YYYYMMDD', 'YYYY-MM-DD'];
@@ -857,7 +857,7 @@ function ClaimMdBatchEligibility({
                       <TableHead>Member</TableHead>
                       <TableHead>{plan === 'kaiser' ? 'Kaiser MRN' : 'Medi-Cal CIN'}</TableHead>
                       <TableHead>DOB</TableHead>
-                      <TableHead>Caspio status</TableHead>
+                      <TableHead>Caspio / Kaiser status</TableHead>
                       <TableHead>Client ID</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -882,7 +882,9 @@ function ClaimMdBatchEligibility({
                             <span className="text-destructive">missing</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-xs">{m.calaimStatus}</TableCell>
+                        <TableCell className="text-xs">
+                          <CaspioMemberStatusCell member={m} showClientId={false} />
+                        </TableCell>
                         <TableCell className="text-xs">{m.clientId2}</TableCell>
                       </TableRow>
                     ))}

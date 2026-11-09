@@ -153,6 +153,7 @@ export async function GET(req: NextRequest) {
           : '',
         healthPlan,
         calaimStatus: first(d.CalAIM_Status, d.caspioCalAIMStatus) || '(no status)',
+        kaiserStatus: first(d.Kaiser_Status, d.Kaiser_ID_Status, d.kaiserStatus),
         authStartT2038: first(d.Authorization_Start_Date_T2038),
         authEndT2038: first(d.Authorization_End_Date_T2038),
         authStartH2022: first(d.Authorization_Start_Date_H2022),

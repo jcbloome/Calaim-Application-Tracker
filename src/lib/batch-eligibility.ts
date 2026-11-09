@@ -25,6 +25,8 @@ export type BatchEligibilityMember = {
   region: string;
   /** Caspio CalAIM_MCO (Health Net / Kaiser). */
   healthPlan: string;
+  /** Caspio Kaiser_Status (Authorized, Inactive, etc.). */
+  kaiserStatus: string;
   /** Facility placement (for not-eligible RCFE outreach). */
   rcfeName: string;
   /**
@@ -45,6 +47,7 @@ export const MEMBER_FIELD_LABELS: Record<MemberFieldKey, string> = {
   mrn: 'Kaiser MRN',
   clientId2: 'Caspio Client_ID2',
   calaimStatus: 'CalAIM status',
+  kaiserStatus: 'Kaiser status',
   authStartT2038: 'T2038 auth start',
   authEndT2038: 'T2038 auth end',
   authStartH2022: 'H2022 auth start',
@@ -55,6 +58,11 @@ export const MEMBER_FIELD_LABELS: Record<MemberFieldKey, string> = {
   rcfeName: 'RCFE name',
   rcfeAdminEmail: 'RCFE owner email',
 };
+
+/** Caspio Kaiser_Status values that mean the member is not active with Kaiser. */
+export function isKaiserInactiveStatus(status: unknown): boolean {
+  return /^(non[\s_-]?active|inactive)$/i.test(String(status ?? '').trim());
+}
 
 const DATE_FIELDS = new Set<MemberFieldKey>([
   'birthDate',
@@ -146,6 +154,7 @@ export function resolveBatchEligibilityRunPlan(run: {
 }
 
 /** Caspio statuses included in the routine Kaiser eligibility check batch. */
+/** Kaiser Claim.MD / SDS batch eligibility — CalAIM_Status Authorized or H2022. */
 export const KAISER_ELIGIBILITY_STATUSES = ['Authorized', 'H2022'] as const;
 
 export const isKaiserEligibilityStatus = (status: string) =>

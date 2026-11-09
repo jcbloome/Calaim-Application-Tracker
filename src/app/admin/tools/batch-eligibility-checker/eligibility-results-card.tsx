@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   BATCH_ELIGIBILITY_PLAN_LABELS,
   inferBatchEligibilityPlanFrom271,
+  isKaiserInactiveStatus,
   type BatchEligibilityMember,
   type BatchEligibilityPlan,
 } from '@/lib/batch-eligibility';
@@ -36,6 +37,38 @@ const OUTCOME_CLASSES: Record<EligibilityOutcome, string> = {
 };
 
 type DecodedFile = { name: string; text: string };
+
+/** CalAIM_Status + Kaiser_Status (highlight Inactive). */
+export function CaspioMemberStatusCell({
+  member,
+  showClientId = true,
+}: {
+  member?: Pick<BatchEligibilityMember, 'calaimStatus' | 'kaiserStatus' | 'clientId2'> | null;
+  showClientId?: boolean;
+}) {
+  if (!member) return <span className="text-muted-foreground">—</span>;
+  const kaiserStatus = String(member.kaiserStatus || '').trim();
+  const inactive = isKaiserInactiveStatus(kaiserStatus);
+  return (
+    <>
+      <div>{member.calaimStatus || '-'}</div>
+      {kaiserStatus ? (
+        <div className={inactive ? 'mt-0.5' : 'mt-0.5 text-muted-foreground'}>
+          {inactive ? (
+            <Badge variant="destructive" className="font-semibold">
+              Kaiser: Inactive
+            </Badge>
+          ) : (
+            <>Kaiser: {kaiserStatus}</>
+          )}
+        </div>
+      ) : null}
+      {showClientId && member.clientId2 ? (
+        <div className="text-muted-foreground">Client ID {member.clientId2}</div>
+      ) : null}
+    </>
+  );
+}
 
 export function EligibilityResultsCard({
   members,
@@ -410,7 +443,7 @@ export function EligibilityResultsCard({
                     <TableHead>Result</TableHead>
                     <TableHead>Coverage</TableHead>
                     <TableHead>Plan begin</TableHead>
-                    <TableHead>Caspio status</TableHead>
+                    <TableHead>Caspio / Kaiser status</TableHead>
                     <TableHead>RCFE</TableHead>
                     <TableHead>RCFE owner email</TableHead>
                   </TableRow>
@@ -476,14 +509,7 @@ export function EligibilityResultsCard({
                             {row.primaryDate || '—'}
                           </TableCell>
                           <TableCell className="align-top text-xs">
-                            {row.member ? (
-                              <>
-                                <div>{row.member.calaimStatus}</div>
-                                <div className="text-muted-foreground">Client ID {row.member.clientId2}</div>
-                              </>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
+                            <CaspioMemberStatusCell member={row.member} />
                             {row.flag !== 'none' ? (
                               <Badge
                                 variant={row.flag === 'unmatched' ? 'outline' : 'destructive'}
