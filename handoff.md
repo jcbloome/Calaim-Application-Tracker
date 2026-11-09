@@ -12,7 +12,7 @@
 
 - **SW ISP assign — blank Caspio state is California.** Empty `ISP_Contact_State` / `ISP_Current_State` no longer blocks social-worker visit assignment; readiness and form apply treat missing state as `CA`.
   - Files: `src/lib/isp-visit-location.ts`, `src/app/admin/alft-tracker/page.tsx`, `handoff.md`.
-  - Commit: _(pending)_.
+  - Commit: `a24d5d4e`.
 
 - **Remove Electron desktop app entirely (web-only).** Deleted `desktop/`, desktop GitHub workflows, installer script, Electron admin pages/APIs (`electron-controls`, `desktop-installer`, notification/chat windows, presence beacon), and all web bridges (`window.desktopNotifications`, presence map, mothballed Electron UI). Staff notifications stay web-only (Action Items / My Notifications). `tsc --noEmit` passes.
   - Files: `desktop/**` (deleted), `.github/workflows/desktop-*.yml` (deleted), `package.json`, `tsconfig.json`, admin layout/staff-management/notification settings, RealTimeNotifications, ReviewNotificationPoller, and related helpers/docs/`handoff.md`.
