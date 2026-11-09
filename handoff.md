@@ -10,13 +10,9 @@
 
 ## Changes 2026-11-09
 
-- **Kaiser eligibility checker — Authorized or H2022.** Kaiser Claim.MD / SDS batches include `CalAIM_Status` Authorized or H2022 (same primary list as before; other statuses stay optional).
-  - Files: `src/lib/batch-eligibility.ts`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `handoff.md`.
-  - Commit: _(pending)_.
-
-- **Eligibility checker / log — show Kaiser_Status + Inactive flag.** Batch eligibility member payload now includes Caspio `Kaiser_Status`. Tables (results, not-eligible log, recheck) show CalAIM status plus Kaiser status; Inactive renders as a red **Kaiser: Inactive** badge. CSV export adds a Kaiser status column.
-  - Files: `src/lib/batch-eligibility.ts`, `src/lib/batch-eligibility-results.ts`, `src/app/api/admin/batch-eligibility/members/route.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-log/page.tsx`, `handoff.md`.
-  - Commit: _(pending)_.
+- **Kaiser eligibility checker — Authorized or H2022 + Kaiser_Status display.** Kaiser Claim.MD / SDS batches include `CalAIM_Status` Authorized or H2022. Tables/CSV also show Caspio `Kaiser_Status`, with a red **Kaiser: Inactive** badge when inactive.
+  - Files: `src/lib/batch-eligibility.ts`, `src/lib/batch-eligibility-results.ts`, `src/app/api/admin/batch-eligibility/members/route.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/app/admin/tools/batch-eligibility-log/page.tsx`, `handoff.md`.
+  - Commit: `ce876bbd`.
 
 - **ISP Workflow — remap ISP Client_ID2 (Raquel Lara 11470 → 11461).** When the same MRN has duplicate Caspio ids, admins can move Firestore ISP assignment/intakes/signature requests from the retired Client_ID2 to the surviving one and delete the stale members-cache doc. **Executed locally for Raquel Lara:** ISP now under Client_ID2 `11461`; stale `11470` cache row removed.
   - Files: `src/app/api/alft/assignment/remap-client-id/route.ts`, `src/app/admin/tools/isp-workflow/page.tsx`, `handoff.md`.
