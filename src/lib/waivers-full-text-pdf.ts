@@ -46,8 +46,6 @@ const wrapTextToWidth = (
   return lines.length ? lines : [''];
 };
 
-const yesNo = (value: boolean) => (value ? 'Yes — acknowledged' : 'No');
-
 const choiceLabel = (choice: string) => {
   const v = s(choice).toLowerCase();
   if (v === 'accept') return 'I choose to accept Community Supports services.';
