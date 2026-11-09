@@ -635,7 +635,11 @@ export default function KaiserIspCoverSheetToolPage() {
       });
       const data = await response.json().catch(() => ({} as any));
       if (!response.ok || !data?.success) {
-        throw new Error(String(data?.error || `HTTP ${response.status}`));
+        const platformHint =
+          response.status === 503 || response.status === 504
+            ? ' App Hosting timed out or ran out of memory during Caspio sync. Try Sync again, or use Load Cache if cron already populated Firestore.'
+            : '';
+        throw new Error(String(data?.error || `HTTP ${response.status}`) + platformHint);
       }
       toast({
         title: 'Firestore cache updated',
@@ -656,6 +660,12 @@ export default function KaiserIspCoverSheetToolPage() {
         title: 'Cache sync failed',
         description: String(error?.message || error),
       });
+      // Still try Load Cache so search can work if an earlier cron/manual sync populated Firestore.
+      try {
+        await fetchMembers({ source: 'cache' });
+      } catch {
+        // ignore secondary load failure
+      }
     } finally {
       setIsSyncingMembersCache(false);
     }

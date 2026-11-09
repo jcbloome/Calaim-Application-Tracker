@@ -6,6 +6,9 @@ import { mapMemberActivityLog, toChangeEventInput } from '@/lib/global-change-lo
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// Full Caspio → Firestore member sync regularly exceeds App Hosting's short default
+// request window and returns HTTP 503 with an empty body. Allow up to 5 minutes.
+export const maxDuration = 300;
 
 type SyncMode = 'incremental' | 'full';
 
@@ -822,14 +825,18 @@ export async function POST(req: NextRequest) {
     const accessToken = await getCaspioToken(credentials);
 
     // Load RCFE admin contacts once per sync (best-effort).
+    // Skip on scoped MCO syncs (e.g. Kaiser Cover Sheet) to keep App Hosting under timeout —
+    // member rows already carry RCFE_* fields for search/cover-sheet work.
     let rcfeAdminByRegisteredId: Map<string, { name: string; phone: string }> | null = null;
     let rcfeAdminByName: Map<string, { name: string; phone: string }> | null = null;
-    try {
-      const maps = await fetchRcfeAdminContactMap({ accessToken, baseUrl: credentials.baseUrl });
-      rcfeAdminByRegisteredId = maps.byRegisteredId;
-      rcfeAdminByName = maps.byName;
-    } catch (e) {
-      console.warn('⚠️ Could not load RCFE admin contact map (best-effort):', e);
+    if (!hasScopedMcoFilter) {
+      try {
+        const maps = await fetchRcfeAdminContactMap({ accessToken, baseUrl: credentials.baseUrl });
+        rcfeAdminByRegisteredId = maps.byRegisteredId;
+        rcfeAdminByName = maps.byName;
+      } catch (e) {
+        console.warn('⚠️ Could not load RCFE admin contact map (best-effort):', e);
+      }
     }
 
     // Determine which columns exist in Caspio so we don't request invalid ones.

@@ -3,6 +3,7 @@ import { POST as runMembersCacheSync } from '@/app/api/caspio/members-cache/sync
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 type SyncMode = 'incremental' | 'full';
 

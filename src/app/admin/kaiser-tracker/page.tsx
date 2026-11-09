@@ -755,7 +755,11 @@ function KaiserTrackerPageContent() {
       const data = await response.json().catch(() => ({} as any));
 
       if (!response.ok || !data?.success) {
-        throw new Error(data?.error || `HTTP ${response.status}`);
+        const platformHint =
+          response.status === 503 || response.status === 504
+            ? ' App Hosting timed out or ran out of memory during Caspio sync. Try Sync again, or Load Cache if cron already populated Firestore.'
+            : '';
+        throw new Error(String(data?.error || `HTTP ${response.status}`) + platformHint);
       }
 
       const syncedAt = String(data?.lastSyncAt || '').trim() || new Date().toISOString();

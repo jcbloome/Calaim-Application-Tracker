@@ -5,6 +5,13 @@
 #
 # Rollout trigger: 2026-02-20
 
+# Member-cache sync (Caspio → Firestore) is memory/CPU heavy; 512 MiB often OOMs as HTTP 503.
+runConfig:
+  cpu: 1
+  memoryMiB: 1024
+  concurrency: 40
+  maxInstances: 20
+
 env:
   - variable: CASPIO_BASE_URL
     secret: CASPIO_BASE_URL
