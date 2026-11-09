@@ -10,7 +10,7 @@
 
 ## Changes 2026-11-09
 
-- **ISP Workflow — remap ISP Client_ID2 (Raquel Lara 11470 → 11461).** When the same MRN has duplicate Caspio ids, admins can move Firestore ISP assignment/intakes/signature requests from the retired Client_ID2 to the surviving one and delete the stale members-cache doc.
+- **ISP Workflow — remap ISP Client_ID2 (Raquel Lara 11470 → 11461).** When the same MRN has duplicate Caspio ids, admins can move Firestore ISP assignment/intakes/signature requests from the retired Client_ID2 to the surviving one and delete the stale members-cache doc. **Executed locally for Raquel Lara:** ISP now under Client_ID2 `11461`; stale `11470` cache row removed.
   - Files: `src/app/api/alft/assignment/remap-client-id/route.ts`, `src/app/admin/tools/isp-workflow/page.tsx`, `handoff.md`.
   - Commit: `96386361`.
 
