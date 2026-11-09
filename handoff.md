@@ -12,7 +12,7 @@
 
 - **Kaiser Cover Sheet Sync — fix public HTTP 503.** App Hosting was killing `/api/caspio/members-cache/sync` (timeout/OOM → empty-body 503). Raised route `maxDuration` to 300s, bumped App Hosting `runConfig` memory to 1024 MiB, skipped heavy RCFE admin map on scoped Kaiser syncs, and improved Sync failure toasts + fallback Load Cache.
   - Files: `src/app/api/caspio/members-cache/sync/route.ts`, `src/app/api/cron/caspio-members-sync/route.ts`, `apphosting.yaml`, `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`, `src/app/admin/kaiser-tracker/page.tsx`, `handoff.md`.
-  - Commit: _(pending)_.
+  - Commit: `fe478c1a`.
 
 - **SW ISP assign — blank Caspio state is California.** Empty `ISP_Contact_State` / `ISP_Current_State` no longer blocks social-worker visit assignment; readiness and form apply treat missing state as `CA`.
   - Files: `src/lib/isp-visit-location.ts`, `src/app/admin/alft-tracker/page.tsx`, `handoff.md`.
