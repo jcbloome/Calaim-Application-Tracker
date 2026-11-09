@@ -168,7 +168,7 @@ function ClaimMdBatchEligibility({
         const hn = await authedFetch('/api/admin/batch-eligibility/template?plan=healthnet');
         const source = hn.template as BatchEligibilityTemplate | null;
         if (source?.columns?.length) {
-          let mapping: Record<string, ColumnSource> = { ...(source.mapping || {}) };
+          const mapping: Record<string, ColumnSource> = { ...(source.mapping || {}) };
           for (const [column, value] of Object.entries(PLAN_FIXED_VALUES.kaiser)) {
             if (source.columns.includes(column)) mapping[column] = { kind: 'constant', value };
           }

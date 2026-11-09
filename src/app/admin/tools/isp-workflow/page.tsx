@@ -56,7 +56,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuth, useFirestore, useStorage, useUser } from '@/firebase';
 import {
   applyIspVisitLocationFromCaspio,
-  compareIspLocationToRcfe,
   evaluateIspLocationReadiness,
   formatIspContactBlockForSwEmail,
   formatIspVisitTypeForSwEmail,
@@ -502,10 +501,6 @@ function IspWorkflowToolsPageInner() {
   );
   const rcfeLocationSnapshot = useMemo(
     () => getRcfeLocationSnapshot(caspioSourcePreview || {}),
-    [caspioSourcePreview]
-  );
-  const ispRcfeComparison = useMemo(
-    () => compareIspLocationToRcfe(caspioSourcePreview || {}),
     [caspioSourcePreview]
   );
   const ispLocationReadiness = useMemo(
