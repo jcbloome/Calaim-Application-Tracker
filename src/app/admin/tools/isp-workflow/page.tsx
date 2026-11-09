@@ -181,6 +181,9 @@ function IspWorkflowToolsPageInner() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'rn_visit_needed'>('all');
   const [memberSortDir, setMemberSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [remapFromClientId2, setRemapFromClientId2] = useState('');
+  const [remapToClientId2, setRemapToClientId2] = useState('');
+  const [isRemappingClientId, setIsRemappingClientId] = useState(false);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
   const [isPrefilling, setIsPrefilling] = useState(false);
@@ -363,6 +366,42 @@ function IspWorkflowToolsPageInner() {
       null,
     [filteredMembers, selectedClientId]
   );
+
+  /** Other cache rows with the same MRN (duplicate Caspio Client_ID2 cases). */
+  const sameMrnSiblingMembers = useMemo(() => {
+    const mrn = clean(selectedMember?.memberMrn);
+    const selectedId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
+    if (!mrn || !selectedId) return [] as KaiserMember[];
+    return members.filter((member) => {
+      const id = clientIdOf(member);
+      return clean(member.memberMrn) === mrn && id && id !== selectedId;
+    });
+  }, [members, selectedClientId, selectedMember]);
+
+  useEffect(() => {
+    const selectedId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
+    const siblingKeep =
+      sameMrnSiblingMembers.find((m) => clientIdOf(m) === '11461') || null;
+    const siblingOther = sameMrnSiblingMembers[0] || null;
+    // Prefer moving onto surviving id 11461 when present (Raquel Lara duplicate).
+    if (selectedId === '11470') {
+      setRemapFromClientId2('11470');
+      setRemapToClientId2('11461');
+      return;
+    }
+    if (selectedId === '11461' && siblingOther) {
+      setRemapFromClientId2(clientIdOf(siblingOther));
+      setRemapToClientId2('11461');
+      return;
+    }
+    if (siblingKeep) {
+      setRemapFromClientId2(selectedId);
+      setRemapToClientId2('11461');
+      return;
+    }
+    setRemapFromClientId2(selectedId);
+    setRemapToClientId2(siblingOther ? clientIdOf(siblingOther) : '');
+  }, [sameMrnSiblingMembers, selectedClientId, selectedMember]);
 
   // Kaiser rule: Plan ID always mirrors MRN (member MCP_CIN / form MRN).
   useEffect(() => {
@@ -1613,6 +1652,73 @@ function IspWorkflowToolsPageInner() {
     toast,
     user?.displayName,
     user?.email,
+  ]);
+
+  const remapIspClientId = useCallback(async () => {
+    const fromId = clean(remapFromClientId2);
+    const toId = clean(remapToClientId2);
+    if (!fromId || !toId) {
+      toast({
+        variant: 'destructive',
+        title: 'Client_ID2 required',
+        description: 'Enter both the old and new Caspio Client_ID2 values.',
+      });
+      return;
+    }
+    if (fromId === toId) {
+      toast({ variant: 'destructive', title: 'IDs must differ' });
+      return;
+    }
+    const confirmed = window.confirm(
+      `Move ISP / ALFT data from Client_ID2 ${fromId} → ${toId}?\n\nThis updates Firestore ISP assignment + intakes and removes the stale cache row for ${fromId}.`
+    );
+    if (!confirmed) return;
+
+    setIsRemappingClientId(true);
+    try {
+      const idToken = await getIdToken();
+      if (!idToken) throw new Error('Sign in again to remap Client_ID2.');
+      const response = await fetch('/api/alft/assignment/remap-client-id', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fromClientId2: fromId,
+          toClientId2: toId,
+          deleteStaleCache: true,
+        }),
+      });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) {
+        throw new Error(String(data?.error || `HTTP ${response.status}`));
+      }
+      toast({
+        title: 'ISP remapped',
+        description: String(data?.message || `Moved ${fromId} → ${toId}`),
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      setSelectedClientId(toId);
+      setMembers((prev) => prev.filter((m) => clientIdOf(m) !== fromId));
+      await fetchMembers({ clientId2: toId, source: 'cache', skipStaleCheck: true });
+      await loadCaspioFieldPreview(toId, null, { preferLive: true });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Remap failed',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setIsRemappingClientId(false);
+    }
+  }, [
+    fetchMembers,
+    getIdToken,
+    loadCaspioFieldPreview,
+    remapFromClientId2,
+    remapToClientId2,
+    toast,
   ]);
 
   const cancelSocialWorkerInvite = useCallback(async () => {
@@ -4629,6 +4735,62 @@ function IspWorkflowToolsPageInner() {
                         </div>
                       ) : null}
                     </div>
+
+                    {(sameMrnSiblingMembers.length > 0 ||
+                      clean(selectedClientId) === '11470' ||
+                      clean(clientIdOf(selectedMember)) === '11470') && (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 space-y-2">
+                        <div className="font-semibold">Duplicate Caspio Client_ID2 / remap ISP</div>
+                        <div className="text-xs">
+                          {sameMrnSiblingMembers.length > 0 ? (
+                            <>
+                              Same MRN appears under multiple Client_ID2 values:{' '}
+                              {[clientIdOf(selectedMember), ...sameMrnSiblingMembers.map(clientIdOf)]
+                                .filter(Boolean)
+                                .join(', ')}
+                              . Move the existing ISP onto the surviving Caspio id (Raquel Lara: 11470 → 11461).
+                            </>
+                          ) : (
+                            <>
+                              Stale Client_ID2 11470 detected. Move Raquel Lara&apos;s ISP onto surviving Caspio id
+                              11461.
+                            </>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label htmlFor="remap-from-client-id">From Client_ID2 (old)</Label>
+                            <Input
+                              id="remap-from-client-id"
+                              value={remapFromClientId2}
+                              onChange={(e) => setRemapFromClientId2(e.target.value)}
+                              placeholder="11470"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="remap-to-client-id">To Client_ID2 (keep)</Label>
+                            <Input
+                              id="remap-to-client-id"
+                              value={remapToClientId2}
+                              onChange={(e) => setRemapToClientId2(e.target.value)}
+                              placeholder="11461"
+                            />
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="bg-amber-700 hover:bg-amber-800"
+                          disabled={isRemappingClientId || !clean(remapFromClientId2) || !clean(remapToClientId2)}
+                          onClick={() => void remapIspClientId()}
+                        >
+                          {isRemappingClientId ? (
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          ) : null}
+                          Move ISP to Client_ID2 {clean(remapToClientId2) || '…'}
+                        </Button>
+                      </div>
+                    )}
 
                     {priorInviteBanner ? (
                       <div

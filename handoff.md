@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-09
 
+- **ISP Workflow — remap ISP Client_ID2 (Raquel Lara 11470 → 11461).** When the same MRN has duplicate Caspio ids, admins can move Firestore ISP assignment/intakes/signature requests from the retired Client_ID2 to the surviving one and delete the stale members-cache doc.
+  - Files: `src/app/api/alft/assignment/remap-client-id/route.ts`, `src/app/admin/tools/isp-workflow/page.tsx`, `handoff.md`.
+  - Commit: _(pending)_.
+
 - **Kaiser Cover Sheet Sync — fix public HTTP 503.** App Hosting was killing `/api/caspio/members-cache/sync` (timeout/OOM → empty-body 503). Raised route `maxDuration` to 300s, bumped App Hosting `runConfig` memory to 1024 MiB, skipped heavy RCFE admin map on scoped Kaiser syncs, and improved Sync failure toasts + fallback Load Cache.
   - Files: `src/app/api/caspio/members-cache/sync/route.ts`, `src/app/api/cron/caspio-members-sync/route.ts`, `apphosting.yaml`, `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`, `src/app/admin/kaiser-tracker/page.tsx`, `handoff.md`.
   - Commit: `fe478c1a`.
