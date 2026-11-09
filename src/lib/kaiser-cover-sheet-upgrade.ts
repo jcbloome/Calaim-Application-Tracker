@@ -199,8 +199,10 @@ export async function upgradeKaiserCoverSheetPdf(
     }
   }
 
+  const bakedRoomBoard = authRoomValue || reauthRoomValue || overrideRoom || '';
+
   try {
-    pdfDoc.addJavaScript('KaiserTierRates', buildKaiserTierCalcAcrobatScript());
+    pdfDoc.addJavaScript('KaiserTierRates', buildKaiserTierCalcAcrobatScript({ bakedRoomBoard }));
   } catch {
     // Optional document-level script.
   }
@@ -210,24 +212,28 @@ export async function upgradeKaiserCoverSheetPdf(
     maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
     roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
     totalField: KAISER_COVER_AUTH_TOTAL_FIELD,
+    bakedRoomBoard,
   });
   const reauthApply = buildKaiserTierApplyInlineScript({
     tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
     maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
     roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
     totalField: KAISER_COVER_REAUTH_TOTAL_FIELD,
+    bakedRoomBoard,
   });
   const authTierChange = buildKaiserTierDropdownChangeScript({
     tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
     maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
     roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
     totalField: KAISER_COVER_AUTH_TOTAL_FIELD,
+    bakedRoomBoard,
   });
   const reauthTierChange = buildKaiserTierDropdownChangeScript({
     tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
     maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
     roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
     totalField: KAISER_COVER_REAUTH_TOTAL_FIELD,
+    bakedRoomBoard,
   });
 
   attachFieldAdditionalActions(pdfDoc, authKp, {
@@ -246,23 +252,25 @@ export async function upgradeKaiserCoverSheetPdf(
     V: reauthApply,
   });
   attachFieldAdditionalActions(pdfDoc, authMax, {
-    C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_AUTH_KP_TIER_FIELD),
+    C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_AUTH_KP_TIER_FIELD, { bakedRoomBoard }),
   });
   attachFieldAdditionalActions(pdfDoc, authTotal, {
     C: buildKaiserTotalCostsCalculateScript({
       tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
       maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
       roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
+      bakedRoomBoard,
     }),
   });
   attachFieldAdditionalActions(pdfDoc, reauthMax, {
-    C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_REAUTH_KP_TIER_FIELD),
+    C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_REAUTH_KP_TIER_FIELD, { bakedRoomBoard }),
   });
   attachFieldAdditionalActions(pdfDoc, reauthTotal, {
     C: buildKaiserTotalCostsCalculateScript({
       tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
       maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
       roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
+      bakedRoomBoard,
     }),
   });
 

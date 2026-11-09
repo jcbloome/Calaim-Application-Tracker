@@ -19,6 +19,24 @@ export const KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD = 'Text24';
 export const KAISER_COVER_REAUTH_TOTAL_FIELD = 'Text23';
 export const KAISER_COVER_REAUTH_ROOM_BOARD_FIELD = 'Text22';
 
+/** Auth + reauth room & board field names (templates have used several labels). */
+export const KAISER_COVER_ROOM_BOARD_FIELD_ALIASES = [
+  KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
+  "Member's Financial Responsibility of Room and Board",
+  'Member Financial Responsibility of Room and Board',
+  KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
+  'Text3',
+] as const;
+
+/** Auth + reauth Total Costs field names. */
+export const KAISER_COVER_TOTAL_FIELD_ALIASES = [
+  KAISER_COVER_AUTH_TOTAL_FIELD,
+  'Auto Calculated',
+  'Auto-calculated',
+  'Total Costs',
+  KAISER_COVER_REAUTH_TOTAL_FIELD,
+] as const;
+
 export function parseKaiserTierNumber(value: unknown): number | null {
   const raw = String(value ?? '').trim();
   if (!raw) return null;
@@ -76,13 +94,39 @@ const ratesObjectLiteral = () =>
     .map(([tier, amount]) => `"Tier ${tier}":${amount}`)
     .join(',');
 
+/** Escape a string for safe inclusion inside an Acrobat JS double-quoted literal. */
+function acrobatJsStringLiteral(value: unknown): string {
+  return JSON.stringify(String(value ?? ''));
+}
+
 /** Shared Acrobat helpers inlined into every field action (no reliance on doc-level JS scope). */
-function acrobatHelpersBlock(): string {
+function acrobatHelpersBlock(opts?: { bakedRoomBoard?: string; roomBoardFields?: string[] }): string {
+  const baked = acrobatJsStringLiteral(opts?.bakedRoomBoard || '');
+  const roomFields = (opts?.roomBoardFields?.length
+    ? opts.roomBoardFields
+    : [...KAISER_COVER_ROOM_BOARD_FIELD_ALIASES]
+  ).map((name) => acrobatJsStringLiteral(name));
   return `
 var __kRates={${ratesObjectLiteral()}};
+var __kBakedRoomBoard=${baked};
+var __kRoomBoardFields=[${roomFields.join(',')}];
 function __kParseMoney(v){if(v==null)return 0;var s=String(v);var neg=/^\\s*-/.test(s.replace(/\\$/g,""));var n=Number(s.replace(/[^0-9.]/g,""));if(!isFinite(n))return 0;return neg?-Math.abs(n):n;}
 function __kFormatMoney(n){if(!isFinite(n))return"";var neg=n<0;var abs=Math.abs(n);var p=abs.toFixed(2).split(".");p[0]=p[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g,",");return(neg?"-$":"$")+p.join(".");}
 function __kTierRate(tierValue){var tier=String(tierValue||"").replace(/^\\s+|\\s+$/g,"");if(__kRates[tier]!=null)return __kRates[tier];var m=tier.match(/\\b([1-5])\\b/);if(m&&__kRates["Tier "+m[1]]!=null)return __kRates["Tier "+m[1]];return 0;}
+function __kReadRoomBoard(preferred){
+  var names=[];
+  if(preferred) names.push(String(preferred));
+  for(var i=0;i<__kRoomBoardFields.length;i++) names.push(__kRoomBoardFields[i]);
+  for(var j=0;j<names.length;j++){
+    try{
+      var f=this.getField(names[j]);
+      if(!f) continue;
+      var n=__kParseMoney(f.value);
+      if(n) return n;
+    }catch(e){}
+  }
+  return __kParseMoney(__kBakedRoomBoard);
+}
 `.trim();
 }
 
@@ -98,29 +142,33 @@ export function buildKaiserTierApplyInlineScript(opts: {
   maxField: string;
   roomBoardField: string;
   totalField: string;
+  bakedRoomBoard?: string;
 }): string {
-  const { tierField, maxField, roomBoardField, totalField } = opts;
+  const { tierField, maxField, roomBoardField, totalField, bakedRoomBoard } = opts;
   return `
-${acrobatHelpersBlock()}
+${acrobatHelpersBlock({ bakedRoomBoard, roomBoardFields: [roomBoardField, ...KAISER_COVER_ROOM_BOARD_FIELD_ALIASES] })}
 try{
   var tierVal = (typeof __kOverrideTier != "undefined" && __kOverrideTier != null && String(__kOverrideTier) !== "")
     ? String(__kOverrideTier)
     : String(this.getField("${tierField}").value || "");
   var rate=__kTierRate(tierVal);
   var maxF=this.getField("${maxField}");
-  var rbF=this.getField("${roomBoardField}");
   var totF=this.getField("${totalField}");
   if(maxF) maxF.value = rate ? __kFormatMoney(rate) : "";
-  var rb = rbF ? __kParseMoney(rbF.value) : 0;
-  if(totF) totF.value = rate ? __kFormatMoney(rate + rb) : __kFormatMoney(rb);
+  var rb = __kReadRoomBoard(${acrobatJsStringLiteral(roomBoardField)});
+  // Room & board first; add KP-approved tier rate when Dropdown is set.
+  if(totF) totF.value = __kFormatMoney(rate + rb);
 }catch(e){}
 `.trim();
 }
 
 /** Calculate script for Max Expense — blank until KP selects an approved tier. */
-export function buildKaiserMaxExpenseCalculateScript(tierField: string): string {
+export function buildKaiserMaxExpenseCalculateScript(
+  tierField: string,
+  opts?: { bakedRoomBoard?: string }
+): string {
   return `
-${acrobatHelpersBlock()}
+${acrobatHelpersBlock({ bakedRoomBoard: opts?.bakedRoomBoard })}
 try{
   var rate=__kTierRate(this.getField("${tierField}").value);
   event.value = rate ? __kFormatMoney(rate) : "";
@@ -131,23 +179,26 @@ try{
 /**
  * Calculate script for Total Costs.
  * Starts as member room & board only; adds KP-approved tier rate when Dropdown is set.
- * Never uses ILS requested tier.
+ * Never uses ILS requested tier. Baked room & board prevents $0.00 when getField fails.
  */
 export function buildKaiserTotalCostsCalculateScript(opts: {
   tierField: string;
   maxField: string;
   roomBoardField: string;
+  bakedRoomBoard?: string;
 }): string {
-  const { tierField, roomBoardField } = opts;
+  const { tierField, roomBoardField, bakedRoomBoard } = opts;
   return `
-${acrobatHelpersBlock()}
+${acrobatHelpersBlock({
+  bakedRoomBoard,
+  roomBoardFields: [roomBoardField, ...KAISER_COVER_ROOM_BOARD_FIELD_ALIASES],
+})}
 try{
   var rate=__kTierRate(this.getField("${tierField}").value);
-  var rbF=this.getField("${roomBoardField}");
-  var rb = rbF ? __kParseMoney(rbF.value) : 0;
+  var rb = __kReadRoomBoard(${acrobatJsStringLiteral(roomBoardField)});
   // No KP tier yet → show member financial responsibility only.
   event.value = __kFormatMoney(rate + rb);
-}catch(e){event.value="$0.00";}
+}catch(e){event.value=__kFormatMoney(__kParseMoney(__kBakedRoomBoard));}
 `.trim();
 }
 
@@ -161,9 +212,13 @@ export function buildKaiserTierDropdownChangeScript(opts: {
   maxField: string;
   roomBoardField: string;
   totalField: string;
+  bakedRoomBoard?: string;
 }): string {
   return `
-${acrobatHelpersBlock()}
+${acrobatHelpersBlock({
+  bakedRoomBoard: opts.bakedRoomBoard,
+  roomBoardFields: [opts.roomBoardField, ...KAISER_COVER_ROOM_BOARD_FIELD_ALIASES],
+})}
 try{
   var __kOverrideTier = null;
   if (typeof event != "undefined") {
@@ -185,15 +240,16 @@ try{
 `.trim();
 }
 
-export function buildKaiserTierCalcAcrobatScript(): string {
+export function buildKaiserTierCalcAcrobatScript(opts?: { bakedRoomBoard?: string }): string {
   return `
-${acrobatHelpersBlock()}
+${acrobatHelpersBlock({ bakedRoomBoard: opts?.bakedRoomBoard })}
 function kaiserOnAuthTierChange(){
   ${buildKaiserTierDropdownChangeScript({
     tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
     maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
     roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
     totalField: KAISER_COVER_AUTH_TOTAL_FIELD,
+    bakedRoomBoard: opts?.bakedRoomBoard,
   })}
 }
 function kaiserOnReauthTierChange(){
@@ -202,6 +258,7 @@ function kaiserOnReauthTierChange(){
     maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
     roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
     totalField: KAISER_COVER_REAUTH_TOTAL_FIELD,
+    bakedRoomBoard: opts?.bakedRoomBoard,
   })}
 }
 `.trim();

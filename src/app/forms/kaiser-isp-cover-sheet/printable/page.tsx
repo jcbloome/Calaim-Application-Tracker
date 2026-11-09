@@ -13,6 +13,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 import {
   computeCoverSheetTotalCosts,
+  formatCoverSheetMoney,
   KAISER_COVER_SHEET_TIER_RATES,
 } from '@/lib/kaiser-cover-sheet-tier-rates';
 
@@ -1038,7 +1039,7 @@ function KaiserIspCoverSheetPrintableContent() {
                         <span className="font-semibold">Auto Calculated Total Costs now:</span>{' '}
                         {expectedTotalCosts.totalLabel}
                         {expectedTotalCosts.roomBoard
-                          ? ` (member room & board ${expectedTotalCosts.totalLabel}; KP tier not selected yet)`
+                          ? ` (starts as member room & board ${formatCoverSheetMoney(expectedTotalCosts.roomBoard)}; KP tier adds later when Kaiser selects it)`
                           : ' — enter Client Financial Responsibility above so Total is not $0.00'}
                       </div>
                       <div className="mt-0.5">

@@ -8,6 +8,12 @@
 
 ---
 
+## Changes 2026-11-09
+
+- **Kaiser ISP Cover Sheet — Auto calculated Total Costs no longer stuck at $0.00.** Total Costs still starts as member room & board, then adds the KP-approved tier rate when Kaiser picks the tier. Acrobat Calculate scripts now bake the room & board amount and try multiple field-name aliases, so production PDFs do not wipe Total Costs to `$0.00` when `getField` fails. Catch paths fall back to baked room & board instead of `$0.00`.
+  - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `handoff.md`.
+  - Commit: _(pending)_.
+
 ## Changes 2026-11-06
 
 - **Batch Eligibility Log — MCP on runs + not-eligible RCFE list + Kaiser inactive RCFE email.** Log table shows MCP (Health Net / Kaiser) on every run. **Not eligible** opens the inactive member list with Caspio `RCFE_Name` + `RCFE_Admin_Email` (supports multiple emails) plus owner/registration contacts — same sources as RCFE Bulk Email. 271 matching prefers Caspio rows that have RCFE name/email when IDs collide. CSV export. For Kaiser runs: NCAL/SCAL guest eligibility buttons (new window) plus per-row Check by region; group by RCFE; send/resend inactive Medi-Cal notice (member/POA call Kaiser to reinstate); always CC `jason@carehomefinders.com`. Decode results table also shows RCFE columns.

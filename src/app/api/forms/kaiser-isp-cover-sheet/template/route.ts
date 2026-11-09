@@ -1050,20 +1050,24 @@ export async function GET(req: NextRequest) {
 
     // Acrobat scripts: KP Tier dropdown → Max Tier Expenses + Total Costs.
     // Use Calculate on expense/total fields (reliable on recalc) plus Keystroke/Blur/Validate on the dropdown.
+    // Bake room & board into scripts so Auto calculated never falls back to $0.00 when getField fails.
     try {
-      pdfDoc.addJavaScript('KaiserTierRates', buildKaiserTierCalcAcrobatScript());
+      const bakedRoomBoard = roomBoardAmount || '';
+      pdfDoc.addJavaScript('KaiserTierRates', buildKaiserTierCalcAcrobatScript({ bakedRoomBoard }));
 
       const authTierChange = buildKaiserTierDropdownChangeScript({
         tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
         maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
         roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
         totalField: KAISER_COVER_AUTH_TOTAL_FIELD,
+        bakedRoomBoard,
       });
       const reauthTierChange = buildKaiserTierDropdownChangeScript({
         tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
         maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
         roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
         totalField: KAISER_COVER_REAUTH_TOTAL_FIELD,
+        bakedRoomBoard,
       });
 
       const authKp = getFieldMaybe(KAISER_COVER_AUTH_KP_TIER_FIELD) as AcroFieldWithDict | null;
@@ -1078,12 +1082,14 @@ export async function GET(req: NextRequest) {
         maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
         roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
         totalField: KAISER_COVER_AUTH_TOTAL_FIELD,
+        bakedRoomBoard,
       });
       const reauthApply = buildKaiserTierApplyInlineScript({
         tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
         maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
         roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
         totalField: KAISER_COVER_REAUTH_TOTAL_FIELD,
+        bakedRoomBoard,
       });
 
       const authRoomBoard = getFieldMaybe(KAISER_COVER_AUTH_ROOM_BOARD_FIELD) as AcroFieldWithDict | null;
@@ -1107,23 +1113,25 @@ export async function GET(req: NextRequest) {
       // Calculate only from KP-approved tier — never ILS requested tier.
       // Total = member financial responsibility + KP tier (tier may be $0 until selected).
       attachFieldAdditionalActions(pdfDoc, authMax, {
-        C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_AUTH_KP_TIER_FIELD),
+        C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_AUTH_KP_TIER_FIELD, { bakedRoomBoard }),
       });
       attachFieldAdditionalActions(pdfDoc, authTotal, {
         C: buildKaiserTotalCostsCalculateScript({
           tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
           maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
           roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
+          bakedRoomBoard,
         }),
       });
       attachFieldAdditionalActions(pdfDoc, reauthMax, {
-        C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_REAUTH_KP_TIER_FIELD),
+        C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_REAUTH_KP_TIER_FIELD, { bakedRoomBoard }),
       });
       attachFieldAdditionalActions(pdfDoc, reauthTotal, {
         C: buildKaiserTotalCostsCalculateScript({
           tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
           maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
           roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
+          bakedRoomBoard,
         }),
       });
 
