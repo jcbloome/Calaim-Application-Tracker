@@ -10,6 +10,10 @@
 
 ## Changes 2026-11-09
 
+- **App Hosting — exclude Electron desktop from Next typecheck.** `next build` was failing on `desktop/main.ts` (`Cannot find module 'electron'`). Root `tsconfig.json` now excludes `desktop` and `calaim-pathfinder` (same pattern as `functions`).
+  - Files: `tsconfig.json`, `handoff.md`.
+  - Commit: _(pending)_.
+
 - **ALFT tracker final review — green Completed + RN suggested tier banner.** At the top of the member ISP/ALFT review form (Final / Download), show a green status card with **Status: Completed** and **RN suggested tier** (notes that admin may request a different tier later). Also used as a small App Hosting build-smoke change.
   - Files: `src/app/admin/alft-tracker/components/IspTrackerProgression.tsx`, `src/app/admin/alft-tracker/page.tsx`, `handoff.md`.
   - Commit: `aa0ad4c9`.
