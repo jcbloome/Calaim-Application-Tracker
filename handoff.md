@@ -10,6 +10,9 @@
 
 ## Changes 2026-11-10
 
+- **Kaiser Cover Sheet — restore Yes/No on facility vetted (not Tier levels).** Generator/upgrade repair `Dropdown9`/`Dropdown21` (and related Yes/No fields) back to Select/Yes/No if they were wrongly given Tier 1–5. KP tier repair never touches Yes/No field names; legacy `Dropdown8` is only used as KP tier when it already has tier options.
+  - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `handoff.md`.
+
 - **Kaiser Cover Sheet — KP Tier Level blank + Tier 1–5; Auto Calculated = room & board; downloads color/filter.** KP dropdown forced to **Select from drop down** + Tier 1–5 (clears stale Yes/No). Never treat current-template `Dropdown8` as KP tier. **Auto Calculated Total Costs** starts as member room & board; KP tier adds in Acrobat. Downloads list: sky/amber Initial vs Reauth badges + cover-type filter; removed **New Total Costs** badge. Ran full finished-cover upgrade 2026-11-10 (~270s).
   - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/lib/kaiser-isp-cover-sheet-template.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/route.ts`, `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `handoff.md`.
   - Commit: `8166c7bd`.

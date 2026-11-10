@@ -7,6 +7,7 @@ import {
   buildKaiserTotalCostsCalculateScript,
   computeCoverSheetTotalCosts,
   dropdownOptionsLookLikeTiers,
+  dropdownOptionsLookLikeYesNo,
   formatCoverSheetMoney,
   KAISER_COVER_AUTH_KP_TIER_FIELD,
   KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
@@ -23,6 +24,8 @@ import {
   KAISER_COVER_REAUTH_MAX_FIELD_NAMES,
   KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_NAMES,
   KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES,
+  KAISER_COVER_YES_NO_DROPDOWN_NAMES,
+  KAISER_COVER_YES_NO_OPTIONS,
   normalizeCoverSheetMoneyLabel,
   parseKaiserTierNumber,
   parseMoneyAmount,
@@ -45,22 +48,54 @@ type AcroFieldWithDict = {
   disableReadOnly?: () => void;
 };
 
+function findPlaceholderOption(options: string[]): string {
+  return (
+    options.find((option) => {
+      const normalized = String(option || '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+      return !normalized || normalized.includes('select from drop down') || normalized.startsWith('select');
+    }) || ''
+  );
+}
+
+/** Restore Yes/No options on vetted / ALW-county fields if they were wrongly turned into tiers. */
+function ensureYesNoDropdownOptions(field: AcroFieldWithDict | null | undefined): void {
+  if (!field || typeof field.getOptions !== 'function') return;
+  try {
+    const options = field.getOptions() || [];
+    const selected = String(field.getSelected?.()?.[0] || '').trim();
+    if (dropdownOptionsLookLikeTiers(options) && typeof field.setOptions === 'function') {
+      field.setOptions([...KAISER_COVER_YES_NO_OPTIONS]);
+    } else if (!dropdownOptionsLookLikeYesNo(options) && typeof field.setOptions === 'function') {
+      field.setOptions([...KAISER_COVER_YES_NO_OPTIONS]);
+    }
+    const nextOptions = field.getOptions() || [];
+    const keep =
+      selected &&
+      nextOptions.some((option) => String(option || '').toLowerCase() === selected.toLowerCase())
+        ? selected
+        : findPlaceholderOption(nextOptions) || KAISER_COVER_YES_NO_OPTIONS[0];
+    if (keep && typeof field.select === 'function') field.select(keep);
+  } catch {
+    // ignore
+  }
+}
+
 function ensureKpTierOptions(field: AcroFieldWithDict | null | undefined): void {
   if (!field || typeof field.getOptions !== 'function') return;
   try {
+    const fieldName = String(field.getName?.() || '');
+    // Never convert Yes/No fields (e.g. Dropdown8 In-ALW-County / Dropdown9 vetted) into tiers.
+    if ((KAISER_COVER_YES_NO_DROPDOWN_NAMES as readonly string[]).includes(fieldName)) return;
     const options = field.getOptions();
+    if (dropdownOptionsLookLikeYesNo(options)) return;
     if (!dropdownOptionsLookLikeTiers(options) && typeof field.setOptions === 'function') {
       field.setOptions([...KAISER_COVER_KP_TIER_OPTIONS]);
     }
     const nextOptions = field.getOptions() || [];
-    const placeholder =
-      nextOptions.find((option) => {
-        const normalized = String(option || '')
-          .toLowerCase()
-          .replace(/\s+/g, ' ')
-          .trim();
-        return !normalized || normalized.includes('select from drop down') || normalized.startsWith('select');
-      }) || KAISER_COVER_KP_TIER_OPTIONS[0];
+    const placeholder = findPlaceholderOption(nextOptions) || KAISER_COVER_KP_TIER_OPTIONS[0];
     // Always re-select placeholder so a leftover "No"/"Yes" cannot stick on KP Tier Level.
     if (placeholder && typeof field.select === 'function') field.select(placeholder);
     else if (typeof field.clear === 'function') field.clear();
@@ -202,7 +237,7 @@ export async function upgradeKaiserCoverSheetPdf(
   const reauthMaxResolved = firstExisting(KAISER_COVER_REAUTH_MAX_FIELD_NAMES);
   const reauthTotalResolved = firstExisting(KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES);
   // Prefer Dropdown25. On current templates Dropdown8 is In-ALW-County Yes/No — never use it
-  // as KP tier when Dropdown25 exists. On legacy PDFs (no Dropdown25), repair Dropdown8 to Tier 1–5.
+  // as KP tier when Dropdown25 exists. Legacy Dropdown8 only if it already has tier options.
   let reauthKpName = KAISER_COVER_REAUTH_KP_TIER_FIELD;
   let reauthKp: AcroFieldWithDict | null = null;
   const reauthKpPrimary = getField(KAISER_COVER_REAUTH_KP_TIER_FIELD);
@@ -211,10 +246,15 @@ export async function upgradeKaiserCoverSheetPdf(
     reauthKpName = KAISER_COVER_REAUTH_KP_TIER_FIELD;
   } else {
     const legacyKp = getField(KAISER_COVER_REAUTH_KP_TIER_FIELD_LEGACY);
-    if (legacyKp) {
+    const legacyOpts = legacyKp && typeof legacyKp.getOptions === 'function' ? legacyKp.getOptions() : [];
+    if (legacyKp && dropdownOptionsLookLikeTiers(legacyOpts)) {
       reauthKp = legacyKp;
       reauthKpName = KAISER_COVER_REAUTH_KP_TIER_FIELD_LEGACY;
     }
+  }
+  // Repair Yes/No fields first (vetted / ALW county) if a prior upgrade corrupted them to tiers.
+  for (const name of KAISER_COVER_YES_NO_DROPDOWN_NAMES) {
+    ensureYesNoDropdownOptions(getField(name));
   }
   ensureKpTierOptions(authKp);
   ensureKpTierOptions(reauthKp);

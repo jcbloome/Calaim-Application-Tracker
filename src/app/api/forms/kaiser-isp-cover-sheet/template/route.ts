@@ -23,6 +23,7 @@ import {
   buildKaiserTotalCostsCalculateScript,
   computeCoverSheetTotalCosts,
   dropdownOptionsLookLikeTiers,
+  dropdownOptionsLookLikeYesNo,
   KAISER_COVER_AUTH_KP_TIER_FIELD,
   KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
@@ -32,6 +33,8 @@ import {
   KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
   KAISER_COVER_REAUTH_TOTAL_FIELD,
+  KAISER_COVER_YES_NO_DROPDOWN_NAMES,
+  KAISER_COVER_YES_NO_OPTIONS,
 } from '@/lib/kaiser-cover-sheet-tier-rates';
 import { KAISER_COVER_TEMPLATE_SETTINGS_DOC } from '@/lib/kaiser-isp-cover-sheet-template';
 
@@ -272,6 +275,7 @@ type RadioFieldLike = { getOptions: () => string[]; select: (value: string) => v
 type DropdownFieldLike = {
   getName?: () => string;
   getOptions: () => string[];
+  getSelected?: () => string[];
   select: (value: string) => void;
   clear?: () => void;
   setOptions?: (options: string[]) => void;
@@ -286,6 +290,36 @@ const KP_ONLY_DROPDOWN_NAMES = new Set([
   KAISER_COVER_REAUTH_KP_TIER_FIELD,
 ]);
 
+/** Restore Yes/No options when a vetted/ALW field was wrongly given Tier choices. */
+function ensureKaiserYesNoDropdownOptions(field: DropdownFieldLike | null | undefined): void {
+  if (!field || typeof field.getOptions !== 'function') return;
+  try {
+    const options = field.getOptions();
+    const selected =
+      typeof (field as { getSelected?: () => string[] }).getSelected === 'function'
+        ? clean((field as { getSelected: () => string[] }).getSelected()?.[0])
+        : '';
+    if (
+      (dropdownOptionsLookLikeTiers(options) || !dropdownOptionsLookLikeYesNo(options)) &&
+      typeof field.setOptions === 'function'
+    ) {
+      field.setOptions([...KAISER_COVER_YES_NO_OPTIONS]);
+    }
+    const nextOptions = field.getOptions();
+    const keep =
+      selected &&
+      Array.isArray(nextOptions) &&
+      nextOptions.some((option) => String(option || '').toLowerCase() === selected.toLowerCase())
+        ? nextOptions.find((option) => String(option || '').toLowerCase() === selected.toLowerCase()) ||
+          selected
+        : (Array.isArray(nextOptions) && nextOptions.find((option) => isPlaceholderDropdownOption(option))) ||
+          KAISER_COVER_YES_NO_OPTIONS[0];
+    if (keep) field.select(keep);
+  } catch {
+    // Keep generating even if one Yes/No widget cannot be repaired.
+  }
+}
+
 /**
  * Force KP Tier Level dropdowns to Select-from-drop-down + Tier 1–5 only.
  * Clears any stale Yes/No selection left from wrong options or prior fills.
@@ -293,7 +327,10 @@ const KP_ONLY_DROPDOWN_NAMES = new Set([
 function ensureKaiserKpTierDropdownOptions(field: DropdownFieldLike | null | undefined): void {
   if (!field || typeof field.getOptions !== 'function') return;
   try {
+    const fieldName = String(field.getName?.() || '');
+    if ((KAISER_COVER_YES_NO_DROPDOWN_NAMES as readonly string[]).includes(fieldName)) return;
     const options = field.getOptions();
+    if (dropdownOptionsLookLikeYesNo(options)) return;
     const needsRepair = !dropdownOptionsLookLikeTiers(options);
     if (needsRepair && typeof field.setOptions === 'function') {
       field.setOptions([...KAISER_COVER_KP_TIER_OPTIONS]);
@@ -1233,6 +1270,11 @@ export async function GET(req: NextRequest) {
         if (maxField && isTextFieldLike(maxField)) maxField.setText('');
         const totalField = getFieldMaybe(KAISER_COVER_REAUTH_TOTAL_FIELD);
         if (totalField && isTextFieldLike(totalField)) totalField.setText(totals.totalLabel);
+      }
+      // Keep vetted / ALW-county dropdowns on Yes/No (never Tier 1–5).
+      for (const yesNoName of KAISER_COVER_YES_NO_DROPDOWN_NAMES) {
+        const yesNoField = getFieldMaybe(yesNoName);
+        if (yesNoField && isDropdownFieldLike(yesNoField)) ensureKaiserYesNoDropdownOptions(yesNoField);
       }
       for (const kpName of KP_ONLY_DROPDOWN_NAMES) {
         const kpField = getFieldMaybe(kpName);

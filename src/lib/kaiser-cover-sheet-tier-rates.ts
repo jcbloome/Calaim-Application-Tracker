@@ -64,6 +64,24 @@ export const KAISER_COVER_KP_TIER_OPTIONS = [
   'Tier 5',
 ] as const;
 
+/** Canonical Yes/No dropdown choices (facility vetted, ALW county, etc.). */
+export const KAISER_COVER_YES_NO_OPTIONS = ['Select from drop down', 'Yes', 'No'] as const;
+
+/**
+ * Auth/reauth Yes/No combo boxes that must never become Tier 1–5.
+ * Includes Dropdown8 on the current template (In ALW County) — only legacy PDFs used it for KP tier.
+ */
+export const KAISER_COVER_YES_NO_DROPDOWN_NAMES = [
+  'Dropdown4',
+  'Dropdown6',
+  'Dropdown8',
+  'Dropdown9', // Facility vetted / SCA contracted (auth)
+  'Dropdown18',
+  'Dropdown20',
+  'Dropdown21', // Facility vetted / SCA contracted (reauth)
+  'Dropdown34',
+] as const;
+
 export function dropdownOptionsLookLikeTiers(options: unknown): boolean {
   const list = Array.isArray(options) ? options.map((o) => String(o || '').toLowerCase()) : [];
   const joined = list.join(' | ');
