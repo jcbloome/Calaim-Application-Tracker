@@ -135,7 +135,7 @@ export function EligibilityResultsCard({
     if (!getIdToken) return;
     setIsSaving(true);
     try {
-      const counts = countEligibilityRows(buildEligibilityResultRows(decoded, members));
+      const counts = countEligibilityRows(buildEligibilityResultRows(decoded, members, { plan }));
       const loggedPlan = inferBatchEligibilityPlanFrom271(decoded, plan);
       const payerIds = [...new Set(decoded.map((r) => String(r.payerId || '').replace(/\D/g, '')).filter(Boolean))];
       const form = new FormData();
@@ -179,7 +179,10 @@ export function EligibilityResultsCard({
     await saveToLog(files, decoded);
   };
 
-  const rows = useMemo(() => buildEligibilityResultRows(results, members), [results, members]);
+  const rows = useMemo(
+    () => buildEligibilityResultRows(results, members, { plan }),
+    [results, members, plan]
+  );
   const counts = useMemo(() => countEligibilityRows(rows), [rows]);
 
   /** Filter the table to a bucket and select only those visible rows (for re-check / download). */
@@ -454,7 +457,11 @@ export function EligibilityResultsCard({
                     return (
                       <Fragment key={row.key}>
                         <TableRow
-                          className={`cursor-pointer ${row.flag === 'lost' || row.flag === 'gained' ? 'bg-amber-50/60' : ''}`}
+                          className={`cursor-pointer ${
+                            row.flag === 'lost' || row.flag === 'gained' || row.flag === 'active_again'
+                              ? 'bg-amber-50/60'
+                              : ''
+                          }`}
                           onClick={() =>
                             setExpanded((prev) => {
                               const next = new Set(prev);
@@ -512,8 +519,18 @@ export function EligibilityResultsCard({
                             <CaspioMemberStatusCell member={row.member} />
                             {row.flag !== 'none' ? (
                               <Badge
-                                variant={row.flag === 'unmatched' ? 'outline' : 'destructive'}
-                                className="mt-1 whitespace-normal"
+                                variant={
+                                  row.flag === 'unmatched'
+                                    ? 'outline'
+                                    : row.flag === 'active_again'
+                                      ? 'default'
+                                      : 'destructive'
+                                }
+                                className={
+                                  row.flag === 'active_again'
+                                    ? 'mt-1 whitespace-normal border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-100'
+                                    : 'mt-1 whitespace-normal'
+                                }
                               >
                                 {ELIGIBILITY_FLAG_LABELS[row.flag]}
                               </Badge>

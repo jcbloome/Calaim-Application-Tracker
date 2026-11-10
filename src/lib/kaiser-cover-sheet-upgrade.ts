@@ -15,6 +15,13 @@ import {
   KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
   KAISER_COVER_REAUTH_TOTAL_FIELD,
+  KAISER_COVER_AUTH_MAX_FIELD_NAMES,
+  KAISER_COVER_AUTH_TOTAL_FIELD_NAMES,
+  KAISER_COVER_REAUTH_KP_TIER_FIELD_NAMES,
+  KAISER_COVER_REAUTH_MAX_FIELD_NAMES,
+  KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_NAMES,
+  KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES,
+  normalizeCoverSheetMoneyLabel,
   parseKaiserTierNumber,
   parseMoneyAmount,
 } from '@/lib/kaiser-cover-sheet-tier-rates';
@@ -77,7 +84,21 @@ function attachFieldAdditionalActions(
 
 function readText(field: AcroFieldWithDict | null | undefined): string {
   try {
-    return String(field?.getText?.() || '').trim();
+    const fromApi = String(field?.getText?.() || '').trim();
+    if (fromApi) return fromApi;
+  } catch {
+    // fall through to raw dict
+  }
+  try {
+    const dict = field?.acroField?.dict as
+      | { lookup?: (key: unknown) => { toString?: () => string } | undefined }
+      | undefined;
+    const raw = dict?.lookup?.(PDFName.of('V'));
+    const asString = String(raw?.toString?.() || '').trim();
+    // pdf-lib may stringify as ( $500.00 ) or <FEFF...>
+    const paren = asString.match(/^\((.*)\)$/s);
+    if (paren) return paren[1].replace(/\\([nrt\\()])/g, '$1').trim();
+    return asString.replace(/^<|>$/g, '').trim();
   } catch {
     return '';
   }
@@ -99,15 +120,10 @@ function setText(field: AcroFieldWithDict | null | undefined, value: string) {
   }
 }
 
-function normalizeMoneyLabel(value: unknown): string {
-  const amount = parseMoneyAmount(value);
-  if (!amount && !String(value || '').replace(/[^0-9.]/g, '')) return '';
-  return formatCoverSheetMoney(amount);
-}
-
 /**
  * Upgrade an already-generated Kaiser cover sheet PDF:
  * - Total Costs = member room & board (then + KP tier if already selected)
+ * - Works for both Authorization (Auto calculated) and Reauthorization (Text23)
  * - Max Tier Expenses blank unless KP tier is set
  * - Refresh field appearances so Chrome/Acrobat show the new amounts (not stale $0.00)
  * - Attach current Acrobat calc scripts
@@ -127,37 +143,84 @@ export async function upgradeKaiserCoverSheetPdf(
     }
   };
 
+  const firstExisting = (names: readonly string[]) => {
+    for (const name of names) {
+      const field = getField(name);
+      if (field) return { name, field };
+    }
+    return { name: names[0] || '', field: null as AcroFieldWithDict | null };
+  };
+
   const authRoom = getField(KAISER_COVER_AUTH_ROOM_BOARD_FIELD);
-  const authMax = getField(KAISER_COVER_AUTH_MAX_EXPENSE_FIELD);
-  const authTotal = getField(KAISER_COVER_AUTH_TOTAL_FIELD);
-  const authKp = getField(KAISER_COVER_AUTH_KP_TIER_FIELD);
-  const reauthRoomPrimary = getField(KAISER_COVER_REAUTH_ROOM_BOARD_FIELD);
-  const reauthRoomLegacy = getField('Text3');
-  const reauthMax = getField(KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD);
-  const reauthTotal = getField(KAISER_COVER_REAUTH_TOTAL_FIELD);
-  const reauthKp = getField(KAISER_COVER_REAUTH_KP_TIER_FIELD);
+  const authMaxResolved = firstExisting(KAISER_COVER_AUTH_MAX_FIELD_NAMES);
+  const authTotalResolved = firstExisting(KAISER_COVER_AUTH_TOTAL_FIELD_NAMES);
+  const authKpResolved = firstExisting([KAISER_COVER_AUTH_KP_TIER_FIELD, 'Dropdown13']);
+  const authKp = authKpResolved.field;
+  const authMax = authMaxResolved.field;
+  const authTotal = authTotalResolved.field;
+  const authMaxName = authMaxResolved.name || KAISER_COVER_AUTH_MAX_EXPENSE_FIELD;
+  const authTotalName = authTotalResolved.name || KAISER_COVER_AUTH_TOTAL_FIELD;
+  const authKpName = authKpResolved.name || KAISER_COVER_AUTH_KP_TIER_FIELD;
 
-  const overrideRoom = normalizeMoneyLabel(options.roomBoardAmount);
-  const pdfAuthRoom = normalizeMoneyLabel(readText(authRoom));
-  const pdfReauthRoom = normalizeMoneyLabel(readText(reauthRoomPrimary) || readText(reauthRoomLegacy));
-
-  let roomBoardSource: UpgradeKaiserCoverSheetResult['roomBoardSource'] = 'none';
-  let authRoomValue = pdfAuthRoom;
-  let reauthRoomValue = pdfReauthRoom;
-
-  if (pdfAuthRoom || pdfReauthRoom) {
-    roomBoardSource = 'pdf';
-  } else if (overrideRoom) {
-    roomBoardSource = 'override';
-    authRoomValue = overrideRoom;
-    reauthRoomValue = overrideRoom;
-  }
+  const reauthRoomFields = KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_NAMES.map((name) => ({
+    name,
+    field: getField(name),
+  })).filter((row) => row.field);
+  const reauthRoomPrimary = reauthRoomFields[0]?.field || null;
+  const reauthRoomLegacy = reauthRoomFields[1]?.field || getField('Text3');
+  const reauthMaxResolved = firstExisting(KAISER_COVER_REAUTH_MAX_FIELD_NAMES);
+  const reauthTotalResolved = firstExisting(KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES);
+  const reauthKpResolved = firstExisting(KAISER_COVER_REAUTH_KP_TIER_FIELD_NAMES);
+  const reauthMax = reauthMaxResolved.field;
+  const reauthTotal = reauthTotalResolved.field;
+  const reauthKp = reauthKpResolved.field;
+  const reauthMaxName = reauthMaxResolved.name || KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD;
+  const reauthTotalName = reauthTotalResolved.name || KAISER_COVER_REAUTH_TOTAL_FIELD;
+  const reauthKpName = reauthKpResolved.name || KAISER_COVER_REAUTH_KP_TIER_FIELD;
+  const reauthRoomName = reauthRoomFields[0]?.name || KAISER_COVER_REAUTH_ROOM_BOARD_FIELD;
 
   const coverType = String(options.coverPageType || '').toLowerCase();
   const isReauth = coverType.includes('reauth');
 
-  // Fill blank room & board fields from Caspio override when the archived PDF had none.
-  if (overrideRoom) {
+  const overrideRoom = normalizeCoverSheetMoneyLabel(options.roomBoardAmount);
+  // Treat template placeholders (0 / $0.00) as blank.
+  const pdfAuthRoom = normalizeCoverSheetMoneyLabel(readText(authRoom));
+  const pdfReauthRoom = normalizeCoverSheetMoneyLabel(
+    reauthRoomFields.map((row) => readText(row.field)).find(Boolean) || ''
+  );
+
+  // Prefer the strongest non-zero room & board we can find (PDF section or Caspio).
+  const bestRoomAmount = Math.max(
+    parseMoneyAmount(pdfReauthRoom),
+    parseMoneyAmount(pdfAuthRoom),
+    parseMoneyAmount(overrideRoom)
+  );
+  const bestRoom = bestRoomAmount ? formatCoverSheetMoney(bestRoomAmount) : '';
+
+  let roomBoardSource: UpgradeKaiserCoverSheetResult['roomBoardSource'] = 'none';
+  if (pdfReauthRoom || pdfAuthRoom) roomBoardSource = 'pdf';
+  else if (overrideRoom) roomBoardSource = 'override';
+
+  let authRoomValue = pdfAuthRoom || (!isReauth ? bestRoom : '');
+  let reauthRoomValue = pdfReauthRoom || bestRoom;
+
+  // Reauth cover sheets: always ensure Text22/Text3 + Text23 can see the room & board amount.
+  if (isReauth && bestRoom) {
+    reauthRoomValue = bestRoom;
+    if (!pdfReauthRoom) {
+      setText(reauthRoomPrimary, bestRoom);
+      setText(reauthRoomLegacy, bestRoom);
+    }
+  } else if (!isReauth && bestRoom) {
+    authRoomValue = bestRoom;
+    if (!pdfAuthRoom) setText(authRoom, bestRoom);
+    // Keep reauth fields in sync so page 6 is correct if staff flips pages.
+    if (!pdfReauthRoom) {
+      setText(reauthRoomPrimary, bestRoom);
+      setText(reauthRoomLegacy, bestRoom);
+    }
+    if (!reauthRoomValue) reauthRoomValue = bestRoom;
+  } else if (overrideRoom) {
     if (!pdfAuthRoom && !isReauth) setText(authRoom, overrideRoom);
     if (!pdfReauthRoom) {
       setText(reauthRoomPrimary, overrideRoom);
@@ -165,25 +228,29 @@ export async function upgradeKaiserCoverSheetPdf(
     }
     if (!authRoomValue) authRoomValue = overrideRoom;
     if (!reauthRoomValue) reauthRoomValue = overrideRoom;
-    if (roomBoardSource === 'none') roomBoardSource = 'override';
   }
 
   const authTier = parseKaiserTierNumber(readDropdown(authKp));
   const reauthTier = parseKaiserTierNumber(readDropdown(reauthKp));
   const authComputed = computeCoverSheetTotalCosts({
     tier: authTier,
-    roomBoardAmount: authRoomValue,
+    roomBoardAmount: authRoomValue || bestRoom,
   });
   const reauthComputed = computeCoverSheetTotalCosts({
     tier: reauthTier,
-    roomBoardAmount: reauthRoomValue,
+    roomBoardAmount: reauthRoomValue || bestRoom,
   });
 
   // Always rewrite totals from room & board (+ KP tier if already selected).
+  // Current template: Text23 / Auto calculated. Older archived PDFs: Text10 / Text15.
   setText(authMax, authComputed.maxExpenseLabel);
   setText(authTotal, authComputed.totalLabel);
+  for (const name of KAISER_COVER_AUTH_TOTAL_FIELD_NAMES) setText(getField(name), authComputed.totalLabel);
+  for (const name of KAISER_COVER_AUTH_MAX_FIELD_NAMES) setText(getField(name), authComputed.maxExpenseLabel);
   setText(reauthMax, reauthComputed.maxExpenseLabel);
   setText(reauthTotal, reauthComputed.totalLabel);
+  for (const name of KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES) setText(getField(name), reauthComputed.totalLabel);
+  for (const name of KAISER_COVER_REAUTH_MAX_FIELD_NAMES) setText(getField(name), reauthComputed.maxExpenseLabel);
 
   // Match generator: fixed Helvetica DA so appearance text is readable.
   const fixedDa = PDFString.of('/Helv 9 Tf 0 g');
@@ -199,7 +266,7 @@ export async function upgradeKaiserCoverSheetPdf(
     }
   }
 
-  const bakedRoomBoard = authRoomValue || reauthRoomValue || overrideRoom || '';
+  const bakedRoomBoard = reauthRoomValue || authRoomValue || bestRoom || overrideRoom || '';
 
   try {
     pdfDoc.addJavaScript('KaiserTierRates', buildKaiserTierCalcAcrobatScript({ bakedRoomBoard }));
@@ -208,31 +275,31 @@ export async function upgradeKaiserCoverSheetPdf(
   }
 
   const authApply = buildKaiserTierApplyInlineScript({
-    tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
-    maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
+    tierField: authKpName,
+    maxField: authMaxName,
     roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
-    totalField: KAISER_COVER_AUTH_TOTAL_FIELD,
+    totalField: authTotalName,
     bakedRoomBoard,
   });
   const reauthApply = buildKaiserTierApplyInlineScript({
-    tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
-    maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
-    roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
-    totalField: KAISER_COVER_REAUTH_TOTAL_FIELD,
+    tierField: reauthKpName,
+    maxField: reauthMaxName,
+    roomBoardField: reauthRoomName,
+    totalField: reauthTotalName,
     bakedRoomBoard,
   });
   const authTierChange = buildKaiserTierDropdownChangeScript({
-    tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
-    maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
+    tierField: authKpName,
+    maxField: authMaxName,
     roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
-    totalField: KAISER_COVER_AUTH_TOTAL_FIELD,
+    totalField: authTotalName,
     bakedRoomBoard,
   });
   const reauthTierChange = buildKaiserTierDropdownChangeScript({
-    tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
-    maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
-    roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
-    totalField: KAISER_COVER_REAUTH_TOTAL_FIELD,
+    tierField: reauthKpName,
+    maxField: reauthMaxName,
+    roomBoardField: reauthRoomName,
+    totalField: reauthTotalName,
     bakedRoomBoard,
   });
 
@@ -247,29 +314,28 @@ export async function upgradeKaiserCoverSheetPdf(
     Bl: reauthApply,
   });
   attachFieldAdditionalActions(pdfDoc, authRoom, { Bl: authApply, V: authApply });
-  attachFieldAdditionalActions(pdfDoc, reauthRoomPrimary || reauthRoomLegacy, {
-    Bl: reauthApply,
-    V: reauthApply,
-  });
+  for (const row of reauthRoomFields) {
+    attachFieldAdditionalActions(pdfDoc, row.field, { Bl: reauthApply, V: reauthApply });
+  }
   attachFieldAdditionalActions(pdfDoc, authMax, {
-    C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_AUTH_KP_TIER_FIELD, { bakedRoomBoard }),
+    C: buildKaiserMaxExpenseCalculateScript(authKpName, { bakedRoomBoard }),
   });
   attachFieldAdditionalActions(pdfDoc, authTotal, {
     C: buildKaiserTotalCostsCalculateScript({
-      tierField: KAISER_COVER_AUTH_KP_TIER_FIELD,
-      maxField: KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
+      tierField: authKpName,
+      maxField: authMaxName,
       roomBoardField: KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
       bakedRoomBoard,
     }),
   });
   attachFieldAdditionalActions(pdfDoc, reauthMax, {
-    C: buildKaiserMaxExpenseCalculateScript(KAISER_COVER_REAUTH_KP_TIER_FIELD, { bakedRoomBoard }),
+    C: buildKaiserMaxExpenseCalculateScript(reauthKpName, { bakedRoomBoard }),
   });
   attachFieldAdditionalActions(pdfDoc, reauthTotal, {
     C: buildKaiserTotalCostsCalculateScript({
-      tierField: KAISER_COVER_REAUTH_KP_TIER_FIELD,
-      maxField: KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
-      roomBoardField: KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
+      tierField: reauthKpName,
+      maxField: reauthMaxName,
+      roomBoardField: reauthRoomName,
       bakedRoomBoard,
     }),
   });
@@ -299,13 +365,26 @@ export async function upgradeKaiserCoverSheetPdf(
     // Still save field values even if one appearance fails.
   }
 
+  // Second pass — older templates keep a stale "0" appearance on Text10 / Text15.
+  try {
+    for (const name of KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES) setText(getField(name), reauthComputed.totalLabel);
+    for (const name of KAISER_COVER_AUTH_TOTAL_FIELD_NAMES) setText(getField(name), authComputed.totalLabel);
+    if (reauthRoomValue) {
+      for (const row of reauthRoomFields) setText(row.field, reauthRoomValue);
+      setText(reauthRoomLegacy, reauthRoomValue);
+    }
+    form.updateFieldAppearances(font);
+  } catch {
+    // ignore
+  }
+
   const bytes = await pdfDoc.save({ updateFieldAppearances: false, useObjectStreams: false });
   return {
     bytes: new Uint8Array(bytes),
     authTotal: authComputed.totalLabel,
     reauthTotal: reauthComputed.totalLabel,
-    authRoomBoard: authRoomValue,
-    reauthRoomBoard: reauthRoomValue,
+    authRoomBoard: authRoomValue || bestRoom,
+    reauthRoomBoard: reauthRoomValue || bestRoom,
     roomBoardSource,
   };
 }

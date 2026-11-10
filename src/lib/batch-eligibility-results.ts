@@ -3,6 +3,9 @@ import {
   BATCH_ELIGIBILITY_PLAN_LABELS,
   buildCsv,
   formatDate,
+  isKaiserEligibilityStatus,
+  isKaiserMemberInactiveInCaspio,
+  isMemberDiedCalaimStatus,
   type BatchEligibilityMember,
   type BatchEligibilityPlan,
 } from '@/lib/batch-eligibility';
@@ -17,7 +20,7 @@ import {
   type EligibilityResult,
 } from '@/lib/x12-271';
 
-export type EligibilityFlag = 'lost' | 'gained' | 'unmatched' | 'none';
+export type EligibilityFlag = 'lost' | 'gained' | 'active_again' | 'unmatched' | 'none';
 
 export type EligibilityResultRow = {
   key: string;
@@ -41,6 +44,7 @@ export const ELIGIBILITY_OUTCOME_LABELS: Record<EligibilityOutcome, string> = {
 export const ELIGIBILITY_FLAG_LABELS: Record<Exclude<EligibilityFlag, 'none'>, string> = {
   lost: 'Authorized in Caspio, not active',
   gained: 'Not authorized in Caspio, now active',
+  active_again: 'Inactive in Caspio, active again — resume H2022 six-month visits',
   unmatched: 'Not matched to Caspio cache (check plan tab, ID, or DOB)',
 };
 
@@ -66,15 +70,25 @@ const normName = (value: string) =>
     .replace(/[^A-Z]/g, '');
 
 export const isEligibilityFlagged = (row: EligibilityResultRow) =>
-  row.flag === 'lost' || row.flag === 'gained';
+  row.flag === 'lost' || row.flag === 'gained' || row.flag === 'active_again';
 
 const isAuthorized = (member: BatchEligibilityMember | null) =>
   member?.calaimStatus.trim().toLowerCase() === 'authorized';
 
+const isKaiserMember = (member: BatchEligibilityMember | null, plan?: BatchEligibilityPlan) => {
+  if (plan === 'kaiser') return true;
+  if (plan === 'healthnet') return false;
+  if (!member) return false;
+  const planName = String(member.healthPlan || '').toLowerCase();
+  return planName.includes('kaiser') || Boolean(member.region);
+};
+
 export function buildEligibilityResultRows(
   results: EligibilityResult[],
-  members: BatchEligibilityMember[]
+  members: BatchEligibilityMember[],
+  options?: { plan?: BatchEligibilityPlan }
 ): EligibilityResultRow[] {
+  const plan = options?.plan;
   const byId = new Map<string, BatchEligibilityMember>();
   const byClientId = new Map<string, BatchEligibilityMember>();
   const byNameDob = new Map<string, BatchEligibilityMember>();
@@ -118,45 +132,68 @@ export function buildEligibilityResultRows(
     }
     return undefined;
   };
-  return results.map((result, i) => {
-    const last = normName(result.lastName);
-    const first = normName(result.firstName);
-    const dob = dobKey(result.birthDate);
-    const member =
-      result.traceNumbers.map((t) => byClientId.get(t.trim()) || lookupId(t)).find(Boolean) ||
-      lookupId(result.memberId) ||
-      (last && first && /^\d{8}$/.test(dob) ? byLastFirstDob.get(`${last}|${first}|${dob}`) : undefined) ||
-      (last && /^\d{8}$/.test(dob) ? byNameDob.get(`${last}|${dob}`) : undefined) ||
-      null;
-    let flag: EligibilityFlag = 'none';
-    if (!member) flag = 'unmatched';
-    else if (isAuthorized(member) && result.outcome !== 'active') flag = 'lost';
-    else if (!isAuthorized(member) && result.outcome === 'active') flag = 'gained';
-    return {
-      key: `${i}-${result.memberId}`,
-      result,
-      member,
-      flag,
-      coverage: summarizeCoverage(result),
-      dates: coverageDates(result),
-      primaryDate: primaryCoverageDate(result),
-      entities: otherEntities(result),
-    };
-  });
+  return results
+    .map((result, i) => {
+      const last = normName(result.lastName);
+      const first = normName(result.firstName);
+      const dob = dobKey(result.birthDate);
+      const member =
+        result.traceNumbers.map((t) => byClientId.get(t.trim()) || lookupId(t)).find(Boolean) ||
+        lookupId(result.memberId) ||
+        (last && first && /^\d{8}$/.test(dob) ? byLastFirstDob.get(`${last}|${first}|${dob}`) : undefined) ||
+        (last && /^\d{8}$/.test(dob) ? byNameDob.get(`${last}|${dob}`) : undefined) ||
+        null;
+      let flag: EligibilityFlag = 'none';
+      if (!member) flag = 'unmatched';
+      else if (isKaiserMember(member, plan)) {
+        // Failsafe: Caspio inactive (Kaiser/CalAIM) but 271 active → resume H2022 visits.
+        if (result.outcome === 'active' && isKaiserMemberInactiveInCaspio(member)) {
+          flag = 'active_again';
+        } else if (isKaiserEligibilityStatus(member.calaimStatus) && result.outcome !== 'active') {
+          flag = 'lost';
+        } else if (!isKaiserEligibilityStatus(member.calaimStatus) && result.outcome === 'active') {
+          flag = 'gained';
+        }
+      } else if (isAuthorized(member) && result.outcome !== 'active') {
+        flag = 'lost';
+      } else if (!isAuthorized(member) && result.outcome === 'active') {
+        flag = 'gained';
+      }
+      return {
+        key: `${i}-${result.memberId}`,
+        result,
+        member,
+        flag,
+        coverage: summarizeCoverage(result),
+        dates: coverageDates(result),
+        primaryDate: primaryCoverageDate(result),
+        entities: otherEntities(result),
+      };
+    })
+    .filter((row) => !isMemberDiedCalaimStatus(row.member?.calaimStatus));
 }
 
 export function countEligibilityRows(rows: EligibilityResultRow[]) {
   const c: Record<EligibilityOutcome, number> = { active: 0, inactive: 0, rejected: 0, unknown: 0 };
   let lost = 0;
   let gained = 0;
+  let activeAgain = 0;
   let unmatched = 0;
   for (const row of rows) {
     c[row.result.outcome]++;
     if (row.flag === 'lost') lost++;
     else if (row.flag === 'gained') gained++;
+    else if (row.flag === 'active_again') activeAgain++;
     else if (row.flag === 'unmatched') unmatched++;
   }
-  return { ...c, lost, gained, unmatched, flagged: lost + gained };
+  return {
+    ...c,
+    lost,
+    gained,
+    activeAgain,
+    unmatched,
+    flagged: lost + gained + activeAgain,
+  };
 }
 
 export function reviewBucketLabel(row: EligibilityResultRow) {
@@ -236,11 +273,12 @@ export function downloadEligibilityRowsCsv(
 /** Decode one or more 271 texts and match them to Caspio members for CSV export. */
 export function decodeEligibilityFilesToRows(
   files: Array<{ name: string; text: string }>,
-  members: BatchEligibilityMember[]
+  members: BatchEligibilityMember[],
+  options?: { plan?: BatchEligibilityPlan }
 ) {
   const decoded: EligibilityResult[] = [];
   for (const file of files) {
     decoded.push(...decode271(file.text));
   }
-  return buildEligibilityResultRows(decoded, members);
+  return buildEligibilityResultRows(decoded, members, options);
 }

@@ -10,11 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import {
-  KAISER_ELIGIBILITY_STATUSES,
-  isKaiserEligibilityStatus,
-  type BatchEligibilityMember,
-} from '@/lib/batch-eligibility';
+import { isMemberDiedCalaimStatus, type BatchEligibilityMember } from '@/lib/batch-eligibility';
 import {
   DEFAULT_EDI_270_SETTINGS,
   build270,
@@ -48,9 +44,6 @@ const SETTING_FIELDS: Array<{ key: TextSettingKey; label: string; hint?: string;
   { key: 'serviceType', label: 'Service type code (EQ01)', hint: '30 = health benefit plan coverage' },
 ];
 
-const KAISER_CHECK_STATUSES = [...KAISER_ELIGIBILITY_STATUSES];
-const isCheckedKaiserStatus = isKaiserEligibilityStatus;
-
 export function KaiserBatchEligibility({
   getIdToken,
   mode = 'standalone',
@@ -69,7 +62,7 @@ export function KaiserBatchEligibility({
   const [membersSyncedIso, setMembersSyncedIso] = useState<string | null>(null);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isPullingCaspio, setIsPullingCaspio] = useState(false);
-  const [includedStatuses, setIncludedStatuses] = useState<Set<string>>(new Set(KAISER_CHECK_STATUSES));
+  const [includedStatuses, setIncludedStatuses] = useState<Set<string>>(new Set());
   const [isSavingRun, setIsSavingRun] = useState(false);
 
   const authedFetch = useCallback(
@@ -90,8 +83,18 @@ export function KaiserBatchEligibility({
     setIsLoadingMembers(true);
     try {
       const data = await authedFetch('/api/admin/batch-eligibility/members?plan=kaiser');
-      setMembers(data.members || []);
+      const loaded: BatchEligibilityMember[] = data.members || [];
+      setMembers(loaded);
       setMembersSyncedIso(data.lastSyncedIso || null);
+      // Default: all living CalAIM statuses (Member Died already excluded by API).
+      setIncludedStatuses(
+        new Set(
+          loaded
+            .filter((m) => !isMemberDiedCalaimStatus(m.calaimStatus))
+            .map((m) => m.calaimStatus)
+            .filter(Boolean)
+        )
+      );
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Could not load Kaiser members', description: error?.message });
     } finally {
@@ -157,15 +160,18 @@ export function KaiserBatchEligibility({
 
   const statusCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const s of KAISER_CHECK_STATUSES) counts.set(s, 0);
     for (const m of members) {
-      if (isCheckedKaiserStatus(m.calaimStatus)) counts.set(m.calaimStatus, (counts.get(m.calaimStatus) || 0) + 1);
+      if (isMemberDiedCalaimStatus(m.calaimStatus)) continue;
+      const status = m.calaimStatus || '(no status)';
+      counts.set(status, (counts.get(status) || 0) + 1);
     }
-    return [...counts.entries()];
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }, [members]);
 
   const { included, excluded, regionCounts } = useMemo(() => {
-    const byStatus = members.filter((m) => includedStatuses.has(m.calaimStatus));
+    const byStatus = members.filter(
+      (m) => includedStatuses.has(m.calaimStatus) && !isMemberDiedCalaimStatus(m.calaimStatus)
+    );
     const ok: BatchEligibilityMember[] = [];
     const bad: Array<{ member: BatchEligibilityMember; problems: string[] }> = [];
     for (const m of byStatus) {
@@ -192,7 +198,10 @@ export function KaiserBatchEligibility({
 
   const download270 = async () => {
     const edi = build270(included, settings);
-    const statusLabel = KAISER_CHECK_STATUSES.filter((s) => includedStatuses.has(s)).join(' + ');
+    const statusLabel =
+      includedStatuses.size > 3
+        ? `${includedStatuses.size} statuses`
+        : [...includedStatuses].sort().join(' + ') || 'all living';
     const fileName = `Kaiser 270 eligibility - ${statusLabel} - ${format(new Date(), 'yyyy-MM-dd')}.edi`;
     const blob = new Blob([edi], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -330,7 +339,8 @@ export function KaiserBatchEligibility({
           <CardDescription>
             From the synced Caspio members cache
             {membersSyncedIso ? ` (last synced ${format(new Date(membersSyncedIso), 'MMM d, yyyy h:mm a')})` : ''}.
-            CalAIM_Status Authorized or H2022 are included; untick either to leave it out.
+            All living Kaiser members (except Member Died). Untick statuses to leave them out. Inactive→active
+            again is flagged after decode so H2022 six-month visits can resume.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

@@ -30,14 +30,13 @@ import { useAuth, useUser } from '@/firebase';
 import {
   BATCH_ELIGIBILITY_PLAN_LABELS,
   KAISER_CLAIMMD_PAYER_IDS,
-  KAISER_ELIGIBILITY_STATUSES,
   MEMBER_FIELD_LABELS,
   PLAN_FIXED_VALUES,
   applyKaiserClaimMdDefaults,
   buildCsv,
   buildRow,
   formatDate,
-  isKaiserEligibilityStatus,
+  isMemberDiedCalaimStatus,
   parseTemplateSheet,
   recheckStorageKeyForPlan,
   resolveBatchEligibilityRunPlan,
@@ -62,12 +61,14 @@ const memberListsForPlan = (plan: BatchEligibilityPlan): Record<MemberList, { la
   if (plan === 'kaiser') {
     return {
       authorized: {
-        label: 'Authorized / H2022',
-        purpose: 'CalAIM_Status Authorized or H2022 — check current Kaiser eligibility via Claim.MD.',
+        label: 'All living members',
+        purpose:
+          'All Kaiser members except CalAIM_Status Member Died — catch lost coverage and inactive→active again (resume H2022 six-month visits).',
       },
       'not-authorized': {
-        label: 'Other statuses',
-        purpose: 'All other Caspio statuses — optional eligibility check.',
+        label: 'Inactive / Non-Active only',
+        purpose:
+          'Optional subset: Caspio inactive statuses — useful when re-checking who may be active again for H2022 visits.',
       },
       recheck: {
         label: 'Re-check',
@@ -244,7 +245,17 @@ function ClaimMdBatchEligibility({
       setIncludedStatuses((prev) => {
         if (prev) return prev;
         if (plan === 'kaiser') {
-          return new Set(loaded.map((m) => m.calaimStatus).filter((s) => !isKaiserEligibilityStatus(s)));
+          // Default Inactive / Non-Active subset: CalAIM inactive or Kaiser_Status inactive.
+          return new Set(
+            loaded
+              .filter(
+                (m) =>
+                  !isMemberDiedCalaimStatus(m.calaimStatus) &&
+                  (isInactiveStatus(m.calaimStatus) ||
+                    /^(non[\s_-]?active|inactive)$/i.test(String(m.kaiserStatus || '').trim()))
+              )
+              .map((m) => m.calaimStatus)
+          );
         }
         return new Set(loaded.map((m) => m.calaimStatus).filter(isInactiveStatus));
       });
@@ -375,15 +386,18 @@ function ClaimMdBatchEligibility({
   };
 
   const listMembers = useMemo(() => {
+    const living = members.filter((m) => !isMemberDiedCalaimStatus(m.calaimStatus));
     const authorized =
-      plan === 'kaiser'
-        ? members.filter((m) => isKaiserEligibilityStatus(m.calaimStatus))
-        : members.filter((m) => isAuthorizedStatus(m.calaimStatus));
+      plan === 'kaiser' ? living : living.filter((m) => isAuthorizedStatus(m.calaimStatus));
     const notAuthorized =
       plan === 'kaiser'
-        ? members.filter((m) => !isKaiserEligibilityStatus(m.calaimStatus))
-        : members.filter((m) => isInactiveStatus(m.calaimStatus));
-    const recheck = members.filter((m) => recheckIds.includes(m.clientId2));
+        ? living.filter(
+            (m) =>
+              isInactiveStatus(m.calaimStatus) ||
+              /^(non[\s_-]?active|inactive)$/i.test(String(m.kaiserStatus || '').trim())
+          )
+        : living.filter((m) => isInactiveStatus(m.calaimStatus));
+    const recheck = living.filter((m) => recheckIds.includes(m.clientId2));
     return { authorized, 'not-authorized': notAuthorized, recheck } as Record<MemberList, BatchEligibilityMember[]>;
   }, [members, recheckIds, plan]);
 
@@ -528,7 +542,7 @@ function ClaimMdBatchEligibility({
       const statuses =
         list === 'authorized'
           ? plan === 'kaiser'
-            ? [...KAISER_ELIGIBILITY_STATUSES]
+            ? [...new Set(selectedMembers.map((m) => m.calaimStatus))]
             : ['Authorized']
           : list === 'recheck'
             ? [...new Set(selectedMembers.map((m) => m.calaimStatus))]

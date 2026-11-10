@@ -94,24 +94,51 @@ export async function POST(req: NextRequest) {
     const to = clean(body.to);
     const fromTime = from ? new Date(`${from}T00:00:00`).getTime() : NaN;
     const toTime = to ? new Date(`${to}T23:59:59.999`).getTime() : NaN;
+    const upgradeAllFinished = body.allFinished === true || body.allNeedingUpgrade === true;
+    const force = body.force === true;
+    const maxTargets = Math.min(
+      Math.max(Number(body.limit) || (upgradeAllFinished ? 2000 : 500), 1),
+      2000
+    );
 
-    if (!logIds.length && Number.isNaN(fromTime) && Number.isNaN(toTime)) {
+    if (!logIds.length && !upgradeAllFinished && Number.isNaN(fromTime) && Number.isNaN(toTime)) {
       return NextResponse.json(
-        { success: false, error: 'Provide logIds and/or from/to dates.' },
+        { success: false, error: 'Provide logIds, from/to dates, or allFinished: true.' },
         { status: 400 }
       );
     }
 
-    const snap = await authCheck.adminDb
-      .collection('kaiser_isp_cover_sheet_download_logs')
-      .orderBy('createdAt', 'desc')
-      .limit(500)
-      .get();
+    type TargetLog = {
+      id: string;
+      deleted: boolean;
+      archivedStoragePath: string;
+      downloadName: string;
+      memberName: string;
+      memberClientId: string;
+      coverPageType: string;
+      createdAt: string;
+      totalCostsFormat: string;
+      upgradedAuthTotal: string;
+      upgradedReauthTotal: string;
+    };
 
-    const targets = (snap.docs as any[])
-      .map((doc: any) => {
+    const targets: TargetLog[] = [];
+    const pageSize = 250;
+    let lastDoc: any = null;
+    // Paginate newest-first so recent finished covers upgrade first.
+    while (targets.length < maxTargets) {
+      let query: any = authCheck.adminDb
+        .collection('kaiser_isp_cover_sheet_download_logs')
+        .orderBy('createdAt', 'desc')
+        .limit(pageSize);
+      if (lastDoc) query = query.startAfter(lastDoc);
+      const snap = await query.get();
+      if (!snap.docs?.length) break;
+      lastDoc = snap.docs[snap.docs.length - 1];
+
+      for (const doc of snap.docs as any[]) {
         const data = doc.data() || {};
-        return {
+        const log: TargetLog = {
           id: doc.id,
           deleted: Boolean(data.deleted),
           archivedStoragePath: clean(data.archivedStoragePath),
@@ -120,20 +147,39 @@ export async function POST(req: NextRequest) {
           memberClientId: clean(data.memberClientId),
           coverPageType: clean(data.coverPageType),
           createdAt: toIso(data.createdAt) || toIso(data.createdAtIso) || '',
+          totalCostsFormat: clean(data.totalCostsFormat),
+          upgradedAuthTotal: clean(data.upgradedAuthTotal),
+          upgradedReauthTotal: clean(data.upgradedReauthTotal),
         };
-      })
-      .filter((log) => {
-        if (log.deleted) return false;
-        if (!log.archivedStoragePath) return false;
-        if (logIds.length && !logIds.includes(log.id)) return false;
+        if (log.deleted) continue;
+        if (!log.archivedStoragePath) continue;
+        if (logIds.length && !logIds.includes(log.id)) continue;
+        // Skip already-upgraded when scanning all finished / date ranges (explicit logIds always run).
+        // Reauth sheets must have a non-zero reauth total; auth-only non-zero is not enough.
+        if (!force && !logIds.length && log.totalCostsFormat === 'room-board-then-kp-tier') {
+          const isReauthCover = String(log.coverPageType || '').toLowerCase().includes('reauth');
+          const authOk = parseMoneyAmount(log.upgradedAuthTotal) > 0;
+          const reauthOk = parseMoneyAmount(log.upgradedReauthTotal) > 0;
+          if (isReauthCover ? reauthOk : authOk || reauthOk) continue;
+        }
         if (!Number.isNaN(fromTime) || !Number.isNaN(toTime)) {
           const ts = new Date(log.createdAt || '').getTime();
-          if (Number.isNaN(ts)) return false;
-          if (!Number.isNaN(fromTime) && ts < fromTime) return false;
-          if (!Number.isNaN(toTime) && ts > toTime) return false;
+          if (Number.isNaN(ts)) continue;
+          if (!Number.isNaN(fromTime) && ts < fromTime) continue;
+          if (!Number.isNaN(toTime) && ts > toTime) continue;
         }
-        return true;
-      });
+        targets.push(log);
+        if (targets.length >= maxTargets) break;
+      }
+
+      if (snap.docs.length < pageSize) break;
+      // Date-filtered scans can stop once we pass the from bound (newest-first).
+      if (!logIds.length && !upgradeAllFinished && !Number.isNaN(fromTime)) {
+        const oldestInPage = toIso(lastDoc?.data?.()?.createdAt) || toIso(lastDoc?.data?.()?.createdAtIso) || '';
+        const oldestTs = new Date(oldestInPage || '').getTime();
+        if (!Number.isNaN(oldestTs) && oldestTs < fromTime) break;
+      }
+    }
 
     const results: Array<{
       id: string;

@@ -82,6 +82,7 @@ export default function KaiserIspCoverDownloadsPage() {
       const nextMember = clean(filterOverrides?.member ?? member);
       const nextFrom = clean(filterOverrides?.fromDate ?? fromDate);
       const nextTo = clean(filterOverrides?.toDate ?? toDate);
+      // Deep history scan when looking up a specific member / date (older reauths like Alcantar).
       if (nextSearch) params.set('search', nextSearch);
       if (nextStaff) params.set('staff', nextStaff);
       if (nextMember) params.set('member', nextMember);
@@ -152,20 +153,12 @@ export default function KaiserIspCoverDownloadsPage() {
     void loadLogs({ fromDate: today, toDate: today });
   };
 
-  const handleUpgradeMatching = async () => {
+  const runUpgrade = async (payload: Record<string, unknown>, emptyMessage: string) => {
     const user = auth.currentUser;
     if (!user) {
       toast({
         title: 'Sign-in required',
         description: 'Please sign in again before upgrading.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    if (!archivedMatchingLogs.length) {
-      toast({
-        title: 'Nothing to upgrade',
-        description: 'Load matching archived downloads first (try Today).',
         variant: 'destructive',
       });
       return;
@@ -179,22 +172,27 @@ export default function KaiserIspCoverDownloadsPage() {
           Authorization: `Bearer ${idToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          logIds: archivedMatchingLogs.map((entry) => entry.id),
-        }),
+        body: JSON.stringify(payload),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body?.success) {
         throw new Error(String(body?.error || `Upgrade failed (HTTP ${response.status})`));
       }
+      const upgraded = Number(body.upgraded || 0);
+      const failed = Number(body.failed || 0);
       const stillZero = Number(body.stillZero || 0);
+      const total = Number(body.total || 0);
+      if (!total) {
+        toast({ title: 'Nothing to upgrade', description: emptyMessage });
+        return;
+      }
       const sample = Array.isArray(body.results)
         ? body.results.find((row: any) => row?.ok && row?.authTotal && row.authTotal !== '$0.00')
         : null;
       toast({
-        title: `Upgraded ${Number(body.upgraded || 0)} cover sheet${Number(body.upgraded || 0) === 1 ? '' : 's'}`,
+        title: `Upgraded ${upgraded} cover sheet${upgraded === 1 ? '' : 's'}`,
         description: [
-          Number(body.failed || 0) > 0 ? `${body.failed} failed.` : null,
+          failed > 0 ? `${failed} failed.` : null,
           stillZero > 0
             ? `${stillZero} still show $0.00 (no room & board on PDF or in Caspio).`
             : sample?.authTotal
@@ -214,6 +212,33 @@ export default function KaiserIspCoverDownloadsPage() {
     } finally {
       setIsUpgrading(false);
     }
+  };
+
+  const handleUpgradeMatching = async () => {
+    if (!archivedMatchingLogs.length) {
+      toast({
+        title: 'Nothing to upgrade',
+        description: 'Load matching archived downloads first (try Today).',
+        variant: 'destructive',
+      });
+      return;
+    }
+    await runUpgrade(
+      { logIds: archivedMatchingLogs.map((entry) => entry.id) },
+      'No archived cover sheets in this date range need the room & board Total Costs format.'
+    );
+  };
+
+  const handleUpgradeAllFinished = async () => {
+    const confirmed = window.confirm(
+      'Upgrade all finished (archived) Kaiser cover sheets so Auto Calculated Total Costs includes room & board?\n\nAlready-upgraded files are skipped. This may take a few minutes.'
+    );
+    if (!confirmed) return;
+    await runUpgrade(
+      // force: rewrite even previously upgraded files so older-template fields (Text10/Text3) get room & board totals.
+      { allFinished: true, force: true, limit: 2000 },
+      'All finished cover sheets already use the room & board Total Costs format.'
+    );
   };
 
   const handleDownloadZipForIls = async () => {
@@ -487,13 +512,28 @@ export default function KaiserIspCoverDownloadsPage() {
           <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 space-y-2">
             <div className="text-sm font-medium text-emerald-950">Send cover sheets to ILS</div>
             <p className="text-xs text-emerald-900/80">
-              Click <span className="font-medium">Today&apos;s covers</span> (or set a date range + Search),
-              upgrade archived PDFs so Total Costs starts with member room &amp; board, then download one ZIP
-              for ILS.
+              Upgrade finished/archived PDFs so <span className="font-medium">Auto Calculated Total Costs</span>{' '}
+              starts with member room &amp; board (then KP tier in Acrobat). Use date range for a batch + ZIP,
+              or upgrade every finished cover sheet that still needs it.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" size="sm" onClick={applyTodayFilter} disabled={loading}>
                 Today&apos;s covers
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => void handleUpgradeAllFinished()}
+                disabled={loading || isUpgrading}
+                title="Upgrade all archived cover sheets that are not yet on room & board Total Costs"
+              >
+                {isUpgrading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                Upgrade all finished cover sheets
               </Button>
               <Button
                 type="button"
@@ -512,7 +552,7 @@ export default function KaiserIspCoverDownloadsPage() {
                 ) : (
                   <RefreshCw className="mr-2 h-4 w-4" />
                 )}
-                Upgrade to new Total Costs
+                Upgrade matching dates
                 {needsUpgradeCount ? ` (${needsUpgradeCount})` : ''}
               </Button>
               <Button

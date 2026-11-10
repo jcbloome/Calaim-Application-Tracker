@@ -55,10 +55,10 @@ import {
 type KindFilter = 'all' | 'batch' | 'decode';
 
 const LIST_LABELS: Record<string, string> = {
-  authorized: 'Authorized / Active statuses',
-  'not-authorized': 'Inactive / Other statuses',
+  authorized: 'All living / Authorized',
+  'not-authorized': 'Inactive / Non-Active',
   recheck: 'Re-check',
-  statuses: 'Kaiser statuses',
+  statuses: 'Kaiser all living statuses',
 };
 
 const formatBytes = (bytes: number) =>
@@ -259,7 +259,9 @@ export default function BatchEligibilityLogPage() {
     try {
       const files = await loadRunFiles(run);
       const runPlan = resolveBatchEligibilityRunPlan(run);
-      const rows = decodeEligibilityFilesToRows(files, members).filter((row) => row.result.outcome === outcome);
+      const rows = decodeEligibilityFilesToRows(files, members, { plan: runPlan }).filter(
+        (row) => row.result.outcome === outcome
+      );
       if (!rows.length) {
         toast({
           title: outcome === 'active' ? 'No eligible results in this run' : 'No not-eligible results in this run',
@@ -285,7 +287,10 @@ export default function BatchEligibilityLogPage() {
     setLastSendResults(null);
     try {
       const files = await loadRunFiles(run);
-      const rows = decodeEligibilityFilesToRows(files, members).filter((row) => row.result.outcome === 'inactive');
+      const runPlan = resolveBatchEligibilityRunPlan(run);
+      const rows = decodeEligibilityFilesToRows(files, members, { plan: runPlan }).filter(
+        (row) => row.result.outcome === 'inactive'
+      );
       if (!rows.length) {
         toast({ title: 'No not-eligible results in this run' });
         setNotEligibleRun(null);

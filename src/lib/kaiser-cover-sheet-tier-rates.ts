@@ -19,22 +19,59 @@ export const KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD = 'Text24';
 export const KAISER_COVER_REAUTH_TOTAL_FIELD = 'Text23';
 export const KAISER_COVER_REAUTH_ROOM_BOARD_FIELD = 'Text22';
 
+/** Pre-07/2026 template field names (still present on older archived cover sheets). */
+export const KAISER_COVER_AUTH_TOTAL_FIELD_LEGACY = 'Text15';
+export const KAISER_COVER_AUTH_MAX_EXPENSE_FIELD_LEGACY = 'Text14';
+export const KAISER_COVER_REAUTH_KP_TIER_FIELD_LEGACY = 'Dropdown8';
+export const KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD_LEGACY = 'Text4';
+export const KAISER_COVER_REAUTH_TOTAL_FIELD_LEGACY = 'Text10';
+export const KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_LEGACY = 'Text3';
+
+export const KAISER_COVER_AUTH_TOTAL_FIELD_NAMES = [
+  KAISER_COVER_AUTH_TOTAL_FIELD,
+  'Auto Calculated',
+  'Auto-calculated',
+  KAISER_COVER_AUTH_TOTAL_FIELD_LEGACY,
+] as const;
+
+export const KAISER_COVER_AUTH_MAX_FIELD_NAMES = [
+  KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
+  KAISER_COVER_AUTH_MAX_EXPENSE_FIELD_LEGACY,
+] as const;
+
+export const KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES = [
+  KAISER_COVER_REAUTH_TOTAL_FIELD,
+  KAISER_COVER_REAUTH_TOTAL_FIELD_LEGACY,
+] as const;
+
+export const KAISER_COVER_REAUTH_MAX_FIELD_NAMES = [
+  KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
+  KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD_LEGACY,
+] as const;
+
+export const KAISER_COVER_REAUTH_KP_TIER_FIELD_NAMES = [
+  KAISER_COVER_REAUTH_KP_TIER_FIELD,
+  KAISER_COVER_REAUTH_KP_TIER_FIELD_LEGACY,
+] as const;
+
+export const KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_NAMES = [
+  KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
+  KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_LEGACY,
+] as const;
+
 /** Auth + reauth room & board field names (templates have used several labels). */
 export const KAISER_COVER_ROOM_BOARD_FIELD_ALIASES = [
   KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
   "Member's Financial Responsibility of Room and Board",
   'Member Financial Responsibility of Room and Board',
-  KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
-  'Text3',
+  ...KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_NAMES,
 ] as const;
 
 /** Auth + reauth Total Costs field names. */
 export const KAISER_COVER_TOTAL_FIELD_ALIASES = [
-  KAISER_COVER_AUTH_TOTAL_FIELD,
-  'Auto Calculated',
-  'Auto-calculated',
+  ...KAISER_COVER_AUTH_TOTAL_FIELD_NAMES,
   'Total Costs',
-  KAISER_COVER_REAUTH_TOTAL_FIELD,
+  ...KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES,
 ] as const;
 
 export function parseKaiserTierNumber(value: unknown): number | null {
@@ -66,6 +103,17 @@ export function formatCoverSheetMoney(amount: number): string {
     maximumFractionDigits: 2,
   });
   return `${negative ? '-' : ''}$${formatted}`;
+}
+
+/**
+ * Normalize a money string for cover-sheet fields.
+ * Template defaults of `0` / `$0.00` are treated as blank so they do not block
+ * Caspio room & board backfill or zero-out Auto Calculated totals.
+ */
+export function normalizeCoverSheetMoneyLabel(value: unknown): string {
+  const amount = parseMoneyAmount(value);
+  if (!amount) return '';
+  return formatCoverSheetMoney(amount);
 }
 
 export function maxTierExpenseForTier(tier: number | null | undefined): number {

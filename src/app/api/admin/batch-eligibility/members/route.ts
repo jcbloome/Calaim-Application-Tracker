@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import type { BatchEligibilityMember } from '@/lib/batch-eligibility';
+import { isMemberDiedCalaimStatus, type BatchEligibilityMember } from '@/lib/batch-eligibility';
 import { resolveKaiserRegion, stripMrnSeparators } from '@/lib/kaiser-region';
 import {
   buildRcfeBulkEmailIndexes,
@@ -124,6 +124,9 @@ export async function GET(req: NextRequest) {
     for (const doc of planSnap.docs as Array<{ id: string; data: () => Record<string, any> }>) {
       const d = doc.data();
       if (d.deletedFromCaspio === true) continue;
+      const calaimStatusRaw = first(d.CalAIM_Status, d.caspioCalAIMStatus);
+      // Keep Member Died in plan=all so 271 decode can match and drop them from results.
+      if (planKey !== 'all' && isMemberDiedCalaimStatus(calaimStatusRaw)) continue;
       const mco = s(d.CalAIM_MCO).toLowerCase();
       if (!plan.matches(mco)) continue;
       const syncedMs = Number(d.lastSyncedFromCaspio?._seconds || d.lastSyncedFromCaspio?.seconds || 0) * 1000;
@@ -152,7 +155,7 @@ export async function GET(req: NextRequest) {
           ? resolveKaiserRegion({ county: d.Member_County || d.memberCounty, city: d.MemberCity, mrn })
           : '',
         healthPlan,
-        calaimStatus: first(d.CalAIM_Status, d.caspioCalAIMStatus) || '(no status)',
+        calaimStatus: calaimStatusRaw || '(no status)',
         kaiserStatus: first(d.Kaiser_Status, d.Kaiser_ID_Status, d.kaiserStatus),
         authStartT2038: first(d.Authorization_Start_Date_T2038),
         authEndT2038: first(d.Authorization_End_Date_T2038),

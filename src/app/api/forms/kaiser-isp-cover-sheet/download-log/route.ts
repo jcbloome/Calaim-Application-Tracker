@@ -77,36 +77,31 @@ export async function GET(req: NextRequest) {
     const to = clean(req.nextUrl.searchParams.get('to'));
     const fromTime = from ? new Date(`${from}T00:00:00`).getTime() : NaN;
     const toTime = to ? new Date(`${to}T23:59:59.999`).getTime() : NaN;
+    const hasFilters = Boolean(search || staff || member || from || to);
+    // Deep scan when filtering so older finished covers (e.g. Sept reauths) are findable.
+    const maxScan = hasFilters ? 5000 : Math.max(limit, 500);
+    const pageSize = 250;
 
-    const snap = await authCheck.adminDb
-      .collection('kaiser_isp_cover_sheet_download_logs')
-      .orderBy('createdAt', 'desc')
-      .limit(Math.max(limit, 500))
-      .get();
+    type LogRow = {
+      id: string;
+      downloadName: string;
+      memberName: string;
+      memberMrn: string;
+      memberClientId: string;
+      coverPageType: string;
+      staffName: string;
+      staffEmail: string;
+      createdAt: string;
+      verified: boolean;
+      archived: boolean;
+      archivedAt: string;
+      archivedStoragePath: string;
+      totalCostsFormat: string;
+      upgradedAt: string;
+      deleted: boolean;
+    };
 
-    const logsRaw = (snap.docs as any[]).map((doc: any) => {
-      const data = doc.data() || {};
-      return {
-        id: doc.id,
-        downloadName: clean(data.downloadName),
-        memberName: clean(data.memberName),
-        memberMrn: clean(data.memberMrn),
-        memberClientId: clean(data.memberClientId),
-        coverPageType: clean(data.coverPageType),
-        staffName: clean(data.staffName),
-        staffEmail: clean(data.staffEmail).toLowerCase(),
-        createdAt: toIso(data.createdAt) || toIso(data.createdAtIso) || '',
-        verified: Boolean(data.verified),
-        archived: Boolean(data.archived),
-        archivedAt: toIso(data.archivedAt),
-        archivedStoragePath: clean(data.archivedStoragePath),
-        totalCostsFormat: clean(data.totalCostsFormat),
-        upgradedAt: toIso(data.upgradedAt),
-        deleted: Boolean(data.deleted),
-      };
-    });
-
-    const logs = logsRaw.filter((log) => {
+    const matches = (log: LogRow) => {
       if (log.deleted) return false;
       const haystack = `${log.downloadName} ${log.memberName} ${log.memberMrn} ${log.memberClientId} ${log.staffName} ${log.staffEmail} ${log.coverPageType}`.toLowerCase();
       if (search && !haystack.includes(search)) return false;
@@ -125,9 +120,57 @@ export async function GET(req: NextRequest) {
         if (!Number.isNaN(toTime) && ts > toTime) return false;
       }
       return true;
-    }).slice(0, limit);
+    };
 
-    return NextResponse.json({ success: true, logs, count: logs.length });
+    const logs: LogRow[] = [];
+    let scanned = 0;
+    let lastDoc: any = null;
+    while (logs.length < limit && scanned < maxScan) {
+      let query: any = authCheck.adminDb
+        .collection('kaiser_isp_cover_sheet_download_logs')
+        .orderBy('createdAt', 'desc')
+        .limit(pageSize);
+      if (lastDoc) query = query.startAfter(lastDoc);
+      const snap = await query.get();
+      if (!snap.docs?.length) break;
+      lastDoc = snap.docs[snap.docs.length - 1];
+      scanned += snap.docs.length;
+
+      for (const doc of snap.docs as any[]) {
+        const data = doc.data() || {};
+        const log: LogRow = {
+          id: doc.id,
+          downloadName: clean(data.downloadName),
+          memberName: clean(data.memberName),
+          memberMrn: clean(data.memberMrn),
+          memberClientId: clean(data.memberClientId),
+          coverPageType: clean(data.coverPageType),
+          staffName: clean(data.staffName),
+          staffEmail: clean(data.staffEmail).toLowerCase(),
+          createdAt: toIso(data.createdAt) || toIso(data.createdAtIso) || '',
+          verified: Boolean(data.verified),
+          archived: Boolean(data.archived),
+          archivedAt: toIso(data.archivedAt),
+          archivedStoragePath: clean(data.archivedStoragePath),
+          totalCostsFormat: clean(data.totalCostsFormat),
+          upgradedAt: toIso(data.upgradedAt),
+          deleted: Boolean(data.deleted),
+        };
+        if (!matches(log)) continue;
+        logs.push(log);
+        if (logs.length >= limit) break;
+      }
+
+      if (snap.docs.length < pageSize) break;
+      if (!hasFilters) break;
+      if (!Number.isNaN(fromTime) && lastDoc) {
+        const oldestIso = toIso(lastDoc?.data?.()?.createdAt) || toIso(lastDoc?.data?.()?.createdAtIso) || '';
+        const oldestTs = new Date(oldestIso || '').getTime();
+        if (!Number.isNaN(oldestTs) && oldestTs < fromTime) break;
+      }
+    }
+
+    return NextResponse.json({ success: true, logs, count: logs.length, scanned });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: String(error?.message || 'Failed to load download logs') },

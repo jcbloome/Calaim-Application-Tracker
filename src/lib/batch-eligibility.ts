@@ -153,12 +153,41 @@ export function resolveBatchEligibilityRunPlan(run: {
   return run.plan === 'kaiser' ? 'kaiser' : 'healthnet';
 }
 
-/** Caspio statuses included in the routine Kaiser eligibility check batch. */
-/** Kaiser Claim.MD / SDS batch eligibility — CalAIM_Status Authorized or H2022. */
+/**
+ * Kaiser statuses historically used for routine checks.
+ * Full Kaiser eligibility runs now include all living members; these remain for lost-coverage flags.
+ */
 export const KAISER_ELIGIBILITY_STATUSES = ['Authorized', 'H2022'] as const;
 
 export const isKaiserEligibilityStatus = (status: string) =>
   KAISER_ELIGIBILITY_STATUSES.some((s) => s.toLowerCase() === status.trim().toLowerCase());
+
+/** Caspio shows the Kaiser member as inactive (Kaiser_Status and/or CalAIM Non-Active). */
+export function isKaiserMemberInactiveInCaspio(
+  member: Pick<BatchEligibilityMember, 'kaiserStatus' | 'calaimStatus'> | null | undefined
+): boolean {
+  if (!member) return false;
+  if (isKaiserInactiveStatus(member.kaiserStatus)) return true;
+  return /^(non[\s_-]?active|inactive)$/i.test(String(member.calaimStatus || '').trim());
+}
+
+/** Exclude deceased members from eligibility batches and decoded results. */
+export function isMemberDiedCalaimStatus(status: unknown): boolean {
+  const normalized = String(status ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!normalized) return false;
+  return (
+    normalized === 'member died' ||
+    normalized === 'died' ||
+    normalized === 'deceased' ||
+    normalized === 'passed away' ||
+    normalized.includes('member died') ||
+    normalized.includes('passed away')
+  );
+}
 
 /** Payerid for a Kaiser member row in the Claim.MD CSV. */
 export function kaiserClaimMdPayerId(
