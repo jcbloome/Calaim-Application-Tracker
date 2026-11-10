@@ -161,7 +161,8 @@ function readText(field: AcroFieldWithDict | null | undefined): string {
     const raw = dict?.lookup?.(PDFName.of('V'));
     const asString = String(raw?.toString?.() || '').trim();
     // pdf-lib may stringify as ( $500.00 ) or <FEFF...>
-    const paren = asString.match(/^\((.*)\)$/s);
+    // Avoid /s (dotAll) — tsconfig target is ES2017.
+    const paren = asString.match(/^\(([\s\S]*)\)$/);
     if (paren) return paren[1].replace(/\\([nrt\\()])/g, '$1').trim();
     return asString.replace(/^<|>$/g, '').trim();
   } catch {

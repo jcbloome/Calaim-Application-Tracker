@@ -10,6 +10,9 @@
 
 ## Changes 2026-11-10
 
+- **Fix App Hosting / Deploy build — ES2017 regex in cover-sheet upgrade.** `next build` failed typecheck on `/^\((.*)\)$/s` (`dotAll` needs ES2018+; tsconfig target is ES2017). Replaced with `[\s\S]*`.
+  - Files: `src/lib/kaiser-cover-sheet-upgrade.ts`, `handoff.md`.
+
 - **Kaiser Cover Sheet — restore Yes/No on facility vetted (not Tier levels).** Generator/upgrade repair `Dropdown9`/`Dropdown21` (and related Yes/No fields) back to Select/Yes/No if they were wrongly given Tier 1–5. KP tier repair never touches Yes/No field names; legacy `Dropdown8` is only used as KP tier when it already has tier options.
   - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `handoff.md`.
   - Commit: `210b51ab`.
