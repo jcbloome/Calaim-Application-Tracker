@@ -22,10 +22,12 @@ import {
   buildKaiserTierDropdownChangeScript,
   buildKaiserTotalCostsCalculateScript,
   computeCoverSheetTotalCosts,
+  dropdownOptionsLookLikeTiers,
   KAISER_COVER_AUTH_KP_TIER_FIELD,
   KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
   KAISER_COVER_AUTH_TOTAL_FIELD,
+  KAISER_COVER_KP_TIER_OPTIONS,
   KAISER_COVER_REAUTH_KP_TIER_FIELD,
   KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
@@ -272,6 +274,7 @@ type DropdownFieldLike = {
   getOptions: () => string[];
   select: (value: string) => void;
   clear?: () => void;
+  setOptions?: (options: string[]) => void;
   disableReadOnly?: () => void;
   enableReadOnly?: () => void;
   isReadOnly?: () => boolean;
@@ -282,6 +285,31 @@ const KP_ONLY_DROPDOWN_NAMES = new Set([
   KAISER_COVER_AUTH_KP_TIER_FIELD,
   KAISER_COVER_REAUTH_KP_TIER_FIELD,
 ]);
+
+/**
+ * Force KP Tier Level dropdowns to Select-from-drop-down + Tier 1–5 only.
+ * Clears any stale Yes/No selection left from wrong options or prior fills.
+ */
+function ensureKaiserKpTierDropdownOptions(field: DropdownFieldLike | null | undefined): void {
+  if (!field || typeof field.getOptions !== 'function') return;
+  try {
+    const options = field.getOptions();
+    const needsRepair = !dropdownOptionsLookLikeTiers(options);
+    if (needsRepair && typeof field.setOptions === 'function') {
+      field.setOptions([...KAISER_COVER_KP_TIER_OPTIONS]);
+    }
+    const nextOptions = field.getOptions();
+    const placeholder =
+      (Array.isArray(nextOptions) &&
+        nextOptions.find((option) => isPlaceholderDropdownOption(option))) ||
+      KAISER_COVER_KP_TIER_OPTIONS[0];
+    // Always re-select placeholder so a leftover "No"/"Yes" value cannot stick.
+    if (placeholder) field.select(placeholder);
+    else if (typeof field.clear === 'function') field.clear();
+  } catch {
+    // Keep generating even if one KP widget cannot be repaired.
+  }
+}
 
 type AcroFieldWithDict = {
   acroField?: { dict?: { set: (key: unknown, value: unknown) => void; lookupMaybe?: (key: unknown) => unknown } };
@@ -452,6 +480,7 @@ function isPlaceholderDropdownOption(value: unknown): boolean {
 function resetKaiserOnlyDropdown(field: DropdownFieldLike): void {
   try {
     if (typeof field.disableReadOnly === 'function') field.disableReadOnly();
+    ensureKaiserKpTierDropdownOptions(field);
     const options = field.getOptions();
     if (!Array.isArray(options) || options.length === 0) return;
     const placeholder = options.find((option) => isPlaceholderDropdownOption(option));
@@ -833,8 +862,8 @@ export async function GET(req: NextRequest) {
       setFieldValue('Assessment Date (MM/DD/YYY)', assessmentDate);
       // Initial-auth amount field only — do not touch reauth Text3.
       setTextFieldOnly(KAISER_COVER_AUTH_ROOM_BOARD_FIELD, roomBoardAmount);
-      // Max Tier Expenses stays blank until Kaiser selects KP Tier Level (Dropdown15).
-      // Total Costs starts as member financial responsibility (room & board), then adds KP tier when selected.
+      // Max Tier Expenses blank until Kaiser selects KP Tier Level (Dropdown15).
+      // Total Costs starts as member room & board; KP tier adds later in Acrobat.
       // ILS requested tier must NOT prefill Max Expenses — Kaiser may authorize a different tier.
       try {
         const maxField = getFieldMaybe(KAISER_COVER_AUTH_MAX_EXPENSE_FIELD);
@@ -983,8 +1012,8 @@ export async function GET(req: NextRequest) {
       // initial-authorization "Members Financial Responsibility of Room and Board" amount field.
       setTextFieldOnly(KAISER_COVER_REAUTH_ROOM_BOARD_FIELD, roomBoardAmount);
       setTextFieldOnly('Text3', roomBoardAmount);
-      // Max Tier Expenses stays blank until Kaiser selects KP Tier Level (Dropdown25).
-      // Total Costs starts as member financial responsibility, then adds KP tier when selected.
+      // Max Tier Expenses blank until Kaiser selects KP Tier Level (Dropdown25).
+      // Total Costs starts as member room & board; KP tier adds later in Acrobat.
       try {
         const maxField = getFieldMaybe(KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD);
         if (maxField && isTextFieldLike(maxField)) maxField.setText('');
@@ -1187,8 +1216,7 @@ export async function GET(req: NextRequest) {
       if (isReauthorization) applyTwoLineFieldAppearance('Street City Zip', addressTwoLine);
     }
     // Final pass: re-assert room & board + Total Costs AFTER dropdown/script appearance work.
-    // Browser PDF viewers (Chrome) show baked appearances, not live Acrobat Calculate — without
-    // this re-apply, staff often still see the template's stale $0.00 in Auto calculated.
+    // Browser PDF viewers (Chrome) show baked appearances, not live Acrobat Calculate.
     try {
       const totals = computeCoverSheetTotalCosts({ roomBoardAmount });
       if (isAuthorization) {
@@ -1205,6 +1233,10 @@ export async function GET(req: NextRequest) {
         if (maxField && isTextFieldLike(maxField)) maxField.setText('');
         const totalField = getFieldMaybe(KAISER_COVER_REAUTH_TOTAL_FIELD);
         if (totalField && isTextFieldLike(totalField)) totalField.setText(totals.totalLabel);
+      }
+      for (const kpName of KP_ONLY_DROPDOWN_NAMES) {
+        const kpField = getFieldMaybe(kpName);
+        if (kpField && isDropdownFieldLike(kpField)) resetKaiserOnlyDropdown(kpField);
       }
       form.updateFieldAppearances(font);
     } catch (finalTotalsError) {

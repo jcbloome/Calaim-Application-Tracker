@@ -74,7 +74,8 @@ export const COVER_SHEET_GENERATOR_FIELDS: Array<{ section: string; label: strin
   { section: 'Reauthorization', label: 'Room & board amount', acceptedNames: ['Text22', 'Text3'] },
   { section: 'Reauthorization', label: 'Max Tier Level Expenses Covered by KP', acceptedNames: ['Text24', 'Text4'] },
   { section: 'Reauthorization', label: 'Total Costs (auto calculated)', acceptedNames: ['Text23', 'Text10'] },
-  { section: 'Reauthorization', label: 'KP tier determination', acceptedNames: ['Dropdown25', 'Dropdown8'] },
+  // Dropdown8 is legacy-only (pre-07/2026). On current templates Dropdown8 is In-ALW-County Yes/No.
+  { section: 'Reauthorization', label: 'KP tier determination', acceptedNames: ['Dropdown25'] },
   { section: 'Reauthorization', label: 'Preliminary tier (ILS)', acceptedNames: ['Dropdown35', 'Dropdown7'] },
   { section: 'Reauthorization', label: 'ALW assessment checklist', acceptedNames: ['Check Box32'] },
   { section: 'Reauthorization', label: 'Room & board checklist', acceptedNames: ['Check Box27', 'Check Box5'] },

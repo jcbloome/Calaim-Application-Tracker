@@ -6,18 +6,20 @@ import {
   buildKaiserTierDropdownChangeScript,
   buildKaiserTotalCostsCalculateScript,
   computeCoverSheetTotalCosts,
+  dropdownOptionsLookLikeTiers,
   formatCoverSheetMoney,
   KAISER_COVER_AUTH_KP_TIER_FIELD,
   KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
   KAISER_COVER_AUTH_TOTAL_FIELD,
+  KAISER_COVER_KP_TIER_OPTIONS,
   KAISER_COVER_REAUTH_KP_TIER_FIELD,
+  KAISER_COVER_REAUTH_KP_TIER_FIELD_LEGACY,
   KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
   KAISER_COVER_REAUTH_TOTAL_FIELD,
   KAISER_COVER_AUTH_MAX_FIELD_NAMES,
   KAISER_COVER_AUTH_TOTAL_FIELD_NAMES,
-  KAISER_COVER_REAUTH_KP_TIER_FIELD_NAMES,
   KAISER_COVER_REAUTH_MAX_FIELD_NAMES,
   KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_NAMES,
   KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES,
@@ -35,9 +37,37 @@ type AcroFieldWithDict = {
   getText?: () => string;
   setText?: (value: string) => void;
   getSelected?: () => string[];
+  select?: (value: string) => void;
+  getOptions?: () => string[];
+  setOptions?: (options: string[]) => void;
+  clear?: () => void;
   getName?: () => string;
   disableReadOnly?: () => void;
 };
+
+function ensureKpTierOptions(field: AcroFieldWithDict | null | undefined): void {
+  if (!field || typeof field.getOptions !== 'function') return;
+  try {
+    const options = field.getOptions();
+    if (!dropdownOptionsLookLikeTiers(options) && typeof field.setOptions === 'function') {
+      field.setOptions([...KAISER_COVER_KP_TIER_OPTIONS]);
+    }
+    const nextOptions = field.getOptions() || [];
+    const placeholder =
+      nextOptions.find((option) => {
+        const normalized = String(option || '')
+          .toLowerCase()
+          .replace(/\s+/g, ' ')
+          .trim();
+        return !normalized || normalized.includes('select from drop down') || normalized.startsWith('select');
+      }) || KAISER_COVER_KP_TIER_OPTIONS[0];
+    // Always re-select placeholder so a leftover "No"/"Yes" cannot stick on KP Tier Level.
+    if (placeholder && typeof field.select === 'function') field.select(placeholder);
+    else if (typeof field.clear === 'function') field.clear();
+  } catch {
+    // ignore
+  }
+}
 
 export type UpgradeKaiserCoverSheetOptions = {
   /** Prefer this amount when PDF room & board is blank (from Caspio). */
@@ -122,10 +152,11 @@ function setText(field: AcroFieldWithDict | null | undefined, value: string) {
 
 /**
  * Upgrade an already-generated Kaiser cover sheet PDF:
+ * - Ensure KP Tier Level dropdowns use Select-from-drop-down + Tier 1–5 (never Yes/No)
  * - Total Costs = member room & board (then + KP tier if already selected)
  * - Works for both Authorization (Auto calculated) and Reauthorization (Text23)
  * - Max Tier Expenses blank unless KP tier is set
- * - Refresh field appearances so Chrome/Acrobat show the new amounts (not stale $0.00)
+ * - Refresh field appearances so Chrome/Acrobat show the new amounts
  * - Attach current Acrobat calc scripts
  */
 export async function upgradeKaiserCoverSheetPdf(
@@ -170,13 +201,27 @@ export async function upgradeKaiserCoverSheetPdf(
   const reauthRoomLegacy = reauthRoomFields[1]?.field || getField('Text3');
   const reauthMaxResolved = firstExisting(KAISER_COVER_REAUTH_MAX_FIELD_NAMES);
   const reauthTotalResolved = firstExisting(KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES);
-  const reauthKpResolved = firstExisting(KAISER_COVER_REAUTH_KP_TIER_FIELD_NAMES);
+  // Prefer Dropdown25. On current templates Dropdown8 is In-ALW-County Yes/No — never use it
+  // as KP tier when Dropdown25 exists. On legacy PDFs (no Dropdown25), repair Dropdown8 to Tier 1–5.
+  let reauthKpName = KAISER_COVER_REAUTH_KP_TIER_FIELD;
+  let reauthKp: AcroFieldWithDict | null = null;
+  const reauthKpPrimary = getField(KAISER_COVER_REAUTH_KP_TIER_FIELD);
+  if (reauthKpPrimary) {
+    reauthKp = reauthKpPrimary;
+    reauthKpName = KAISER_COVER_REAUTH_KP_TIER_FIELD;
+  } else {
+    const legacyKp = getField(KAISER_COVER_REAUTH_KP_TIER_FIELD_LEGACY);
+    if (legacyKp) {
+      reauthKp = legacyKp;
+      reauthKpName = KAISER_COVER_REAUTH_KP_TIER_FIELD_LEGACY;
+    }
+  }
+  ensureKpTierOptions(authKp);
+  ensureKpTierOptions(reauthKp);
   const reauthMax = reauthMaxResolved.field;
   const reauthTotal = reauthTotalResolved.field;
-  const reauthKp = reauthKpResolved.field;
   const reauthMaxName = reauthMaxResolved.name || KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD;
   const reauthTotalName = reauthTotalResolved.name || KAISER_COVER_REAUTH_TOTAL_FIELD;
-  const reauthKpName = reauthKpResolved.name || KAISER_COVER_REAUTH_KP_TIER_FIELD;
   const reauthRoomName = reauthRoomFields[0]?.name || KAISER_COVER_REAUTH_ROOM_BOARD_FIELD;
 
   const coverType = String(options.coverPageType || '').toLowerCase();
@@ -204,7 +249,7 @@ export async function upgradeKaiserCoverSheetPdf(
   let authRoomValue = pdfAuthRoom || (!isReauth ? bestRoom : '');
   let reauthRoomValue = pdfReauthRoom || bestRoom;
 
-  // Reauth cover sheets: always ensure Text22/Text3 + Text23 can see the room & board amount.
+  // Reauth cover sheets: always ensure Text22/Text3 have the room & board amount.
   if (isReauth && bestRoom) {
     reauthRoomValue = bestRoom;
     if (!pdfReauthRoom) {

@@ -54,6 +54,35 @@ export const KAISER_COVER_REAUTH_KP_TIER_FIELD_NAMES = [
   KAISER_COVER_REAUTH_KP_TIER_FIELD_LEGACY,
 ] as const;
 
+/** Canonical KP Tier Level dropdown choices (never Yes/No). */
+export const KAISER_COVER_KP_TIER_OPTIONS = [
+  'Select from drop down',
+  'Tier 1',
+  'Tier 2',
+  'Tier 3',
+  'Tier 4',
+  'Tier 5',
+] as const;
+
+export function dropdownOptionsLookLikeTiers(options: unknown): boolean {
+  const list = Array.isArray(options) ? options.map((o) => String(o || '').toLowerCase()) : [];
+  const joined = list.join(' | ');
+  return /\btier\b/.test(joined) && /\b[1-5]\b/.test(joined);
+}
+
+export function dropdownOptionsLookLikeYesNo(options: unknown): boolean {
+  if (dropdownOptionsLookLikeTiers(options)) return false;
+  const list = Array.isArray(options)
+    ? options.map((o) =>
+        String(o || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, ' ')
+          .trim()
+      )
+    : [];
+  return list.some((o) => o === 'yes') && list.some((o) => o === 'no' || o.startsWith('no '));
+}
+
 export const KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_NAMES = [
   KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
   KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_LEGACY,
@@ -127,13 +156,14 @@ export function computeCoverSheetTotalCosts(opts: {
 }): { maxExpense: number; roomBoard: number; total: number; maxExpenseLabel: string; totalLabel: string } {
   const maxExpense = maxTierExpenseForTier(opts.tier ?? null);
   const roomBoard = parseMoneyAmount(opts.roomBoardAmount);
+  // Auto Calculated starts as member room & board; KP tier rate adds when selected.
   const total = maxExpense + roomBoard;
   return {
     maxExpense,
     roomBoard,
     total,
     maxExpenseLabel: maxExpense ? formatCoverSheetMoney(maxExpense) : '',
-    totalLabel: formatCoverSheetMoney(total),
+    totalLabel: roomBoard || maxExpense ? formatCoverSheetMoney(total) : '',
   };
 }
 
@@ -180,8 +210,8 @@ function __kReadRoomBoard(preferred){
 
 /**
  * Self-contained script: KP-approved tier → Max Expense; Total = room & board + KP rate.
- * With no KP tier yet, Max Expense stays blank and Total shows member financial
- * responsibility only. Never uses ILS requested tier.
+ * With no KP tier yet, Max Expense stays blank and Total shows member room & board.
+ * Never uses ILS requested tier.
  * Optional overrideTier is used during dropdown Keystroke (event.change) before the
  * field value is committed, so amounts update immediately on selection.
  */
@@ -226,8 +256,8 @@ try{
 
 /**
  * Calculate script for Total Costs.
- * Starts as member room & board only; adds KP-approved tier rate when Dropdown is set.
- * Never uses ILS requested tier. Baked room & board prevents $0.00 when getField fails.
+ * Starts as member room & board; adds KP-approved tier rate when Dropdown is set.
+ * Never uses ILS requested tier. Baked room & board prevents blank/$0.00 when getField fails.
  */
 export function buildKaiserTotalCostsCalculateScript(opts: {
   tierField: string;
@@ -244,7 +274,6 @@ ${acrobatHelpersBlock({
 try{
   var rate=__kTierRate(this.getField("${tierField}").value);
   var rb = __kReadRoomBoard(${acrobatJsStringLiteral(roomBoardField)});
-  // No KP tier yet → show member financial responsibility only.
   event.value = __kFormatMoney(rate + rb);
 }catch(e){event.value=__kFormatMoney(__kParseMoney(__kBakedRoomBoard));}
 `.trim();

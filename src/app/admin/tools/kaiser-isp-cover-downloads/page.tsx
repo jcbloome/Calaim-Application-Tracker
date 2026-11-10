@@ -29,8 +29,18 @@ type DownloadLogEntry = {
 };
 
 const clean = (value: unknown) => String(value || '').trim();
+type CoverTypeFilter = 'all' | 'authorization' | 'reauthorization';
+
+const normalizeCoverType = (coverPageType: string): Exclude<CoverTypeFilter, 'all'> =>
+  clean(coverPageType).toLowerCase().includes('reauth') ? 'reauthorization' : 'authorization';
+
 const toCoverTypeLabel = (coverPageType: string) =>
-  coverPageType === 'reauthorization' ? 'Reauthorization' : 'Initial Authorization';
+  normalizeCoverType(coverPageType) === 'reauthorization' ? 'Reauthorization' : 'Initial Authorization';
+
+const coverTypeBadgeClass = (coverPageType: string) =>
+  normalizeCoverType(coverPageType) === 'reauthorization'
+    ? 'border-amber-300 bg-amber-100 text-amber-950'
+    : 'border-sky-300 bg-sky-100 text-sky-950';
 
 /** Local calendar date YYYY-MM-DD (for “today” filters). */
 const localDateInputValue = (date = new Date()) => {
@@ -59,6 +69,7 @@ export default function KaiserIspCoverDownloadsPage() {
   const [member, setMember] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [coverType, setCoverType] = useState<CoverTypeFilter>('all');
   const [showAllLogs, setShowAllLogs] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
@@ -69,6 +80,7 @@ export default function KaiserIspCoverDownloadsPage() {
     member?: string;
     fromDate?: string;
     toDate?: string;
+    coverType?: CoverTypeFilter;
   }) => {
     const user = auth.currentUser;
     if (!user) return;
@@ -82,12 +94,16 @@ export default function KaiserIspCoverDownloadsPage() {
       const nextMember = clean(filterOverrides?.member ?? member);
       const nextFrom = clean(filterOverrides?.fromDate ?? fromDate);
       const nextTo = clean(filterOverrides?.toDate ?? toDate);
+      const nextCoverType = filterOverrides?.coverType ?? coverType;
       // Deep history scan when looking up a specific member / date (older reauths like Alcantar).
       if (nextSearch) params.set('search', nextSearch);
       if (nextStaff) params.set('staff', nextStaff);
       if (nextMember) params.set('member', nextMember);
       if (nextFrom) params.set('from', nextFrom);
       if (nextTo) params.set('to', nextTo);
+      if (nextCoverType === 'authorization' || nextCoverType === 'reauthorization') {
+        params.set('coverType', nextCoverType);
+      }
       const response = await fetch(`/api/forms/kaiser-isp-cover-sheet/download-log?${params.toString()}`, {
         headers: { Authorization: `Bearer ${idToken}` },
         cache: 'no-store',
@@ -484,7 +500,12 @@ export default function KaiserIspCoverDownloadsPage() {
   };
 
   const hasActiveFilters = Boolean(
-    clean(search) || clean(staff) || clean(member) || clean(fromDate) || clean(toDate)
+    clean(search) ||
+      clean(staff) ||
+      clean(member) ||
+      clean(fromDate) ||
+      clean(toDate) ||
+      coverType !== 'all'
   );
   const resultsLabel = useMemo(() => {
     if (loading) return 'Loading…';
@@ -504,17 +525,20 @@ export default function KaiserIspCoverDownloadsPage() {
         <CardHeader>
           <CardTitle>Kaiser Cover Sheet Downloads</CardTitle>
           <CardDescription>
-            Recent Kaiser cover sheet downloads appear below (last 10). Search by member, date, or staff to find
-            older files. Use View / Download for one PDF, or upgrade matching results and ZIP them for ILS.
+            Recent Kaiser cover sheet downloads appear below (last 10). Search by member, date, staff, or cover
+            type (Initial vs Reauthorization). Use View / Download for one PDF, or upgrade matching results and
+            ZIP them for ILS.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 space-y-2">
             <div className="text-sm font-medium text-emerald-950">Send cover sheets to ILS</div>
             <p className="text-xs text-emerald-900/80">
-              Upgrade finished/archived PDFs so <span className="font-medium">Auto Calculated Total Costs</span>{' '}
-              starts with member room &amp; board (then KP tier in Acrobat). Use date range for a batch + ZIP,
-              or upgrade every finished cover sheet that still needs it.
+              Upgrade finished/archived PDFs so KP Tier Level is{' '}
+              <span className="font-medium">Select from drop down + Tier 1–5</span> (never Yes/No), and{' '}
+              <span className="font-medium">Auto Calculated Total Costs</span> starts with member room &amp; board
+              (KP tier adds in Acrobat). Use date range for a batch + ZIP, or upgrade every finished cover sheet
+              that still needs it.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" size="sm" onClick={applyTodayFilter} disabled={loading}>
@@ -584,7 +608,7 @@ export default function KaiserIspCoverDownloadsPage() {
             ) : null}
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             <Input
               placeholder="Search all fields"
               value={search}
@@ -600,6 +624,16 @@ export default function KaiserIspCoverDownloadsPage() {
               value={staff}
               onChange={(event) => setStaff(event.target.value)}
             />
+            <select
+              aria-label="Cover type"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              value={coverType}
+              onChange={(event) => setCoverType(event.target.value as CoverTypeFilter)}
+            >
+              <option value="all">All cover types</option>
+              <option value="authorization">Initial Authorization</option>
+              <option value="reauthorization">Reauthorization</option>
+            </select>
             <Input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
             <Input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
           </div>
@@ -616,6 +650,7 @@ export default function KaiserIspCoverDownloadsPage() {
                 setMember('');
                 setFromDate('');
                 setToDate('');
+                setCoverType('all');
                 setShowAllLogs(false);
                 void loadLogs({
                   search: '',
@@ -623,6 +658,7 @@ export default function KaiserIspCoverDownloadsPage() {
                   member: '',
                   fromDate: '',
                   toDate: '',
+                  coverType: 'all',
                 });
               }}
               disabled={loading}
@@ -645,7 +681,11 @@ export default function KaiserIspCoverDownloadsPage() {
                 <div
                   key={entry.id}
                   className={`w-full rounded border p-3 text-left text-sm ${
-                    selectedLogId === entry.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted/30'
+                    selectedLogId === entry.id
+                      ? 'border-blue-500 bg-blue-50'
+                      : normalizeCoverType(clean(entry.coverPageType)) === 'reauthorization'
+                        ? 'border-amber-200 hover:bg-amber-50/40'
+                        : 'border-sky-200 hover:bg-sky-50/40'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -657,16 +697,18 @@ export default function KaiserIspCoverDownloadsPage() {
                       <div className="font-medium leading-tight">
                         {entry.downloadName || entry.memberName || 'Unknown member'}
                       </div>
-                      <div className="mt-1 text-xs text-muted-foreground leading-tight">
-                        {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'} ·{' '}
-                        {toCoverTypeLabel(clean(entry.coverPageType))} ·{' '}
-                        {entry.staffName || entry.staffEmail || 'Unknown staff'}
-                      </div>
-                      {clean(entry.totalCostsFormat) === 'room-board-then-kp-tier' ? (
-                        <Badge variant="outline" className="mt-1 border-emerald-200 bg-emerald-50 text-emerald-800">
-                          New Total Costs
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground leading-tight">
+                        <span>
+                          {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className={coverTypeBadgeClass(clean(entry.coverPageType))}
+                        >
+                          {toCoverTypeLabel(clean(entry.coverPageType))}
                         </Badge>
-                      ) : null}
+                        <span>{entry.staffName || entry.staffEmail || 'Unknown staff'}</span>
+                      </div>
                     </button>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
@@ -731,9 +773,14 @@ export default function KaiserIspCoverDownloadsPage() {
                 <div className="font-medium">
                   {selectedEntry.downloadName || selectedEntry.memberName || 'Unknown member'}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  Client_ID2: {selectedEntry.memberClientId || 'N/A'} ·{' '}
-                  {toCoverTypeLabel(clean(selectedEntry.coverPageType))}
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>Client_ID2: {selectedEntry.memberClientId || 'N/A'}</span>
+                  <Badge
+                    variant="outline"
+                    className={coverTypeBadgeClass(clean(selectedEntry.coverPageType))}
+                  >
+                    {toCoverTypeLabel(clean(selectedEntry.coverPageType))}
+                  </Badge>
                 </div>
                 <div className="text-xs text-muted-foreground">
                   Staff: {selectedEntry.staffName || selectedEntry.staffEmail || 'Unknown'} ·{' '}

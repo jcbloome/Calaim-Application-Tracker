@@ -73,11 +73,14 @@ export async function GET(req: NextRequest) {
     const search = clean(req.nextUrl.searchParams.get('search')).toLowerCase();
     const staff = clean(req.nextUrl.searchParams.get('staff')).toLowerCase();
     const member = clean(req.nextUrl.searchParams.get('member')).toLowerCase();
+    const coverTypeRaw = clean(req.nextUrl.searchParams.get('coverType')).toLowerCase();
+    const coverType =
+      coverTypeRaw === 'reauthorization' || coverTypeRaw === 'authorization' ? coverTypeRaw : '';
     const from = clean(req.nextUrl.searchParams.get('from'));
     const to = clean(req.nextUrl.searchParams.get('to'));
     const fromTime = from ? new Date(`${from}T00:00:00`).getTime() : NaN;
     const toTime = to ? new Date(`${to}T23:59:59.999`).getTime() : NaN;
-    const hasFilters = Boolean(search || staff || member || from || to);
+    const hasFilters = Boolean(search || staff || member || coverType || from || to);
     // Deep scan when filtering so older finished covers (e.g. Sept reauths) are findable.
     const maxScan = hasFilters ? 5000 : Math.max(limit, 500);
     const pageSize = 250;
@@ -112,6 +115,14 @@ export async function GET(req: NextRequest) {
       if (member) {
         const memberHaystack = `${log.downloadName} ${log.memberName} ${log.memberMrn} ${log.memberClientId}`.toLowerCase();
         if (!memberHaystack.includes(member)) return false;
+      }
+      if (coverType) {
+        const type = String(log.coverPageType || '').trim().toLowerCase();
+        if (coverType === 'reauthorization') {
+          if (!type.includes('reauth')) return false;
+        } else if (type.includes('reauth')) {
+          return false;
+        }
       }
       if (!Number.isNaN(fromTime) || !Number.isNaN(toTime)) {
         const ts = new Date(log.createdAt || '').getTime();
