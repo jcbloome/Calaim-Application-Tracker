@@ -12,21 +12,21 @@
 
 - **Kaiser Cover Sheet — reauth Auto Calculated on old + new templates.** Newer PDFs use `Text23`; pre-07/2026 archives (e.g. Alcantar) use `Text10` (max `Text4`, KP tier `Dropdown8`, room & board `Text3`). Upgrade writes all aliases. **Force-upgraded 179 archived finished covers** (0 failed; 3 still $0.00 with no room & board on PDF/Caspio). Download-log search deep-scans history.
   - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/lib/kaiser-isp-cover-sheet-template.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/route.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/upgrade/route.ts`, `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `handoff.md`.
-  - Commit: _(pending)_.
+  - Commit: `f9911b8d`.
 
 - **Kaiser Cover Sheet Downloads — upgrade all finished PDFs for room & board Total Costs.** Added **Upgrade all finished cover sheets** (paginated archive scan, skips already-upgraded). Matching date-range upgrade kept as **Upgrade matching dates**. Archived PDFs get Auto Calculated Total Costs = room & board (+ KP-tier Acrobat scripts).
   - Files: `src/app/api/forms/kaiser-isp-cover-sheet/download-log/upgrade/route.ts`, `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `handoff.md`.
-  - Commit: _(pending)_.
+  - Commit: `f9911b8d`.
 
 ## Changes 2026-11-09
 
 - **Kaiser eligibility failsafe — all living + active-again flag.** Kaiser batches now include all living members (except Member Died). Decoded results flag Caspio-inactive members who are active again on the 271 as **Inactive in Caspio, active again — resume H2022 six-month visits**.
   - Files: `src/lib/batch-eligibility.ts`, `src/lib/batch-eligibility-results.ts`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-log/page.tsx`, `handoff.md`.
-  - Commit: _(pending)_.
+  - Commit: `f9911b8d`.
 
 - **Eligibility — exclude CalAIM_Status Member Died.** Deceased members are omitted from Kaiser/Health Net eligibility batches and dropped from decoded 271 result tables/CSV (matched via plan=all cache, then filtered).
   - Files: `src/lib/batch-eligibility.ts`, `src/lib/batch-eligibility-results.ts`, `src/app/api/admin/batch-eligibility/members/route.ts`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `handoff.md`.
-  - Commit: _(pending)_.
+  - Commit: `f9911b8d`.
 
 - **Kaiser eligibility checker — Authorized or H2022 + Kaiser_Status display.** Kaiser Claim.MD / SDS batches include `CalAIM_Status` Authorized or H2022. Tables/CSV also show Caspio `Kaiser_Status`, with a red **Kaiser: Inactive** badge when inactive.
   - Files: `src/lib/batch-eligibility.ts`, `src/lib/batch-eligibility-results.ts`, `src/app/api/admin/batch-eligibility/members/route.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/app/admin/tools/batch-eligibility-log/page.tsx`, `handoff.md`.
