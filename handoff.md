@@ -12,6 +12,7 @@
 
 - **Kaiser eligibility — always include Authorization on Hold + reauth flag.** Kaiser batches include all living members (Member Died excluded). Authorization / Authorized on Hold is **always forced into the SDS 270** (checkbox locked). When a 271 comes back **active** for an on-hold CalAIM status, results flag **`auth_hold_reauth`**: “Authorization on Hold in Caspio, now active — do reauthorization visits” (Needs review / CSV / sky badge).
   - Files: `src/lib/batch-eligibility.ts`, `src/lib/batch-eligibility-results.ts`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `handoff.md`.
+  - Commit: `bb2fff1f`.
 
 - **Fix App Hosting / Deploy build — ES2017 regex in cover-sheet upgrade.** `next build` failed typecheck on `/^\((.*)\)$/s` (`dotAll` needs ES2018+; tsconfig target is ES2017). Replaced with `[\s\S]*`.
   - Files: `src/lib/kaiser-cover-sheet-upgrade.ts`, `handoff.md`.
