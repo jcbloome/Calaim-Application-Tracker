@@ -63,7 +63,7 @@ const memberListsForPlan = (plan: BatchEligibilityPlan): Record<MemberList, { la
       authorized: {
         label: 'All living members',
         purpose:
-          'All Kaiser members except CalAIM_Status Member Died — catch lost coverage and inactive→active again (resume H2022 six-month visits).',
+          'All Kaiser members except CalAIM_Status Member Died (includes Authorization on Hold) — catch lost coverage, inactive→active again, and on-hold members who are active again (reauthorization visits).',
       },
       'not-authorized': {
         label: 'Inactive / Non-Active only',

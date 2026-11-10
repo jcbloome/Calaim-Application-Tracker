@@ -171,6 +171,25 @@ export function isKaiserMemberInactiveInCaspio(
   return /^(non[\s_-]?active|inactive)$/i.test(String(member.calaimStatus || '').trim());
 }
 
+/**
+ * CalAIM_Status Authorization / Authorized on Hold — included in Kaiser batches so we can
+ * detect when coverage is active again and flag reauthorization visits.
+ */
+export function isAuthorizationOnHoldCalaimStatus(status: unknown): boolean {
+  const normalized = String(status ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!normalized || !normalized.includes('hold')) return false;
+  return (
+    normalized.includes('authorization on hold') ||
+    normalized.includes('authorized on hold') ||
+    ((normalized.includes('authorization') || normalized.includes('authorized')) &&
+      normalized.includes('on hold'))
+  );
+}
+
 /** Exclude deceased members from eligibility batches and decoded results. */
 export function isMemberDiedCalaimStatus(status: unknown): boolean {
   const normalized = String(status ?? '')

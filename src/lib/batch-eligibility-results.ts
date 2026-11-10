@@ -3,6 +3,7 @@ import {
   BATCH_ELIGIBILITY_PLAN_LABELS,
   buildCsv,
   formatDate,
+  isAuthorizationOnHoldCalaimStatus,
   isKaiserEligibilityStatus,
   isKaiserMemberInactiveInCaspio,
   isMemberDiedCalaimStatus,
@@ -20,7 +21,13 @@ import {
   type EligibilityResult,
 } from '@/lib/x12-271';
 
-export type EligibilityFlag = 'lost' | 'gained' | 'active_again' | 'unmatched' | 'none';
+export type EligibilityFlag =
+  | 'lost'
+  | 'gained'
+  | 'active_again'
+  | 'auth_hold_reauth'
+  | 'unmatched'
+  | 'none';
 
 export type EligibilityResultRow = {
   key: string;
@@ -45,6 +52,8 @@ export const ELIGIBILITY_FLAG_LABELS: Record<Exclude<EligibilityFlag, 'none'>, s
   lost: 'Authorized in Caspio, not active',
   gained: 'Not authorized in Caspio, now active',
   active_again: 'Inactive in Caspio, active again — resume H2022 six-month visits',
+  auth_hold_reauth:
+    'Authorization on Hold in Caspio, now active — do reauthorization visits',
   unmatched: 'Not matched to Caspio cache (check plan tab, ID, or DOB)',
 };
 
@@ -70,7 +79,10 @@ const normName = (value: string) =>
     .replace(/[^A-Z]/g, '');
 
 export const isEligibilityFlagged = (row: EligibilityResultRow) =>
-  row.flag === 'lost' || row.flag === 'gained' || row.flag === 'active_again';
+  row.flag === 'lost' ||
+  row.flag === 'gained' ||
+  row.flag === 'active_again' ||
+  row.flag === 'auth_hold_reauth';
 
 const isAuthorized = (member: BatchEligibilityMember | null) =>
   member?.calaimStatus.trim().toLowerCase() === 'authorized';
@@ -149,6 +161,12 @@ export function buildEligibilityResultRows(
         // Failsafe: Caspio inactive (Kaiser/CalAIM) but 271 active → resume H2022 visits.
         if (result.outcome === 'active' && isKaiserMemberInactiveInCaspio(member)) {
           flag = 'active_again';
+        } else if (
+          result.outcome === 'active' &&
+          isAuthorizationOnHoldCalaimStatus(member.calaimStatus)
+        ) {
+          // Authorization / Authorized on Hold — coverage is back; schedule reauth visits.
+          flag = 'auth_hold_reauth';
         } else if (isKaiserEligibilityStatus(member.calaimStatus) && result.outcome !== 'active') {
           flag = 'lost';
         } else if (!isKaiserEligibilityStatus(member.calaimStatus) && result.outcome === 'active') {
@@ -178,12 +196,14 @@ export function countEligibilityRows(rows: EligibilityResultRow[]) {
   let lost = 0;
   let gained = 0;
   let activeAgain = 0;
+  let authHoldReauth = 0;
   let unmatched = 0;
   for (const row of rows) {
     c[row.result.outcome]++;
     if (row.flag === 'lost') lost++;
     else if (row.flag === 'gained') gained++;
     else if (row.flag === 'active_again') activeAgain++;
+    else if (row.flag === 'auth_hold_reauth') authHoldReauth++;
     else if (row.flag === 'unmatched') unmatched++;
   }
   return {
@@ -191,8 +211,9 @@ export function countEligibilityRows(rows: EligibilityResultRow[]) {
     lost,
     gained,
     activeAgain,
+    authHoldReauth,
     unmatched,
-    flagged: lost + gained + activeAgain,
+    flagged: lost + gained + activeAgain + authHoldReauth,
   };
 }
 

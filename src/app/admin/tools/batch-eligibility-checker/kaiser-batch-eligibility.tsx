@@ -10,7 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { isMemberDiedCalaimStatus, type BatchEligibilityMember } from '@/lib/batch-eligibility';
+import {
+  isAuthorizationOnHoldCalaimStatus,
+  isMemberDiedCalaimStatus,
+  type BatchEligibilityMember,
+} from '@/lib/batch-eligibility';
 import {
   DEFAULT_EDI_270_SETTINGS,
   build270,
@@ -169,8 +173,11 @@ export function KaiserBatchEligibility({
   }, [members]);
 
   const { included, excluded, regionCounts } = useMemo(() => {
+    // Always include Authorization / Authorized on Hold so we can flag reauth when 271 is active.
     const byStatus = members.filter(
-      (m) => includedStatuses.has(m.calaimStatus) && !isMemberDiedCalaimStatus(m.calaimStatus)
+      (m) =>
+        !isMemberDiedCalaimStatus(m.calaimStatus) &&
+        (includedStatuses.has(m.calaimStatus) || isAuthorizationOnHoldCalaimStatus(m.calaimStatus))
     );
     const ok: BatchEligibilityMember[] = [];
     const bad: Array<{ member: BatchEligibilityMember; problems: string[] }> = [];
@@ -198,10 +205,19 @@ export function KaiserBatchEligibility({
 
   const download270 = async () => {
     const edi = build270(included, settings);
+    const statusesForRun = [
+      ...new Set([
+        ...includedStatuses,
+        ...members
+          .filter((m) => isAuthorizationOnHoldCalaimStatus(m.calaimStatus))
+          .map((m) => m.calaimStatus)
+          .filter(Boolean),
+      ]),
+    ].sort();
     const statusLabel =
-      includedStatuses.size > 3
-        ? `${includedStatuses.size} statuses`
-        : [...includedStatuses].sort().join(' + ') || 'all living';
+      statusesForRun.length > 3
+        ? `${statusesForRun.length} statuses`
+        : statusesForRun.join(' + ') || 'all living';
     const fileName = `Kaiser 270 eligibility - ${statusLabel} - ${format(new Date(), 'yyyy-MM-dd')}.edi`;
     const blob = new Blob([edi], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -222,7 +238,7 @@ export function KaiserBatchEligibility({
         JSON.stringify({
           memberCount: included.length,
           listLabel: statusLabel,
-          statuses: [...includedStatuses],
+          statuses: statusesForRun,
           skippedIncomplete: excluded.length,
           regions: Object.fromEntries(regionCounts),
           format: 'X12 270 (005010X279A1)',
@@ -339,8 +355,9 @@ export function KaiserBatchEligibility({
           <CardDescription>
             From the synced Caspio members cache
             {membersSyncedIso ? ` (last synced ${format(new Date(membersSyncedIso), 'MMM d, yyyy h:mm a')})` : ''}.
-            All living Kaiser members (except Member Died). Untick statuses to leave them out. Inactive→active
-            again is flagged after decode so H2022 six-month visits can resume.
+            All living Kaiser members (except Member Died). Authorization / Authorized on Hold is always
+            included. Untick other statuses to leave them out. After decode: inactive→active flags H2022
+            visits; on-hold→active flags reauthorization visits.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -361,26 +378,41 @@ export function KaiserBatchEligibility({
           </div>
           <div className="flex flex-wrap gap-2">
             {statusCounts.map(([status, count]) => {
-              const checked = includedStatuses.has(status);
+              const alwaysInclude = isAuthorizationOnHoldCalaimStatus(status);
+              const checked = alwaysInclude || includedStatuses.has(status);
               return (
                 <label
                   key={status}
-                  className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${
-                    checked ? 'border-primary bg-primary/5' : ''
+                  className={`flex items-center gap-2 rounded-md border px-2 py-1 text-sm ${
+                    alwaysInclude ? 'cursor-default' : 'cursor-pointer'
+                  } ${checked ? 'border-primary bg-primary/5' : ''} ${
+                    alwaysInclude ? 'border-amber-300 bg-amber-50' : ''
                   }`}
+                  title={
+                    alwaysInclude
+                      ? 'Always included — check if coverage is active again for reauthorization visits'
+                      : undefined
+                  }
                 >
                   <Checkbox
                     checked={checked}
-                    onCheckedChange={(value) =>
+                    disabled={alwaysInclude}
+                    onCheckedChange={(value) => {
+                      if (alwaysInclude) return;
                       setIncludedStatuses((prev) => {
                         const next = new Set(prev);
                         if (value) next.add(status);
                         else next.delete(status);
                         return next;
-                      })
-                    }
+                      });
+                    }}
                   />
                   {status} <Badge variant="secondary">{count}</Badge>
+                  {alwaysInclude ? (
+                    <Badge variant="outline" className="border-amber-300 bg-white text-[10px] text-amber-900">
+                      always
+                    </Badge>
+                  ) : null}
                 </label>
               );
             })}

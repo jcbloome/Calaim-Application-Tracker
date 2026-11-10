@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   BATCH_ELIGIBILITY_PLAN_LABELS,
   inferBatchEligibilityPlanFrom271,
+  isAuthorizationOnHoldCalaimStatus,
   isKaiserInactiveStatus,
   type BatchEligibilityMember,
   type BatchEligibilityPlan,
@@ -38,7 +39,7 @@ const OUTCOME_CLASSES: Record<EligibilityOutcome, string> = {
 
 type DecodedFile = { name: string; text: string };
 
-/** CalAIM_Status + Kaiser_Status (highlight Inactive). */
+/** CalAIM_Status + Kaiser_Status (highlight Inactive / Authorization on Hold). */
 export function CaspioMemberStatusCell({
   member,
   showClientId = true,
@@ -49,9 +50,21 @@ export function CaspioMemberStatusCell({
   if (!member) return <span className="text-muted-foreground">—</span>;
   const kaiserStatus = String(member.kaiserStatus || '').trim();
   const inactive = isKaiserInactiveStatus(kaiserStatus);
+  const authOnHold = isAuthorizationOnHoldCalaimStatus(member.calaimStatus);
   return (
     <>
-      <div>{member.calaimStatus || '-'}</div>
+      <div>
+        {authOnHold ? (
+          <Badge
+            variant="outline"
+            className="whitespace-normal border-amber-300 bg-amber-50 text-amber-950"
+          >
+            {member.calaimStatus}
+          </Badge>
+        ) : (
+          member.calaimStatus || '-'
+        )}
+      </div>
       {kaiserStatus ? (
         <div className={inactive ? 'mt-0.5' : 'mt-0.5 text-muted-foreground'}>
           {inactive ? (
@@ -306,6 +319,28 @@ export function EligibilityResultsCard({
               {filterButton('rejected', 'Rejected / not found', counts.rejected)}
               {counts.unknown ? filterButton('unknown', 'Unclear', counts.unknown) : null}
             </div>
+            {plan === 'kaiser' && (counts.authHoldReauth > 0 || counts.activeAgain > 0) ? (
+              <div className="flex flex-wrap gap-2 text-xs">
+                {counts.authHoldReauth > 0 ? (
+                  <Badge
+                    variant="outline"
+                    className="whitespace-normal border-sky-300 bg-sky-50 text-sky-950"
+                  >
+                    {counts.authHoldReauth.toLocaleString()} Authorization on Hold → active (reauthorization
+                    visits) — in Needs review
+                  </Badge>
+                ) : null}
+                {counts.activeAgain > 0 ? (
+                  <Badge
+                    variant="outline"
+                    className="whitespace-normal border-emerald-300 bg-emerald-50 text-emerald-900"
+                  >
+                    {counts.activeAgain.toLocaleString()} inactive → active again (H2022 visits) — in Needs
+                    review
+                  </Badge>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 className="h-9 w-64"
@@ -458,7 +493,10 @@ export function EligibilityResultsCard({
                       <Fragment key={row.key}>
                         <TableRow
                           className={`cursor-pointer ${
-                            row.flag === 'lost' || row.flag === 'gained' || row.flag === 'active_again'
+                            row.flag === 'lost' ||
+                            row.flag === 'gained' ||
+                            row.flag === 'active_again' ||
+                            row.flag === 'auth_hold_reauth'
                               ? 'bg-amber-50/60'
                               : ''
                           }`}
@@ -522,14 +560,16 @@ export function EligibilityResultsCard({
                                 variant={
                                   row.flag === 'unmatched'
                                     ? 'outline'
-                                    : row.flag === 'active_again'
+                                    : row.flag === 'active_again' || row.flag === 'auth_hold_reauth'
                                       ? 'default'
                                       : 'destructive'
                                 }
                                 className={
                                   row.flag === 'active_again'
                                     ? 'mt-1 whitespace-normal border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-100'
-                                    : 'mt-1 whitespace-normal'
+                                    : row.flag === 'auth_hold_reauth'
+                                      ? 'mt-1 whitespace-normal border-sky-300 bg-sky-100 text-sky-950 hover:bg-sky-100'
+                                      : 'mt-1 whitespace-normal'
                                 }
                               >
                                 {ELIGIBILITY_FLAG_LABELS[row.flag]}
