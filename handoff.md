@@ -10,11 +10,9 @@
 
 ## Changes 2026-11-10
 
-- **Kaiser Cover Sheet — KP Tier Level blank + Tier 1–5; Auto Calculated = room & board.** KP dropdown forced to **Select from drop down** + Tier 1–5 (clears stale Yes/No). Never treat current-template `Dropdown8` as KP tier. **Auto Calculated Total Costs** again starts as member room & board; KP tier adds in Acrobat. Removed **New Total Costs** badge. Ran full finished-cover upgrade 2026-11-10 (~270s).
-  - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/lib/kaiser-isp-cover-sheet-template.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/zip/route.ts`, `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `handoff.md`.
-
-- **Kaiser Cover Sheet Downloads — Initial vs Reauthorization colors + filter.** List/detail badges: sky for Initial Authorization, amber for Reauthorization (row borders match). New **Cover type** filter (`all` / Initial / Reauth) on the downloads page; API `coverType` query param filters download-log results.
-  - Files: `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/route.ts`, `handoff.md`.
+- **Kaiser Cover Sheet — KP Tier Level blank + Tier 1–5; Auto Calculated = room & board; downloads color/filter.** KP dropdown forced to **Select from drop down** + Tier 1–5 (clears stale Yes/No). Never treat current-template `Dropdown8` as KP tier. **Auto Calculated Total Costs** starts as member room & board; KP tier adds in Acrobat. Downloads list: sky/amber Initial vs Reauth badges + cover-type filter; removed **New Total Costs** badge. Ran full finished-cover upgrade 2026-11-10 (~270s).
+  - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/lib/kaiser-isp-cover-sheet-template.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/route.ts`, `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `handoff.md`.
+  - Commit: `8166c7bd`.
 
 - **Kaiser Cover Sheet — reauth Auto Calculated on old + new templates.** Newer PDFs use `Text23`; pre-07/2026 archives (e.g. Alcantar) use `Text10` (max `Text4`, KP tier `Dropdown8`, room & board `Text3`). Upgrade writes all aliases. **Force-upgraded 179 archived finished covers** (0 failed; 3 still $0.00 with no room & board on PDF/Caspio). Download-log search deep-scans history.
   - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/lib/kaiser-isp-cover-sheet-template.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/route.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/upgrade/route.ts`, `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `handoff.md`.
