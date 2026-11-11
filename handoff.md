@@ -12,6 +12,7 @@
 
 - **2FA login — Preferences failed / Failed to fetch no longer blocks sign-in.** Clicking “Set up authenticator app” was hard-stopping when `/api/auth/2fa-preferences` failed with a browser network error. Preference save is now best-effort; authenticator setup uses same-origin `/api/auth/2fa-totp-setup` instead of the Cloud Function callable (CORS/status-0 risk). Clearer network error text; Email code still works as a fallback.
   - Files: `src/components/TwoFactorAuth.tsx`, `src/lib/client-2fa.ts`, `src/app/api/auth/2fa-totp-setup/route.ts`, `handoff.md`.
+  - Commit: `c6c8c03f`.
 
 ## Changes 2026-11-10
 
