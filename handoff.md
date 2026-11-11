@@ -8,6 +8,11 @@
 
 ---
 
+## Changes 2026-11-11
+
+- **2FA login — Preferences failed / Failed to fetch no longer blocks sign-in.** Clicking “Set up authenticator app” was hard-stopping when `/api/auth/2fa-preferences` failed with a browser network error. Preference save is now best-effort; authenticator setup uses same-origin `/api/auth/2fa-totp-setup` instead of the Cloud Function callable (CORS/status-0 risk). Clearer network error text; Email code still works as a fallback.
+  - Files: `src/components/TwoFactorAuth.tsx`, `src/lib/client-2fa.ts`, `src/app/api/auth/2fa-totp-setup/route.ts`, `handoff.md`.
+
 ## Changes 2026-11-10
 
 - **Kaiser eligibility — always include Authorization on Hold + reauth flag.** Kaiser batches include all living members (Member Died excluded). Authorization / Authorized on Hold is **always forced into the SDS 270** (checkbox locked). When a 271 comes back **active** for an on-hold CalAIM status, results flag **`auth_hold_reauth`**: “Authorization on Hold in Caspio, now active — do reauthorization visits” (Needs review / CSV / sky badge).

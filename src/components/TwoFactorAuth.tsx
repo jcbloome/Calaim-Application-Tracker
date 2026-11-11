@@ -7,14 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth, useFunctions } from '@/firebase';
+import { useAuth } from '@/firebase';
 import {
   fetch2faStatusViaApi,
   send2faCodeViaApi,
+  setup2faTotpViaApi,
   update2faPreferencesViaApi,
   verify2faCodeViaApi,
 } from '@/lib/client-2fa';
-import { httpsCallable } from 'firebase/functions';
 import QRCode from 'qrcode';
 import { 
   Shield, 
@@ -53,7 +53,6 @@ interface TotpSetupState {
 
 export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoFactorAuthProps) {
   const auth = useAuth();
-  const functions = useFunctions();
   const [step, setStep] = useState<'check' | 'method' | 'code' | 'verified'>('check');
   const [status, setStatus] = useState<TwoFactorStatus | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<'email' | 'totp'>('email');
@@ -203,9 +202,10 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
   const startAuthenticatorSetup = async (): Promise<boolean> => {
     setIsSending(true);
     try {
-      const setupTotp = httpsCallable(functions, 'setup2FATOTP');
-      const result = await setupTotp({});
-      const data = result.data as any;
+      const user = auth.currentUser;
+      if (!user) throw new Error('Not signed in');
+      // Same-origin API — avoids Cloud Function callable CORS / status-0 failures.
+      const data = await setup2faTotpViaApi(user);
 
       if (!data?.success || !data.secret || !data.otpauthUrl) {
         toast({
@@ -228,7 +228,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
       toast({
         variant: 'destructive',
         title: 'Setup Failed',
-        description: String(error?.details || error?.message || 'Unable to start Authenticator setup'),
+        description: String(error?.message || 'Unable to start Authenticator setup'),
       });
       return false;
     } finally {
@@ -306,25 +306,21 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
     }
   };
 
-  const updatePreferences = async (): Promise<boolean> => {
+  /** Best-effort preference save — never blocks sending a code or TOTP setup. */
+  const updatePreferences = async (): Promise<void> => {
     try {
       const user = auth.currentUser;
-      if (!user) throw new Error('Not signed in');
+      if (!user) return;
       await update2faPreferencesViaApi(user, selectedMethod);
-      toast({
-        title: 'Preferences Updated',
-        description: '2FA preferences saved successfully',
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
-      return true;
     } catch (error: any) {
       console.warn('Error updating preferences:', String(error?.message || error || 'unknown'));
       toast({
         variant: 'destructive',
-        title: 'Preferences failed',
-        description: String(error?.message || 'Could not save 2FA preferences'),
+        title: 'Could not save preference',
+        description: String(
+          error?.message || 'Continuing with verification anyway. You can switch method next time.'
+        ),
       });
-      return false;
     }
   };
 
@@ -422,8 +418,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
             
             <Button 
               onClick={async () => {
-                const ok = await updatePreferences();
-                if (!ok) return;
+                await updatePreferences();
                 if (selectedMethod === 'email') {
                   await sendVerificationCode();
                 } else {
