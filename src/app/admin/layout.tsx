@@ -204,6 +204,7 @@ const adminNavLinks: AdminNavLink[] = [
       { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Status', icon: ClipboardCheck },
       { href: '/admin/tools/h2022-reauth-visits', label: 'H2022 Reauth Visits', icon: ClipboardList },
       { href: '/admin/tools/t2038-claims', label: 'T2038 Claims (Claim.MD)', icon: Receipt },
+      { href: '/admin/tools/kaiser-sds-claims', label: 'Kaiser SDS Claims (837P)', icon: Receipt },
       { href: '/admin/tools/batch-eligibility-checker', label: 'Batch Eligibility Checker', icon: ClipboardCheck },
       { href: '/admin/tools/batch-eligibility-log', label: 'Batch Eligibility Log', icon: History },
       { isDivider: true, label: 'Reports & Statistics', icon: BarChart3 },

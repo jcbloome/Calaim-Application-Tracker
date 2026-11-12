@@ -59,7 +59,10 @@ export function missingEdiSettings(settings: Edi270Settings): string[] {
 }
 
 /** Payer ID for a member's region; falls back to whichever region ID is filled. */
-export function payerIdForMember(member: BatchEligibilityMember, settings: Edi270Settings): string {
+export function payerIdForMember(
+  member: Pick<BatchEligibilityMember, 'region'>,
+  settings: Edi270Settings
+): string {
   const north = settings.payerIdNorth.trim();
   const south = settings.payerIdSouth.trim();
   if (member.region === 'Kaiser North') return north || south;

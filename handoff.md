@@ -8,6 +8,15 @@
 
 ---
 
+## Changes 2026-11-12
+
+- **T2038 / Kaiser claim billing defaults.** EIN `87-2746305`, charge `$432.00` PMPM, Kaiser diagnosis always **R69**, CPT **T2038**, Mod1 **U4**, POS **13** (Assisted Living), ILS payer **81397**. SDS 837P uses `HC:T2038:U4` and payer 81397 (not regional eligibility IDs).
+  - Files: `src/lib/t2038-claims.ts`, `src/lib/x12-837p.ts`, `src/lib/kaiser-sds-t2038-claims.ts`, `src/app/admin/tools/kaiser-sds-claims/page.tsx`, `src/app/admin/tools/t2038-claims/page.tsx`, `handoff.md`.
+
+- **Kaiser SDS Batch T2038 Claims (837P).** New admin datapage lists Authorized Kaiser members with open T2038 auth, builds an X12 837P `.edi` for Smart Data Solutions portal upload (MRN as subscriber ID, North/South payer from eligibility EDI settings, procedure T2038). Reuses T2038 billing Firestore doc + SDS `kaiser-270` envelope. No Claim.MD upload; downloads are audited in `kaiser_sds_claim_runs`.
+  - Files: `src/lib/x12-837p.ts`, `src/lib/kaiser-sds-t2038-claims.ts`, `src/app/api/admin/kaiser-sds-claims/{members,settings,runs}/route.ts`, `src/app/admin/tools/kaiser-sds-claims/page.tsx`, `src/app/admin/layout.tsx`, `handoff.md`.
+  - Path: `/admin/tools/kaiser-sds-claims`.
+
 ## Changes 2026-11-11
 
 - **2FA login — Preferences failed / Failed to fetch no longer blocks sign-in.** Clicking “Set up authenticator app” was hard-stopping when `/api/auth/2fa-preferences` failed with a browser network error. Preference save is now best-effort; authenticator setup uses same-origin `/api/auth/2fa-totp-setup` instead of the Cloud Function callable (CORS/status-0 risk). Clearer network error text; Email code still works as a fallback.

@@ -63,6 +63,8 @@ export type T2038ClaimSettings = {
   kaiserPayerName: string;
   charge: string;
   diag1: string;
+  /** Procedure modifier 1 (Kaiser T2038 uses U4). */
+  mod1: string;
   billAddress: string;
   billCity: string;
   billState: string;
@@ -77,19 +79,25 @@ export type T2038ClaimSettings = {
 export const DEFAULT_T2038_CLAIM_SETTINGS: T2038ClaimSettings = {
   billName: T2038_BILLING_PROVIDER.name,
   billNpi: '1508537325',
-  billTaxId: '',
+  /** Connections Care Home Consultants EIN (digits only for EDI / Claim.MD). */
+  billTaxId: '872746305',
   healthNetPayerId: '95567',
   healthNetPayerName: 'HEALTH NET',
-  kaiserPayerId: '',
+  /** ILS clearinghouse payer ID for Kaiser claims. */
+  kaiserPayerId: '81397',
   kaiserPayerName: 'KAISER FOUNDATION HEALTH PLAN',
-  charge: '',
-  diag1: '',
+  /** T2038 room & board — $432 per member per month. */
+  charge: '432.00',
+  /** Kaiser T2038 diagnosis is always R69. */
+  diag1: 'R69',
+  mod1: 'U4',
   billAddress: T2038_BILLING_PROVIDER.address,
   billCity: T2038_BILLING_PROVIDER.city,
   billState: T2038_BILLING_PROVIDER.state,
   billZip: T2038_BILLING_PROVIDER.zip,
   billTaxonomy: T2038_BILLING_PROVIDER.taxonomy,
-  placeOfService: '12',
+  /** 13 = Assisted Living Facility. */
+  placeOfService: '13',
   units: '1',
   acceptAssign: 'Y',
   warningDays: 30,
@@ -404,13 +412,15 @@ export function sanitizeT2038ClaimSettings(raw: unknown): T2038ClaimSettings {
         ? DEFAULT_T2038_CLAIM_SETTINGS.billName
         : savedName,
     billNpi: clean(source.billNpi).replace(/\D/g, '') || DEFAULT_T2038_CLAIM_SETTINGS.billNpi,
-    billTaxId: clean(source.billTaxId).replace(/\D/g, ''),
+    billTaxId: clean(source.billTaxId).replace(/\D/g, '') || DEFAULT_T2038_CLAIM_SETTINGS.billTaxId,
     healthNetPayerId: clean(source.healthNetPayerId) || DEFAULT_T2038_CLAIM_SETTINGS.healthNetPayerId,
     healthNetPayerName: clean(source.healthNetPayerName) || DEFAULT_T2038_CLAIM_SETTINGS.healthNetPayerName,
-    kaiserPayerId: clean(source.kaiserPayerId),
+    kaiserPayerId: clean(source.kaiserPayerId) || DEFAULT_T2038_CLAIM_SETTINGS.kaiserPayerId,
     kaiserPayerName: clean(source.kaiserPayerName) || DEFAULT_T2038_CLAIM_SETTINGS.kaiserPayerName,
-    charge: clean(source.charge),
-    diag1: clean(source.diag1).replace(/\./g, '').toUpperCase(),
+    charge: clean(source.charge) || DEFAULT_T2038_CLAIM_SETTINGS.charge,
+    diag1:
+      clean(source.diag1).replace(/\./g, '').toUpperCase() || DEFAULT_T2038_CLAIM_SETTINGS.diag1,
+    mod1: clean(source.mod1).toUpperCase() || DEFAULT_T2038_CLAIM_SETTINGS.mod1,
     billAddress: clean(source.billAddress) || DEFAULT_T2038_CLAIM_SETTINGS.billAddress,
     billCity: clean(source.billCity) || DEFAULT_T2038_CLAIM_SETTINGS.billCity,
     billState: (clean(source.billState) || DEFAULT_T2038_CLAIM_SETTINGS.billState).toUpperCase(),
@@ -492,6 +502,7 @@ export const CLAIMMD_T2038_CSV_HEADERS = [
   'thru_date',
   'place_of_service',
   'proc_code',
+  'mod1',
   'diag_ref',
   'charge',
   'units',
@@ -527,8 +538,11 @@ export function buildT2038ClaimMdCsv(
     }
     const payerId = row.plan === 'Kaiser' ? settings.kaiserPayerId : settings.healthNetPayerId;
     const payerName = row.plan === 'Kaiser' ? settings.kaiserPayerName : settings.healthNetPayerName;
+    // Kaiser T2038 diagnosis is always R69 (settings.diag1); Health Net uses Caspio ICD.
     const diagnosis =
-      row.plan === 'Health Net' ? row.diagnosisCode : row.diagnosisCode || settings.diag1.replace(/\./g, '').toUpperCase();
+      row.plan === 'Kaiser'
+        ? (settings.diag1 || 'R69').replace(/\./g, '').toUpperCase()
+        : row.diagnosisCode;
     const blockers = [...row.batchBlockers, ...missingBillingSettings(settings, [row.plan])];
     if (!row.clientId2) blockers.push('Missing Client_ID2 (patient account number)');
     if (!payerId) blockers.push(`Missing ${row.plan} payer ID`);
@@ -584,6 +598,7 @@ export function buildT2038ClaimMdCsv(
       dos,
       settings.placeOfService,
       T2038_PROC_CODE,
+      row.plan === 'Kaiser' ? settings.mod1 || 'U4' : '',
       '1',
       charge,
       settings.units,
