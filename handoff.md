@@ -16,6 +16,7 @@
 - **Kaiser SDS Batch T2038 Claims (837P).** New admin datapage lists Authorized Kaiser members with open T2038 auth, builds an X12 837P `.edi` for Smart Data Solutions portal upload (MRN as subscriber ID, North/South payer from eligibility EDI settings, procedure T2038). Reuses T2038 billing Firestore doc + SDS `kaiser-270` envelope. No Claim.MD upload; downloads are audited in `kaiser_sds_claim_runs`.
   - Files: `src/lib/x12-837p.ts`, `src/lib/kaiser-sds-t2038-claims.ts`, `src/app/api/admin/kaiser-sds-claims/{members,settings,runs}/route.ts`, `src/app/admin/tools/kaiser-sds-claims/page.tsx`, `src/app/admin/layout.tsx`, `handoff.md`.
   - Path: `/admin/tools/kaiser-sds-claims`.
+  - Commit: `60305623`.
 
 ## Changes 2026-11-11
 
