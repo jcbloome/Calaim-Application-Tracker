@@ -26,6 +26,7 @@ import {
   buildKaiserSdsT2038Edi,
   missingKaiserSdsClaimSettings,
   type KaiserSdsClaimRow,
+  type KaiserSdsPlacementFilter,
 } from '@/lib/kaiser-sds-t2038-claims';
 import {
   DEFAULT_T2038_CLAIM_SETTINGS,
@@ -65,6 +66,8 @@ export default function KaiserSdsClaimsPage() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>('billable');
+  /** Default placed — already in an RCFE; not_placed = may still need auth/placement. */
+  const [placementFilter, setPlacementFilter] = useState<KaiserSdsPlacementFilter>('placed');
   const [serviceDate, setServiceDate] = useState(todayInputValue);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
@@ -118,6 +121,7 @@ export default function KaiserSdsClaimsPage() {
 
   const summary = useMemo(() => {
     const inWindow = rows.filter((row) => row.window === 'in_window' || row.window === 'ending_soon');
+    const placed = rows.filter((row) => row.isPlaced);
     return {
       authorized: rows.length,
       inWindow: inWindow.length,
@@ -127,11 +131,17 @@ export default function KaiserSdsClaimsPage() {
       claimDue: rows.filter(
         (row) => (row.window === 'in_window' || row.window === 'ending_soon') && row.claimDue
       ).length,
+      placed: placed.length,
+      notPlaced: rows.length - placed.length,
+      placedInWindow: placed.filter((row) => row.window === 'in_window' || row.window === 'ending_soon')
+        .length,
     };
   }, [rows]);
 
   const visibleRows = useMemo(() => {
     return rows.filter((row) => {
+      if (placementFilter === 'placed' && !row.isPlaced) return false;
+      if (placementFilter === 'not_placed' && row.isPlaced) return false;
       if (filter === 'claim_due') {
         return (row.window === 'in_window' || row.window === 'ending_soon') && row.claimDue;
       }
@@ -139,7 +149,7 @@ export default function KaiserSdsClaimsPage() {
       if (filter === 'all') return true;
       return row.window === filter;
     });
-  }, [filter, rows]);
+  }, [filter, placementFilter, rows]);
 
   const selectedRows = useMemo(
     () => visibleRows.filter((row) => selected[row.id]),
@@ -266,9 +276,9 @@ export default function KaiserSdsClaimsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Kaiser SDS claims (837P)</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Authorized Kaiser members with open T2038 authorizations. Download an X12 837P EDI file and
-            upload it in the Smart Data Solutions claims portal (procedure T2038). Subscriber ID is the
-            Kaiser MRN; payer ID is North/South from SDS eligibility settings.
+            Authorized Kaiser members with open T2038 authorizations. Shows Caspio RCFE_Name — filter to
+            placed members for claims (already placed = no new auth request). Download an X12 837P EDI
+            for the SDS claims portal (T2038 / U4 / R69 / POS 13 / payer 81397).
           </p>
         </div>
         <Button variant="outline" onClick={() => void loadAll(true)} disabled={isLoading}>
@@ -290,7 +300,9 @@ export default function KaiserSdsClaimsPage() {
             <CardDescription>Authorized in date</CardDescription>
             <CardTitle>{summary.inWindow}</CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Kaiser T2038 only</CardContent>
+          <CardContent className="text-xs text-muted-foreground">
+            Placed (RCFE) {summary.placedInWindow} · Not placed {summary.inWindow - summary.placedInWindow}
+          </CardContent>
         </Card>
         <Card className={summary.endingSoon ? 'border-amber-400' : undefined}>
           <CardHeader className="pb-2">
@@ -445,6 +457,31 @@ export default function KaiserSdsClaimsPage() {
           <div className="flex flex-wrap gap-2">
             {(
               [
+                ['placed', `Placed / has RCFE (${summary.placed})`],
+                ['not_placed', `Not placed (${summary.notPlaced})`],
+                ['all', 'All placements'],
+              ] as const
+            ).map(([key, label]) => (
+              <Button
+                key={key}
+                size="sm"
+                variant={placementFilter === key ? 'secondary' : 'ghost'}
+                onClick={() => setPlacementFilter(key)}
+                title={
+                  key === 'placed'
+                    ? 'Already placed — use for T2038 claims; no new auth request needed'
+                    : key === 'not_placed'
+                      ? 'No real RCFE_Name — may still need placement / auth'
+                      : undefined
+                }
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
                 ['billable', `In date (${summary.inWindow})`],
                 ['claim_due', `Claim due 30+ days (${summary.claimDue})`],
                 ['ending_soon', `Ending soon (${summary.endingSoon})`],
@@ -485,6 +522,7 @@ export default function KaiserSdsClaimsPage() {
                     />
                   </TableHead>
                   <TableHead>Member</TableHead>
+                  <TableHead>RCFE</TableHead>
                   <TableHead>Region</TableHead>
                   <TableHead>Auth</TableHead>
                   <TableHead>Window</TableHead>
@@ -496,7 +534,7 @@ export default function KaiserSdsClaimsPage() {
               <TableBody>
                 {visibleRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-muted-foreground">
+                    <TableCell colSpan={9} className="text-muted-foreground">
                       {isLoading ? 'Loading authorizations…' : 'No members in this view.'}
                     </TableCell>
                   </TableRow>
@@ -516,6 +554,15 @@ export default function KaiserSdsClaimsPage() {
                       <TableCell>
                         <div className="font-medium">{row.memberName || 'Unnamed'}</div>
                         <div className="text-xs text-muted-foreground">{row.clientId2}</div>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {row.isPlaced ? (
+                          <span>{row.rcfeName}</span>
+                        ) : (
+                          <Badge variant="outline" className="font-normal text-amber-900">
+                            Not placed
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs">{row.region || '—'}</TableCell>
                       <TableCell>

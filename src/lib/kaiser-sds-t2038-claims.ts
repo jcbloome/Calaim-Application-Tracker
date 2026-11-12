@@ -2,6 +2,7 @@
  * Kaiser T2038 → Smart Data Solutions 837P batch helpers.
  */
 import { resolveKaiserRegion } from '@/lib/kaiser-region';
+import { isPlaceholderRcfeName } from '@/lib/rcfe-utils';
 import {
   formatCompactDate,
   parseDateOnly,
@@ -21,7 +22,28 @@ import { type Edi270Settings } from '@/lib/x12-270';
 
 export type KaiserSdsClaimRow = T2038ClaimMemberRow & {
   region: string;
+  /** Caspio RCFE_Name; empty / CalAIM Use = not a real placement. */
+  rcfeName: string;
+  /** True when RCFE_Name is a real facility (already placed). */
+  isPlaced: boolean;
 };
+
+export type KaiserSdsPlacementFilter = 'all' | 'placed' | 'not_placed';
+
+const pickRcfeName = (raw?: Record<string, unknown> | null) => {
+  if (!raw) return '';
+  for (const key of ['RCFE_Name', 'rcfeName', 'Assisted_Living_Facility_Name'] as const) {
+    const value = String(raw[key] ?? '').trim();
+    if (value) return value;
+  }
+  return '';
+};
+
+/** Real RCFE placement (excludes blank and CalAIM Use placeholders). */
+export function isKaiserMemberPlaced(rcfeName: unknown): boolean {
+  const name = String(rcfeName ?? '').trim();
+  return Boolean(name) && !isPlaceholderRcfeName(name);
+}
 
 export function billingFromT2038Settings(settings: T2038ClaimSettings): X12_837P_Billing {
   return {
@@ -49,7 +71,7 @@ export function filterKaiserAuthorizedRows(rows: T2038ClaimMemberRow[]): T2038Cl
   return rows.filter((row) => row.plan === 'Kaiser');
 }
 
-/** Attach Kaiser North/South from Caspio county/city/MRN when building the members API. */
+/** Attach Kaiser region + RCFE placement from Caspio raw fields. */
 export function withKaiserRegion(
   row: T2038ClaimMemberRow,
   raw?: Record<string, unknown> | null
@@ -59,7 +81,14 @@ export function withKaiserRegion(
     city: raw?.MemberCity || raw?.Member_City,
     mrn: row.memberId,
   });
-  return { ...row, region };
+  const rawRcfe = pickRcfeName(raw);
+  const isPlaced = isKaiserMemberPlaced(rawRcfe);
+  return {
+    ...row,
+    region,
+    rcfeName: isPlaced ? rawRcfe : '',
+    isPlaced,
+  };
 }
 
 export function sdsClaimBlockers(
