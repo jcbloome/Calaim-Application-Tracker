@@ -12,7 +12,7 @@
 
 - **Kaiser ISP cover sheet — Facility vetted/SCA contracted always Yes.** Initial authorization and reauthorization PDFs always set vetted/SCA to **Yes**. Fixed 07/2026 field map: auth **Dropdown8** / reauth **Dropdown34** are vetted (not Dropdown9/21); those are In-ALW County. Preview cache buster includes `vettedYes`.
   - Files: `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/lib/kaiser-isp-cover-sheet-template.ts`, `handoff.md`.
-  - Commit: `e7d7fd07` (partial); follow-up fixes field swap + preview cache.
+  - Commits: `e7d7fd07`, `859e4f8d`.
 
 - **Service Request parse — Plan ID → Member MRN (fix KPSA/CIN bleed).** Table header `MRN : CIN : Plan ID` was capturing **CIN** as MRN; product codes like **KPSA** were not treated as placeholders. Parser now rejects those, extracts Plan ID (e.g. `000007643032`), and always maps a valid Plan ID into `memberMrn`.
   - Files: `src/lib/kaiser-region.ts`, `src/app/admin/applications/create/components/service-request-parsing.ts`, `src/app/api/admin/parse-service-request-vision/route.ts`, `handoff.md`.
