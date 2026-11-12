@@ -74,13 +74,19 @@ export const KAISER_COVER_YES_NO_OPTIONS = ['Select from drop down', 'Yes', 'No'
 export const KAISER_COVER_YES_NO_DROPDOWN_NAMES = [
   'Dropdown4',
   'Dropdown6',
-  'Dropdown8',
-  'Dropdown9', // Facility vetted / SCA contracted (auth)
+  'Dropdown8', // Facility vetted / SCA contracted (auth) — above In-ALW on 07/2026 PDF
+  'Dropdown9', // In ALW County (auth)
   'Dropdown18',
   'Dropdown20',
-  'Dropdown21', // Facility vetted / SCA contracted (reauth)
-  'Dropdown34',
+  'Dropdown21', // In ALW County (reauth)
+  'Dropdown34', // Facility vetted / SCA contracted (reauth) — above In-ALW on 07/2026 PDF
 ] as const;
+
+/**
+ * Auth + reauth facility vetted / SCA contracted — always filled Yes for ILS cover sheets.
+ * On the 07/2026 template these sit directly under move-in date (above In-ALW County).
+ */
+export const KAISER_COVER_VETTED_DROPDOWN_NAMES = ['Dropdown8', 'Dropdown34'] as const;
 
 export function dropdownOptionsLookLikeTiers(options: unknown): boolean {
   const list = Array.isArray(options) ? options.map((o) => String(o || '').toLowerCase()) : [];

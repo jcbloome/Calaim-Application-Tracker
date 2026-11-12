@@ -34,6 +34,7 @@ import {
   KAISER_COVER_REAUTH_ROOM_BOARD_FIELD,
   KAISER_COVER_REAUTH_TOTAL_FIELD,
   KAISER_COVER_YES_NO_DROPDOWN_NAMES,
+  KAISER_COVER_VETTED_DROPDOWN_NAMES,
   KAISER_COVER_YES_NO_OPTIONS,
 } from '@/lib/kaiser-cover-sheet-tier-rates';
 import { KAISER_COVER_TEMPLATE_SETTINGS_DOC } from '@/lib/kaiser-isp-cover-sheet-template';
@@ -804,9 +805,13 @@ export async function GET(req: NextRequest) {
     };
 
     // Direct pass-through: if query key matches a PDF field name, fill it.
+    // Never allow query params to set vetted/SCA fields — those are always Yes below.
+    const vettedDropdownNames = new Set<string>(KAISER_COVER_VETTED_DROPDOWN_NAMES);
     params.forEach((rawValue, rawKey) => {
       const key = clean(rawKey);
       if (!key || key === 'download' || key === 'returnTo') return;
+      if (vettedDropdownNames.has(key)) return;
+      if (key === 'Facility_Vetted_Contracted') return;
       setFieldValue(key, rawValue);
     });
 
@@ -931,8 +936,10 @@ export async function GET(req: NextRequest) {
       setFieldValue('Facility Address', facilityAddress);
       setFieldValue('Facility Type', facilityType);
       setFieldValue('Text30', moveInDate);
-      setFieldValue('Dropdown9', facilityVettedContracted);
-      setFieldValue('Dropdown8', inAlwCounty);
+      // 07/2026 auth: Dropdown8 = vetted/SCA (always Yes); Dropdown9 = In ALW County.
+      setDropdownByPredicate('Dropdown8', (opt) => opt === 'yes');
+      setFieldValue('Dropdown8', facilityVettedContracted);
+      setFieldValue('Dropdown9', inAlwCounty);
       // Initial authorization ILS requested-tier dropdown only (Dropdown10).
       // KP determination (Dropdown25 / Dropdown15) stays blank for Kaiser to select on the PDF.
       setFieldValue('Dropdown10', requestedTierTier);
@@ -1044,8 +1051,10 @@ export async function GET(req: NextRequest) {
       setDropdownByPredicate('Dropdown16', (opt) =>
         changeOfConditionChoice === 'yes' ? opt.startsWith('yes') : opt.startsWith('no')
       );
-      setFieldValue('Dropdown21', facilityVettedContracted);
-      setFieldValue('Dropdown34', inAlwCounty);
+      // 07/2026 reauth: Dropdown34 = vetted/SCA (always Yes); Dropdown21 = In ALW County.
+      setDropdownByPredicate('Dropdown34', (opt) => opt === 'yes');
+      setFieldValue('Dropdown34', facilityVettedContracted);
+      setFieldValue('Dropdown21', inAlwCounty);
       // Reauth R&B amount lives in Text22 (07/2026 template) / Text3 (prior) only. Do not fill the
       // initial-authorization "Members Financial Responsibility of Room and Board" amount field.
       setTextFieldOnly(KAISER_COVER_REAUTH_ROOM_BOARD_FIELD, roomBoardAmount);
@@ -1276,6 +1285,12 @@ export async function GET(req: NextRequest) {
       for (const yesNoName of KAISER_COVER_YES_NO_DROPDOWN_NAMES) {
         const yesNoField = getFieldMaybe(yesNoName);
         if (yesNoField && isDropdownFieldLike(yesNoField)) ensureKaiserYesNoDropdownOptions(yesNoField);
+      }
+      // Auth + reauth: always re-assert RCFE vetted / SCA contracted = Yes AFTER option repair
+      // so Chrome's baked appearance cannot keep a stale "No" from an earlier preview.
+      for (const vettedName of KAISER_COVER_VETTED_DROPDOWN_NAMES) {
+        setDropdownByPredicate(vettedName, (opt) => opt === 'yes');
+        setFieldValue(vettedName, 'Yes');
       }
       for (const kpName of KP_ONLY_DROPDOWN_NAMES) {
         const kpField = getFieldMaybe(kpName);

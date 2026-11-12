@@ -432,8 +432,13 @@ function KaiserIspCoverSheetPrintableContent() {
 
   const prefilledPreviewUrl = useMemo(() => {
     const params = new URLSearchParams(mergedParams);
-    // Bust browser PDF iframe cache when room & board / totals change.
-    params.set('_preview', `${expectedTotalCosts.totalLabel}-${expectedTotalCosts.roomBoard}`);
+    // Always Yes for RCFE vetted / SCA contracted (auth + reauth).
+    params.set('Facility_Vetted_Contracted', 'Yes');
+    // Bust browser PDF iframe cache when room & board / totals / vetted flag change.
+    params.set(
+      '_preview',
+      `${expectedTotalCosts.totalLabel}-${expectedTotalCosts.roomBoard}-vettedYes`
+    );
     const query = params.toString();
     return `/api/forms/kaiser-isp-cover-sheet/template${query ? `?${query}` : ''}`;
   }, [mergedParams, expectedTotalCosts.totalLabel, expectedTotalCosts.roomBoard]);

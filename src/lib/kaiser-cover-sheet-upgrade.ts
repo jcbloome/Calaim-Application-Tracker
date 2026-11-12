@@ -87,7 +87,7 @@ function ensureKpTierOptions(field: AcroFieldWithDict | null | undefined): void 
   if (!field || typeof field.getOptions !== 'function') return;
   try {
     const fieldName = String(field.getName?.() || '');
-    // Never convert Yes/No fields (e.g. Dropdown8 In-ALW-County / Dropdown9 vetted) into tiers.
+    // Never convert Yes/No fields (e.g. Dropdown8 vetted / Dropdown9 In-ALW-County) into tiers.
     if ((KAISER_COVER_YES_NO_DROPDOWN_NAMES as readonly string[]).includes(fieldName)) return;
     const options = field.getOptions();
     if (dropdownOptionsLookLikeYesNo(options)) return;
@@ -237,7 +237,7 @@ export async function upgradeKaiserCoverSheetPdf(
   const reauthRoomLegacy = reauthRoomFields[1]?.field || getField('Text3');
   const reauthMaxResolved = firstExisting(KAISER_COVER_REAUTH_MAX_FIELD_NAMES);
   const reauthTotalResolved = firstExisting(KAISER_COVER_REAUTH_TOTAL_FIELD_NAMES);
-  // Prefer Dropdown25. On current templates Dropdown8 is In-ALW-County Yes/No — never use it
+  // Prefer Dropdown25. On current templates Dropdown8 is facility vetted Yes/No — never use it
   // as KP tier when Dropdown25 exists. Legacy Dropdown8 only if it already has tier options.
   let reauthKpName = KAISER_COVER_REAUTH_KP_TIER_FIELD;
   let reauthKp: AcroFieldWithDict | null = null;
