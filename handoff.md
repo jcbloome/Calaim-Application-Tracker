@@ -12,6 +12,7 @@
 
 - **Service Request parse — Plan ID → Member MRN (fix KPSA/CIN bleed).** Table header `MRN : CIN : Plan ID` was capturing **CIN** as MRN; product codes like **KPSA** were not treated as placeholders. Parser now rejects those, extracts Plan ID (e.g. `000007643032`), and always maps a valid Plan ID into `memberMrn`.
   - Files: `src/lib/kaiser-region.ts`, `src/app/admin/applications/create/components/service-request-parsing.ts`, `src/app/api/admin/parse-service-request-vision/route.ts`, `handoff.md`.
+  - Commit: `ee5a3da5`.
 
 - **Kaiser SDS claims — RCFE_Name + placed filter.** 837 download list shows Caspio `RCFE_Name` and filters Placed / Not placed / All (CalAIM Use treated as not placed). Default view is **Placed** for claim batches; not-placed = may still need auth/placement.
   - Files: `src/lib/kaiser-sds-t2038-claims.ts`, `src/app/admin/tools/kaiser-sds-claims/page.tsx`, `handoff.md`.
