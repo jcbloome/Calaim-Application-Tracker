@@ -12,6 +12,7 @@
 
 - **Kaiser SDS claims — RCFE_Name + placed filter.** 837 download list shows Caspio `RCFE_Name` and filters Placed / Not placed / All (CalAIM Use treated as not placed). Default view is **Placed** for claim batches; not-placed = may still need auth/placement.
   - Files: `src/lib/kaiser-sds-t2038-claims.ts`, `src/app/admin/tools/kaiser-sds-claims/page.tsx`, `handoff.md`.
+  - Commit: `b4db6eb7`.
 
 - **T2038 / Kaiser claim billing defaults.** EIN `87-2746305`, charge `$432.00` PMPM, Kaiser diagnosis always **R69**, CPT **T2038**, Mod1 **U4**, POS **13** (Assisted Living), ILS payer **81397**. SDS 837P uses `HC:T2038:U4` and payer 81397 (not regional eligibility IDs).
   - Files: `src/lib/t2038-claims.ts`, `src/lib/x12-837p.ts`, `src/lib/kaiser-sds-t2038-claims.ts`, `src/app/admin/tools/kaiser-sds-claims/page.tsx`, `src/app/admin/tools/t2038-claims/page.tsx`, `handoff.md`.
