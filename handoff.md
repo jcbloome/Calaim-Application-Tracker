@@ -10,6 +10,9 @@
 
 ## Changes 2026-11-12
 
+- **Kaiser ISP cover sheet — Facility vetted/SCA contracted always Yes.** Initial authorization and reauthorization PDFs no longer pull Caspio `Facility_Vetted_Contracted=No`; Dropdown9 / Dropdown21 are always **Yes** (RCFE vetted / contracted with ILS).
+  - Files: `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `handoff.md`.
+
 - **Service Request parse — Plan ID → Member MRN (fix KPSA/CIN bleed).** Table header `MRN : CIN : Plan ID` was capturing **CIN** as MRN; product codes like **KPSA** were not treated as placeholders. Parser now rejects those, extracts Plan ID (e.g. `000007643032`), and always maps a valid Plan ID into `memberMrn`.
   - Files: `src/lib/kaiser-region.ts`, `src/app/admin/applications/create/components/service-request-parsing.ts`, `src/app/api/admin/parse-service-request-vision/route.ts`, `handoff.md`.
   - Commit: `ee5a3da5`.

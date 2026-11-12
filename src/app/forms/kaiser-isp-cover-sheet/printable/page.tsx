@@ -297,7 +297,8 @@ function KaiserIspCoverSheetPrintableContent() {
     alwFacility: clean(searchParams.get('At_ALW_Facility')),
     alwSubmitted: clean(searchParams.get('Did_Submit_ALW_Application')),
     alwWaitlist: clean(searchParams.get('On_ALW_Waitlist')),
-    facilityVetted: clean(searchParams.get('Facility_Vetted_Contracted')),
+    // Auth / reauth cover sheets always Yes (RCFE vetted / SCA contracted with ILS).
+    facilityVetted: 'Yes',
     roomBoardAmount: normalizeMoneyAmount(searchParams.get('Room_and_Board_Amount')),
     // Must be explicitly selected and verified on this page.
     requestedTier: '',
@@ -333,7 +334,6 @@ function KaiserIspCoverSheetPrintableContent() {
   const alwFacility = prefill.alwFacility;
   const alwSubmitted = prefill.alwSubmitted;
   const alwWaitlist = prefill.alwWaitlist;
-  const facilityVetted = prefill.facilityVetted;
   const roomBoardAmount = prefill.roomBoardAmount;
   const requestedTier = prefill.requestedTier;
   const caspioTierLevel = prefill.caspioTierLevel;
@@ -362,7 +362,8 @@ function KaiserIspCoverSheetPrintableContent() {
   const effectiveAtAlwFacility = normalizeYesNo(alwFacility);
   const effectiveDidSubmitAlwApplication = normalizeSubmittedOption(alwSubmitted);
   const effectiveOnAlwWaitlist = normalizeYesNo(alwWaitlist);
-  const effectiveFacilityVetted = normalizeYesNo(facilityVetted);
+  // Always Yes for initial authorization and reauthorization cover sheets.
+  const effectiveFacilityVetted = 'Yes';
   const effectiveRequestedTier = normalizeTier(requestedTier);
   const effectiveCaspioTierLevel = normalizeTier(caspioTierLevel);
   const effectiveChangeOfCondition = clean(changeOfCondition);
@@ -750,7 +751,8 @@ function KaiserIspCoverSheetPrintableContent() {
         alwFacility: getMemberValue(matched, ['At_ALW_Facility']) || prefill.alwFacility,
         alwSubmitted: refreshedAlwSubmitted || prefill.alwSubmitted,
         alwWaitlist: getMemberValue(matched, ['On_ALW_Waitlist']) || prefill.alwWaitlist,
-        facilityVetted: getMemberValue(matched, ['Facility_Vetted_Contracted']) || prefill.facilityVetted,
+        // Do not inherit Caspio No — cover sheets always mark RCFE vetted/contracted Yes.
+        facilityVetted: 'Yes',
         roomBoardAmount:
           normalizeMoneyAmount(
             getMemberValue(matched, [

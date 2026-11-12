@@ -860,7 +860,8 @@ export async function GET(req: NextRequest) {
     const facilityAddress = clean(params.get('Facility_Address'));
     const facilityType = clean(params.get('Facility_Type')) || 'RCFE';
     const moveInDate = asDisplayDate(clean(params.get('Verified_Move_In_Date') || params.get('Move_In_Date')));
-    const facilityVettedContracted = toYesNo(clean(params.get('Facility_Vetted_Contracted')) || 'Yes');
+    // Initial authorization + reauthorization: always Yes (RCFE vetted / SCA contracted with ILS).
+    const facilityVettedContracted = 'Yes';
     const inAlwCounty = toYesNo(clean(params.get('In_ALW_County')));
     if (!alwSubmitted) {
       return new NextResponse(
