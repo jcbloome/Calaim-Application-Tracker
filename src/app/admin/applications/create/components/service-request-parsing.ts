@@ -195,6 +195,56 @@ const findFirst = (text: string, patterns: RegExp[]) => {
   return '';
 };
 
+/** Drop column-header bleed (e.g. MRN capturing "CIN" from "MRN : CIN : Plan ID"). */
+const sanitizeCapturedMrn = (value: string) => {
+  const raw = String(value || '').trim();
+  if (!raw || isKaiserMrnPlaceholder(raw)) return '';
+  return raw;
+};
+
+/** Prefer a long 0/1 digit Plan ID; ignore header tokens like "Preferred". */
+const sanitizeCapturedPlanId = (value: string) => {
+  const raw = String(value || '').trim();
+  if (!raw || isKaiserMrnPlaceholder(raw)) return '';
+  if (looksLikeKaiserNumericMrn(raw)) return raw.replace(/\D/g, '') || raw;
+  // Soft accept digit-heavy IDs that may not start with 0/1 yet.
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length >= 8) return digits;
+  return '';
+};
+
+/** Extract Plan ID from label text, including value on the following line. */
+const extractPlanIdFromText = (flattened: string, lines: string[]) => {
+  const inline = sanitizeCapturedPlanId(
+    findFirst(flattened, [
+      /\bplan\s*id\s*[:#-]?\s*(?:\r?\n\s*)?([0-9][0-9\s-]{6,})/i,
+      /\bplan\s*id\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{8,})/i,
+    ])
+  );
+  if (inline) return inline;
+  for (let i = 0; i < lines.length; i++) {
+    if (!/\bplan\s*id\b/i.test(lines[i] || '')) continue;
+    // Same line after label.
+    const same = sanitizeCapturedPlanId(
+      findFirst(lines[i], [/\bplan\s*id\s*[:#-]?\s*([0-9][0-9\s-]{6,}|[A-Z0-9-]{8,})/i])
+    );
+    if (same) return same;
+    // Next non-empty line may be the value row or a lone Plan ID.
+    const next = findNextNonEmptyLine(lines, i + 1);
+    const fromNext = sanitizeCapturedPlanId(
+      findFirst(next, [/\b([01]\d{7,})\b/, /\b(\d{8,})\b/])
+    );
+    if (fromNext) return fromNext;
+    // Value row with name + KPSA + CIN + Plan ID — take last long digit token.
+    const tokens = next.split(/\s+/).filter(Boolean);
+    for (let t = tokens.length - 1; t >= 0; t--) {
+      const candidate = sanitizeCapturedPlanId(tokens[t]);
+      if (candidate && looksLikeKaiserNumericMrn(candidate)) return candidate;
+    }
+  }
+  return '';
+};
+
 const findLabeledValue = (text: string, labelPattern: string, stopLabels: string[]) => {
   const stop = stopLabels.join('|');
   const pattern = new RegExp(
@@ -1203,16 +1253,18 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     /\bicd(?:-10)?\s*[:#-]?\s*([A-Z0-9.-]{3,10})/i,
   ]);
 
-  const memberMrnRaw = findFirst(flattened, [
-    /\bmrn\b\s*[:#-]?\s*([A-Z0-9-]{3,})/i,
-    /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{3,})/i,
-  ]);
+  const memberMrnRaw = sanitizeCapturedMrn(
+    findFirst(flattened, [
+      /\bmrn\b\s*[:#-]?\s*([A-Z0-9-]{3,})/i,
+      /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{3,})/i,
+    ])
+  );
   const memberMediCalNum = normalizeMediCalNumber(
     findFirst(flattened, [
       /(?:medi[\s-]*cal|mcp[\s_-]*cin|cin)\s*(?:number|no\.?|#)?\s*[:#-]?\s*([0-9][A-Z0-9-]{6,})/i,
     ])
   );
-  const planIdRaw = findFirst(flattened, [/\bplan\s*id\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i]);
+  const planIdRaw = extractPlanIdFromText(flattened, lines);
 
   const memberAddress =
     extractAddressFromLines(lines) ||
@@ -1354,18 +1406,20 @@ export const extractServiceRequestFields = (params: { text: string; fileName: st
     /\bdiagnosis\s*[:#-]?\s*([A-Z][0-9][A-Z0-9.-]{1,8})/i,
   ]);
 
-  const memberMrnRaw = findFirst(flattened, [
-    /\bmrn(?:\s*(?:number|no\.?|#))?\b\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{3,})/i,
-    /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{3,})/i,
-    /member\s*(?:id|identifier)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
-    /patient\s*(?:id|identifier)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
-  ]);
+  const memberMrnRaw = sanitizeCapturedMrn(
+    findFirst(flattened, [
+      /\bmrn(?:\s*(?:number|no\.?|#))?\b\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{3,})/i,
+      /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{3,})/i,
+      /member\s*(?:id|identifier)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
+      /patient\s*(?:id|identifier)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
+    ])
+  );
   const memberMediCalNum = normalizeMediCalNumber(
     findFirst(flattened, [
       /(?:medi[\s-]*cal|mcp[\s_-]*cin|cin)\s*(?:number|no\.?|#)?\s*[:#-]?\s*(?:\r?\n\s*)?([0-9][A-Z0-9-]{6,})/i,
     ])
   );
-  const planIdRaw = findFirst(flattened, [/\bplan\s*id\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i]);
+  const planIdRaw = extractPlanIdFromText(flattened, lines);
 
   const memberAddressRaw =
     extractAddressFromLines(lines) ||

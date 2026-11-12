@@ -132,6 +132,19 @@ const KAISER_MRN_PLACEHOLDER_TOKENS = new Set([
   'epo',
   'pos',
   'mmp',
+  // Kaiser plan product codes that appear in the MRN cell (not the Plan ID).
+  'kpsa',
+  'kpsc',
+  'kp',
+  'kaiser',
+  // Column-header bleed from "MRN : CIN : Plan ID" tables.
+  'cin',
+  'mrn',
+  'plan',
+  'planid',
+  'medicaid',
+  'medical',
+  'medi-cal',
   'na',
   'n/a',
   'none',
@@ -140,7 +153,7 @@ const KAISER_MRN_PLACEHOLDER_TOKENS = new Set([
   'null',
 ]);
 
-/** True when the MRN box is a plan type (e.g. SNP) or other non-MRN placeholder. */
+/** True when the MRN box is a plan type (e.g. SNP / KPSA) or other non-MRN placeholder. */
 export function isKaiserMrnPlaceholder(value: unknown): boolean {
   const raw = String(value ?? '')
     .trim()
@@ -157,8 +170,9 @@ export function looksLikeKaiserNumericMrn(value: unknown): boolean {
 }
 
 /**
- * Service Request Form: MRN column often shows "SNP" (Special Needs Plan).
- * The real Kaiser MRN is Plan ID (e.g. 110005643409). Prefer Plan ID when MRN is a placeholder.
+ * Service Request Form: MRN column often shows SNP / KPSA / "CIN" (header bleed).
+ * The real Kaiser MRN is Plan ID (e.g. 000007643032 / 110005643409).
+ * Always prefer a valid Plan ID over a non-numeric MRN cell.
  */
 export function resolveServiceRequestMrn(opts: {
   mrn?: unknown;
@@ -177,17 +191,22 @@ export function resolveServiceRequestMrn(opts: {
   if (mediCalCompact && mrnCompact && mrnCompact === mediCalCompact) {
     memberMrn = '';
   }
+  // Reject column-header / plan-product bleed (CIN, KPSA, SNP, …).
+  if (isKaiserMrnPlaceholder(memberMrn)) {
+    memberMrn = '';
+  }
 
-  if (isKaiserMrnPlaceholder(memberMrn) || !looksLikeKaiserNumericMrn(memberMrn)) {
-    if (looksLikeKaiserNumericMrn(planId)) {
-      memberMrn = String(planId).replace(/\D/g, '') || planId;
-    } else if (isKaiserMrnPlaceholder(memberMrn)) {
-      memberMrn = '';
-    }
+  const planIdDigits = String(planId || '').replace(/\D/g, '');
+  if (looksLikeKaiserNumericMrn(planIdDigits || planId)) {
+    // Plan ID is the Kaiser member ID — use it whenever present and valid.
+    memberMrn = planIdDigits || planId;
+    planId = memberMrn;
+  } else if (!looksLikeKaiserNumericMrn(memberMrn)) {
+    memberMrn = '';
   }
 
   if (!planId && looksLikeKaiserNumericMrn(memberMrn)) {
-    planId = memberMrn;
+    planId = memberMrn.replace(/\D/g, '') || memberMrn;
   }
 
   return { memberMrn: String(memberMrn || '').trim(), planId: String(planId || '').trim() };

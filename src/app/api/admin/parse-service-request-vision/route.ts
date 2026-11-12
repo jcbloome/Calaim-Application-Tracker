@@ -216,7 +216,7 @@ Extract the following fields from the image and return ONLY a valid JSON object 
 
 Instructions:
 - Member Name: Split into first and last name, use Title Case (e.g., "Jim Kovacich" not "JIM KOVACICH")
-- MRN vs Plan ID (CRITICAL): On many Service Request forms the MRN box shows a plan type like "SNP", "DSNP", or "HMO" — that is NOT the Kaiser MRN. Put that plan type only in notes if needed. Set memberMrn to the Plan ID value when it is a long numeric Kaiser ID (usually starts with 0 or 1, e.g. 110005643409). Always also fill planId with that Plan ID.
+- MRN vs Plan ID (CRITICAL): On many Service Request forms the MRN box shows a plan type like "SNP", "DSNP", "HMO", or "KPSA" — that is NOT the Kaiser MRN. Never put "CIN" in memberMrn (that is the next column header). Set memberMrn to the Plan ID value when it is a long numeric Kaiser ID (usually starts with 0 or 1, e.g. 000007643032 or 110005643409). Always also fill planId with that Plan ID.
 - Medi-Cal Number: Use the value under CIN (if present), normalize to 9XXXXXXXX format ending with a letter when possible
 - Do not copy MRN/Plan ID into Medi-Cal Number unless the form explicitly shows the same value for both
 - DOB: Format as MM/DD/YYYY
