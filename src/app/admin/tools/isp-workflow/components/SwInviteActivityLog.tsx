@@ -10,6 +10,7 @@ import {
 } from './isp-workflow-helpers';
 import { RefreshCw } from 'lucide-react';
 import { formatSwAssignmentHistoryLabel } from '@/lib/sw-assignment-history';
+import { formatIspWorkflowActivityLabel } from '@/lib/isp-workflow-activity';
 
 export interface SwInviteActivityLogProps {
   refreshAssignmentActivity: (memberIdRaw: string) => Promise<void>;
@@ -82,6 +83,29 @@ export function SwInviteActivityLog({
             {[...assignmentActivity.assignmentHistory].reverse().map((entry, idx) => (
               <li key={`${entry.atIso}-${entry.toEmail}-${idx}`}>
                 {formatSwAssignmentHistoryLabel(entry)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {assignmentActivity.reminderLog && assignmentActivity.reminderLog.length > 0 ? (
+        <div className="mt-2 border-t pt-2">
+          <div className="text-xs font-medium text-slate-800">Reminder history (SW / RN / Admin)</div>
+          <ul className="mt-1 max-h-28 space-y-1 overflow-y-auto text-[11px] text-slate-600">
+            {assignmentActivity.reminderLog.map((entry, idx) => (
+              <li key={`${entry.atIso}-${entry.recipientEmail}-${idx}`}>
+                {formatIspWorkflowActivityLabel({
+                  event: 'action_needed_reminder_sent',
+                  atIso: entry.atIso || '',
+                  details: entry.details,
+                  recipientEmail: entry.recipientEmail,
+                  byName: entry.byName,
+                  byEmail: entry.byEmail,
+                })}
+                {entry.atIso ? ` · ${formatWhen(entry.atIso)}` : ''}
+                {entry.byName || entry.byEmail
+                  ? ` · by ${entry.byName || entry.byEmail}`
+                  : ''}
               </li>
             ))}
           </ul>

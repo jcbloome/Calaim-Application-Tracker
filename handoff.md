@@ -10,6 +10,15 @@
 
 ## Changes 2026-11-12
 
+- **ISP Tracker — remove test reminder email box.** Dropped the “Test reminder email (dummy inbox)” UI now that delivery is confirmed; real Follow-up / action reminders remain.
+  - Files: `src/app/admin/tools/isp-tracker/page.tsx`, `handoff.md`.
+
+- **2FA session length — 10 hours.** After a successful 2FA verify, `2faSessionExpiry` is now **10 hours** (was 8) in Next.js `/api/auth/2fa-verify` and the Cloud Function `two-factor-auth`.
+  - Files: `src/lib/server-2fa.ts`, `functions/src/two-factor-auth.ts`, `functions/lib/two-factor-auth.js`, `handoff.md`.
+
+- **ISP Tracker / Workflow log — show SW/RN reminder sends.** Reminder emails now appear in the ISP member activity log as “Reminder emailed to SW/RN/Admin (…)”, update the open Details panel immediately after send, and show under ISP Workflow → Reminder history.
+  - Files: `src/lib/isp-workflow-activity.ts`, `src/app/admin/tools/isp-tracker/page.tsx`, `src/app/admin/tools/isp-workflow/components/isp-workflow-helpers.ts`, `src/app/admin/tools/isp-workflow/components/SwInviteActivityLog.tsx`, `src/app/api/alft/reminders/send-action-needed/route.ts`, `src/app/api/cron/isp-daily-action-reminders/route.ts`, `handoff.md`.
+
 - **ISP Caspio member notes for workflow milestones.** Caspio `connect_tbl_clientnotes` now logs: SW invite (existing), manual ISP Tracker reminders (`isp-action-reminder-sent`), SW submit → admin (`isp-submitted-to-admin`), admin → RN (`isp-sent-to-rn`), RN signed → admin final (`isp-rn-signed-to-admin-final` / `isp-routed-to-admin-final`), and final admin approval (`isp-finally-approved`).
   - Files: `src/app/api/alft/reminders/send-action-needed/route.ts`, `src/app/api/alft/submit/route.ts`, `src/app/api/alft/signatures/request/route.ts`, `src/app/api/alft/signatures/sign/route.ts`, `src/app/api/alft/workflow/route-to-final-manager/route.ts`, `src/app/api/alft/workflow/final-review/route.ts`, `handoff.md`.
   - Commit: `a90bb554`.

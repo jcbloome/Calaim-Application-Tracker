@@ -103,8 +103,23 @@ export function formatIspWorkflowActivityLabel(entry: IspWorkflowActivityEntry):
     return 'Started over to re-send SW invite (prior invite history kept)';
   }
   if (event === 'action_needed_reminder_sent') {
-    const details = String(entry.details || '').trim();
-    return details || 'Action-needed reminder sent';
+    const details = String(entry.details || '').trim().toLowerCase();
+    const recipient = String(entry.recipientEmail || '').trim();
+    let who = 'staff';
+    if (details.includes(' msw ') || details.startsWith('manual msw') || details.startsWith('daily msw')) {
+      who = 'SW';
+    } else if (details.includes(' rn ') || details.startsWith('manual rn') || details.startsWith('daily rn')) {
+      who = 'RN';
+    } else if (
+      details.includes(' admin ') ||
+      details.startsWith('manual admin') ||
+      details.startsWith('daily admin')
+    ) {
+      who = 'Admin';
+    }
+    const daily = details.startsWith('daily ');
+    const base = daily ? `Daily reminder emailed to ${who}` : `Reminder emailed to ${who}`;
+    return recipient ? `${base} (${recipient})` : base;
   }
   return event.replace(/_/g, ' ') || 'Activity';
 }

@@ -21,7 +21,7 @@ const CODE_EXPIRY_MS = CODE_EXPIRY_SECONDS * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 const MAX_SENDS_PER_HOUR = 5;
 const MAX_VERIFY_ATTEMPTS = 3;
-const TWO_FA_SESSION_MS = 8 * 60 * 60 * 1000;
+const TWO_FA_SESSION_MS = 10 * 60 * 60 * 1000;
 const TOTP_TIME_STEP_SECONDS = 30;
 const TOTP_DIGITS = 6;
 const TOTP_WINDOW_STEPS = 1;
@@ -304,7 +304,7 @@ export const verify2FACode = onCall({ cors: CALLABLE_CORS }, async (request) => 
       logContact = String(codeData.contact || '');
     }
     
-    // Set 2FA session (valid for 8 hours)
+    // Set 2FA session (valid for 10 hours)
     const sessionExpiry = new Date(Date.now() + TWO_FA_SESSION_MS);
     await db.collection('users').doc(request.auth.uid).set(
       {

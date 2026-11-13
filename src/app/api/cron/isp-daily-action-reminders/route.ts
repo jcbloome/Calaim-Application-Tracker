@@ -129,6 +129,7 @@ export async function GET(request: NextRequest) {
                 event: 'action_needed_reminder_sent',
                 recipientEmail: needed.recipientEmail,
                 details: `Daily ${needed.role} reminder: ${needed.stageLabel}`,
+                isResend: true,
               })
             ),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),

@@ -666,6 +666,14 @@ export type AssignmentInviteActivity = {
   signedAt?: string;
   emailLog?: Array<{ status?: string; recipientEmail?: string; atIso?: string; isResend?: boolean }>;
   assignmentHistory?: SwAssignmentHistoryEntry[];
+  /** Reminder emails (SW / RN / Admin) from ISP Tracker or daily cron. */
+  reminderLog?: Array<{
+    atIso?: string;
+    details?: string;
+    recipientEmail?: string;
+    byName?: string;
+    byEmail?: string;
+  }>;
 };
 
 export const buildAssignmentInviteActivity = (assignment: Record<string, any> | null | undefined): AssignmentInviteActivity => {
@@ -722,6 +730,20 @@ export const buildAssignmentInviteActivity = (assignment: Record<string, any> | 
     Number.isFinite(inviteSendCountRaw) && inviteSendCountRaw > 0
       ? inviteSendCountRaw
       : Math.max(sentEntries.length, invitedAt ? 1 : 0);
+  const reminderLog = Array.isArray(assignment?.ispWorkflowActivityLog)
+    ? (assignment.ispWorkflowActivityLog as any[])
+        .filter((entry) => clean(entry?.event).toLowerCase() === 'action_needed_reminder_sent')
+        .map((entry) => ({
+          atIso: clean(entry?.atIso) || toIso(entry?.at) || '',
+          details: clean(entry?.details),
+          recipientEmail: clean(entry?.recipientEmail),
+          byName: clean(entry?.byName),
+          byEmail: clean(entry?.byEmail),
+        }))
+        .filter((entry) => entry.atIso || entry.recipientEmail || entry.details)
+        .sort((a, b) => Date.parse(b.atIso || '') - Date.parse(a.atIso || ''))
+    : [];
+
   return {
     invitedAt,
     lastInvitedAt: lastInvitedAt || invitedAt,
@@ -737,6 +759,7 @@ export const buildAssignmentInviteActivity = (assignment: Record<string, any> | 
     signedAt: toIso(assignment?.workflowStepsAt?.swSubmittedSignedAt) || toIso(assignment.swSignedAt) || '',
     emailLog,
     assignmentHistory: buildDisplaySwAssignmentHistory(assignment),
+    reminderLog,
   };
 };
 
