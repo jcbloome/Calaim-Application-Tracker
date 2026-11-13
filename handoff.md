@@ -12,6 +12,7 @@
 
 - **ISP Caspio member notes for workflow milestones.** Caspio `connect_tbl_clientnotes` now logs: SW invite (existing), manual ISP Tracker reminders (`isp-action-reminder-sent`), SW submit → admin (`isp-submitted-to-admin`), admin → RN (`isp-sent-to-rn`), RN signed → admin final (`isp-rn-signed-to-admin-final` / `isp-routed-to-admin-final`), and final admin approval (`isp-finally-approved`).
   - Files: `src/app/api/alft/reminders/send-action-needed/route.ts`, `src/app/api/alft/submit/route.ts`, `src/app/api/alft/signatures/request/route.ts`, `src/app/api/alft/signatures/sign/route.ts`, `src/app/api/alft/workflow/route-to-final-manager/route.ts`, `src/app/api/alft/workflow/final-review/route.ts`, `handoff.md`.
+  - Commit: `a90bb554`.
 
 - **Kaiser ISP cover sheet — Facility vetted/SCA contracted always Yes.** Initial authorization and reauthorization PDFs always set vetted/SCA to **Yes**. Fixed 07/2026 field map: auth **Dropdown8** / reauth **Dropdown34** are vetted (not Dropdown9/21); those are In-ALW County. Preview cache buster includes `vettedYes`.
   - Files: `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/lib/kaiser-isp-cover-sheet-template.ts`, `handoff.md`.
