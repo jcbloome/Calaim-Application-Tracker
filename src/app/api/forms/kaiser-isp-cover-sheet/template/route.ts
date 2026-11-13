@@ -1270,6 +1270,7 @@ export async function GET(req: NextRequest) {
     }
     // Final pass: re-assert room & board + Total Costs AFTER dropdown/script appearance work.
     // Browser PDF viewers (Chrome) show baked appearances, not live Acrobat Calculate.
+    // KP Max Expenses stay blank here — Kaiser fills them in Adobe Acrobat on the download.
     try {
       const totals = computeCoverSheetTotalCosts({ roomBoardAmount });
       if (isAuthorization) {

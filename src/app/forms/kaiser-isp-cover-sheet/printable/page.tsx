@@ -1277,9 +1277,8 @@ function KaiserIspCoverSheetPrintableContent() {
           <CardHeader>
             <CardTitle>Step 3: Filled PDF Preview</CardTitle>
             <CardDescription>
-              Review the completed form here. KP tier determination stays a blank dropdown for Kaiser to select.
-              Use the tracked Download button above to save a fillable PDF — open that file in Adobe Acrobat (browser
-              PDF viewers often cannot use combo-box dropdowns).
+              Review the completed form here. KP Tier Level stays blank for Kaiser to select on the downloaded PDF in
+              Adobe Acrobat (Max Tier Expenses and Total Costs auto-fill there).
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -1287,7 +1286,7 @@ function KaiserIspCoverSheetPrintableContent() {
               <span className="font-semibold">Auto Calculated Total Costs</span> should show{' '}
               <span className="font-semibold">{expectedTotalCosts.totalLabel}</span>
               {expectedTotalCosts.roomBoard
-                ? ' (member financial responsibility / room & board). Max KP expenses stay blank until Kaiser picks a tier.'
+                ? ' (member financial responsibility / room & board). Max KP expenses stay blank until Kaiser picks a tier in Acrobat.'
                 : '. Enter and verify Client Financial Responsibility above — otherwise the PDF Total stays $0.00.'}
             </div>
             <iframe

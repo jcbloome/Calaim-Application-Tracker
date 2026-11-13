@@ -517,10 +517,10 @@ export default function KaiserIspCoverSheetToolPage() {
         retryAction:
           source === 'caspio'
             ? 'click Refresh from Caspio again'
-            : 'click Load Cache again',
+            : 'click Sync from Caspio again',
       });
       if (fetchSeq !== membersFetchSeqRef.current) {
-        // A newer Load Cache / Refresh finished first — ignore this stale response.
+        // A newer Sync / Refresh finished first — ignore this stale response.
         return;
       }
       const metaSource = String(meta?.source || '').toLowerCase();
@@ -614,7 +614,7 @@ export default function KaiserIspCoverSheetToolPage() {
           retryAction:
             source === 'caspio'
               ? 'click Refresh from Caspio or Refresh Selected from Caspio'
-              : 'click Load Cache',
+              : 'click Sync from Caspio',
         }),
       });
     } finally {
@@ -625,29 +625,41 @@ export default function KaiserIspCoverSheetToolPage() {
   };
 
   const syncMembersCacheFromCaspio = async () => {
+    const SYNC_TIMEOUT_MS = 270_000; // under App Hosting maxDuration (300s)
+    const controller = new AbortController();
+    const timeoutId =
+      typeof window !== 'undefined'
+        ? window.setTimeout(() => controller.abort(), SYNC_TIMEOUT_MS)
+        : undefined;
     try {
       setIsSyncingMembersCache(true);
+      toast({
+        title: 'Syncing from Caspio…',
+        description: 'Kaiser pull usually takes 1–2 minutes. Search works after sync finishes.',
+      });
       const idToken = await getIdToken();
       const response = await fetch('/api/caspio/members-cache/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken, mode: 'full', mcoFilter: ['Kaiser'] }),
+        signal: controller.signal,
       });
       const data = await response.json().catch(() => ({} as any));
       if (!response.ok || !data?.success) {
         const platformHint =
           response.status === 503 || response.status === 504
-            ? ' App Hosting timed out or ran out of memory during Caspio sync. Try Sync again, or use Load Cache if cron already populated Firestore.'
+            ? ' App Hosting timed out or ran out of memory during Caspio sync. Try Sync again, or use Refresh from Caspio for a live session pull.'
             : '';
         throw new Error(String(data?.error || `HTTP ${response.status}`) + platformHint);
       }
       toast({
-        title: 'Firestore cache updated',
+        title: 'Caspio sync complete',
         description: `Fetched ${Number(data?.fetched || 0)} Kaiser records, updated ${Number(
           data?.upserted || 0
-        )} cache records. Loading from Firestore…`,
+        )} cache records. Loading list…`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
+      invalidateKaiserMembersCache();
       await fetchMembers({ source: 'cache' });
       // Keep the Open Cover Sheet required-fields panel on live Caspio for the selected member.
       const selected = clean(selectedClientId);
@@ -655,18 +667,19 @@ export default function KaiserIspCoverSheetToolPage() {
         await fetchMembers({ clientId2: selected, source: 'caspio' });
       }
     } catch (error: any) {
+      const timedOut =
+        (error instanceof DOMException && error.name === 'AbortError') ||
+        String(error?.name || '') === 'AbortError' ||
+        /aborted|abort/i.test(String(error?.message || ''));
       toast({
         variant: 'destructive',
-        title: 'Cache sync failed',
-        description: String(error?.message || error),
+        title: timedOut ? 'Sync timed out' : 'Cache sync failed',
+        description: timedOut
+          ? 'Caspio sync took too long. Try Sync again, or use Refresh from Caspio for a live session pull.'
+          : String(error?.message || error),
       });
-      // Still try Load Cache so search can work if an earlier cron/manual sync populated Firestore.
-      try {
-        await fetchMembers({ source: 'cache' });
-      } catch {
-        // ignore secondary load failure
-      }
     } finally {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
       setIsSyncingMembersCache(false);
     }
   };
@@ -864,20 +877,10 @@ export default function KaiserIspCoverSheetToolPage() {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void fetchMembers({ source: 'cache' })}
-              disabled={isLoading || isSyncingMembersCache}
-              title="Fast load from Firestore cache"
-            >
-              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading && !isSyncingMembersCache ? 'animate-spin' : ''}`} />
-              Load Cache
-            </Button>
-            <Button
               size="sm"
               onClick={() => void syncMembersCacheFromCaspio()}
-              disabled={isLoading || isSyncingMembersCache}
-              title="Pull Kaiser members from Caspio into Firestore, then reload the list"
+              disabled={isSyncingMembersCache}
+              title="Pull latest Kaiser members from Caspio, then load the list (1–2 minutes)"
             >
               {isSyncingMembersCache ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -895,15 +898,19 @@ export default function KaiserIspCoverSheetToolPage() {
             >
               Refresh from Caspio
             </Button>
-            {lastLoadedLabel ? (
+            {isSyncingMembersCache ? (
+              <span className="text-xs text-amber-700">
+                Sync in progress (1–2 min). Search after it finishes.
+              </span>
+            ) : lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">
                 Last loaded: {lastLoadedLabel}
                 {lastLoadedSource ? ` (${lastLoadedSource === 'caspio' ? 'live Caspio' : 'Firestore cache'})` : ''}
               </span>
             ) : (
               <span className="text-xs text-muted-foreground">
-                Load Cache = Firestore (fast). Sync from Caspio = update Firestore, then load. Refresh from Caspio = live
-                pull.
+                Click Sync from Caspio (or Refresh from Caspio) when you need the latest member list — nothing loads
+                automatically.
               </span>
             )}
           </div>

@@ -10,8 +10,9 @@
 
 ## Changes 2026-11-13
 
-- **Kaiser cover sheet — Max Tier Expenses fills immediately on KP tier pick.** Acrobat scripts now run on Keystroke/Format/Validate/MouseUp/Blur and call `calculateNow()` so **Max Tier Level Expenses** + **Total Costs** update as soon as Kaiser selects Tier 1–5 (no need to click into Max Expenses). Open the downloaded PDF in Adobe Acrobat (browser viewers often skip form JS).
-  - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `handoff.md`.
+- **Kaiser cover sheet — viewable is staff-only; KP auto-fill is for downloaded Acrobat PDF.** Removed the temporary KP Tier viewable-preview control. Internal preview keeps KP blank. Kaiser picks tier on the **downloaded** fillable PDF in Adobe Acrobat; Max Tier Expenses + Total Costs auto-fill there (Keystroke/Format/Validate/MouseUp/Blur + `calculateNow()`).
+  - Files: `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`, `handoff.md`.
+  - Prior Acrobat auto-fill commit: `affab0be`.
 
 ## Changes 2026-11-12
 
