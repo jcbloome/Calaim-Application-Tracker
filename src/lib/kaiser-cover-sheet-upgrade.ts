@@ -391,12 +391,16 @@ export async function upgradeKaiserCoverSheetPdf(
 
   attachFieldAdditionalActions(pdfDoc, authKp, {
     K: authTierChange,
+    F: authTierChange,
     V: authTierChange,
+    U: authApply,
     Bl: authApply,
   });
   attachFieldAdditionalActions(pdfDoc, reauthKp, {
     K: reauthTierChange,
+    F: reauthTierChange,
     V: reauthTierChange,
+    U: reauthApply,
     Bl: reauthApply,
   });
   attachFieldAdditionalActions(pdfDoc, authRoom, { Bl: authApply, V: authApply });

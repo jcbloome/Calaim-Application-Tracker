@@ -1171,15 +1171,21 @@ export async function GET(req: NextRequest) {
       const authRoomBoard = getFieldMaybe(KAISER_COVER_AUTH_ROOM_BOARD_FIELD) as AcroFieldWithDict | null;
       const reauthRoomBoard = getFieldMaybe(KAISER_COVER_REAUTH_ROOM_BOARD_FIELD) as AcroFieldWithDict | null;
 
-      // K=Keystroke, V=Validate, Bl=Blur — cover Acrobat combo-box commit paths.
+      // K=Keystroke, F=Format, V=Validate, U=MouseUp, Bl=Blur — cover Acrobat combo-box
+      // commit paths so Max Tier Expenses / Total fill as soon as KP picks a tier (no
+      // need to click into Max Tier Expenses to force a recalculation).
       attachFieldAdditionalActions(pdfDoc, authKp, {
         K: authTierChange,
+        F: authTierChange,
         V: authTierChange,
+        U: authApply,
         Bl: authApply,
       });
       attachFieldAdditionalActions(pdfDoc, reauthKp, {
         K: reauthTierChange,
+        F: reauthTierChange,
         V: reauthTierChange,
+        U: reauthApply,
         Bl: reauthApply,
       });
       // Refresh Total Costs when member room & board amount is edited.

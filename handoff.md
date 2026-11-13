@@ -8,6 +8,11 @@
 
 ---
 
+## Changes 2026-11-13
+
+- **Kaiser cover sheet — Max Tier Expenses fills immediately on KP tier pick.** Acrobat scripts now run on Keystroke/Format/Validate/MouseUp/Blur and call `calculateNow()` so **Max Tier Level Expenses** + **Total Costs** update as soon as Kaiser selects Tier 1–5 (no need to click into Max Expenses). Open the downloaded PDF in Adobe Acrobat (browser viewers often skip form JS).
+  - Files: `src/lib/kaiser-cover-sheet-tier-rates.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-cover-sheet-upgrade.ts`, `handoff.md`.
+
 ## Changes 2026-11-12
 
 - **ISP Tracker — remove test reminder email box.** Dropped the “Test reminder email (dummy inbox)” UI now that delivery is confirmed; real Follow-up / action reminders remain.

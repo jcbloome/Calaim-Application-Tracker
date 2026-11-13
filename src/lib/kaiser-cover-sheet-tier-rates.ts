@@ -238,6 +238,8 @@ function __kReadRoomBoard(preferred){
  * Never uses ILS requested tier.
  * Optional overrideTier is used during dropdown Keystroke (event.change) before the
  * field value is committed, so amounts update immediately on selection.
+ * @param opts.includeHelpers When false, caller already inlined acrobatHelpersBlock (avoids
+ *   duplicate var/function declarations inside Keystroke handlers).
  */
 export function buildKaiserTierApplyInlineScript(opts: {
   tierField: string;
@@ -245,21 +247,38 @@ export function buildKaiserTierApplyInlineScript(opts: {
   roomBoardField: string;
   totalField: string;
   bakedRoomBoard?: string;
+  includeHelpers?: boolean;
 }): string {
   const { tierField, maxField, roomBoardField, totalField, bakedRoomBoard } = opts;
+  const includeHelpers = opts.includeHelpers !== false;
+  const helpers = includeHelpers
+    ? `${acrobatHelpersBlock({
+        bakedRoomBoard,
+        roomBoardFields: [roomBoardField, ...KAISER_COVER_ROOM_BOARD_FIELD_ALIASES],
+      })}\n`
+    : '';
   return `
-${acrobatHelpersBlock({ bakedRoomBoard, roomBoardFields: [roomBoardField, ...KAISER_COVER_ROOM_BOARD_FIELD_ALIASES] })}
-try{
+${helpers}try{
   var tierVal = (typeof __kOverrideTier != "undefined" && __kOverrideTier != null && String(__kOverrideTier) !== "")
     ? String(__kOverrideTier)
     : String(this.getField("${tierField}").value || "");
   var rate=__kTierRate(tierVal);
   var maxF=this.getField("${maxField}");
   var totF=this.getField("${totalField}");
-  if(maxF) maxF.value = rate ? __kFormatMoney(rate) : "";
+  var maxLabel = rate ? __kFormatMoney(rate) : "";
   var rb = __kReadRoomBoard(${acrobatJsStringLiteral(roomBoardField)});
-  // Room & board first; add KP-approved tier rate when Dropdown is set.
-  if(totF) totF.value = __kFormatMoney(rate + rb);
+  var totLabel = __kFormatMoney(rate + rb);
+  // Set values twice + calculateNow so Acrobat redraws Max/Total immediately on dropdown
+  // pick (otherwise Max Tier Expenses often stays blank until the user clicks another field).
+  if(maxF){
+    maxF.value = maxLabel;
+    try{ maxF.value = maxF.value; }catch(eSetMax){}
+  }
+  if(totF){
+    totF.value = totLabel;
+    try{ totF.value = totF.value; }catch(eSetTot){}
+  }
+  try{ if(typeof this.calculateNow == "function") this.calculateNow(); }catch(eCalc){}
 }catch(e){}
 `.trim();
 }
@@ -304,9 +323,10 @@ try{
 }
 
 /**
- * Keystroke on KP tier dropdown — apply as soon as a list item is chosen.
- * Acrobat combo boxes fire Keystroke with willCommit=false and event.change = selected
- * option; waiting for willCommit/blur is what caused "updates only on next field".
+ * Keystroke / Format / Validate / MouseUp on KP tier dropdown — apply as soon as a list
+ * item is chosen. Acrobat combo boxes often fire Keystroke with willCommit=false and
+ * event.change = selected option; waiting for blur is what caused "updates only after
+ * clicking into Max Tier Expenses".
  */
 export function buildKaiserTierDropdownChangeScript(opts: {
   tierField: string;
@@ -326,17 +346,22 @@ try{
     var changeStr = event.change != null ? String(event.change) : "";
     var changeExStr = event.changeEx != null ? String(event.changeEx) : "";
     var valueStr = event.value != null ? String(event.value) : "";
+    var committed = event.willCommit === true || event.willCommit == null;
     if (event.willCommit === false) {
       // Dropdown list pick: new value is usually in event.change before the field commits.
       if (changeStr !== "") __kOverrideTier = changeStr;
       else if (changeExStr !== "") __kOverrideTier = changeExStr;
       else if (valueStr !== "" && !/select from drop\\s*down/i.test(valueStr)) __kOverrideTier = valueStr;
       else return; // keystroke noise with no selection yet
-    } else if (valueStr !== "") {
+    } else if (committed && valueStr !== "") {
+      __kOverrideTier = valueStr;
+    } else if (changeStr !== "") {
+      __kOverrideTier = changeStr;
+    } else if (valueStr !== "" && !/select from drop\\s*down/i.test(valueStr)) {
       __kOverrideTier = valueStr;
     }
   }
-  ${buildKaiserTierApplyInlineScript(opts)}
+  ${buildKaiserTierApplyInlineScript({ ...opts, includeHelpers: false })}
 }catch(e){}
 `.trim();
 }
