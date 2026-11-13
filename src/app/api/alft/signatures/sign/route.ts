@@ -855,7 +855,7 @@ export async function POST(req: NextRequest) {
           await appendCaspioClientNote({
             clientId2: memberId,
             comments: [
-              'ISP/ALFT RN signed and submitted. Staff final review required.',
+              'ISP RN signed — returned to admin for final approval.',
               `Member: ${memberName || memberId}.`,
               mrn ? `MRN: ${mrn}.` : '',
               `Signed by: ${clean((decoded as any)?.name, 160) || email || 'RN'}.`,
@@ -863,7 +863,7 @@ export async function POST(req: NextRequest) {
               .filter(Boolean)
               .join(' '),
             assignedStaffName: clean((decoded as any)?.name, 160) || undefined,
-            sourceTag: 'alft-rn-signed',
+            sourceTag: 'isp-rn-signed-to-admin-final',
           });
         }
       } catch (noteErr) {

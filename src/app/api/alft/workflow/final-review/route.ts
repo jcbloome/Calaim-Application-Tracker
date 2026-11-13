@@ -238,15 +238,15 @@ export async function POST(req: NextRequest) {
         await appendCaspioClientNote({
           clientId2: memberId,
           comments: [
-            'ISP/ALFT staff final review complete. Ready for send/print.',
+            'ISP finally approved by admin. Ready for send/print.',
             `Member: ${memberName || memberId}.`,
             mrn ? `MRN: ${mrn}.` : '',
-            `Reviewed by: ${name || email || '—'}.`,
+            `Approved by: ${name || email || '—'}.`,
           ]
             .filter(Boolean)
             .join(' '),
           assignedStaffName: name || undefined,
-          sourceTag: 'alft-final-review-complete',
+          sourceTag: 'isp-finally-approved',
         });
       }
     } catch (noteErr) {

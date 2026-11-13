@@ -595,17 +595,17 @@ export async function POST(req: NextRequest) {
           clientId2: memberId,
           comments: [
             deferRnEmail
-              ? 'ISP/ALFT staff review: returned to social worker for signature.'
-              : 'ISP/ALFT staff review: approved and sent to RN for review/signature.',
+              ? 'ISP staff review: returned to social worker for signature.'
+              : 'ISP sent to RN for review and signature.',
             `Member: ${memberName || memberId}.`,
             mrn ? `MRN: ${mrn}.` : '',
-            `Approved by: ${requesterName || requesterEmail || '—'}.`,
-            rnEmail && !deferRnEmail ? `RN: ${rnName || rnEmail}.` : '',
+            `Approved by admin: ${requesterName || requesterEmail || '—'}.`,
+            rnEmail && !deferRnEmail ? `RN: ${[rnName, rnEmail].filter(Boolean).join(' — ')}.` : '',
           ]
             .filter(Boolean)
             .join(' '),
           assignedStaffName: requesterName || undefined,
-          sourceTag: deferRnEmail ? 'alft-sent-to-sw-sign' : 'alft-approved-to-rn',
+          sourceTag: deferRnEmail ? 'isp-sent-to-sw-sign' : 'isp-sent-to-rn',
         });
       }
     } catch (noteErr) {

@@ -128,9 +128,10 @@ export async function POST(req: NextRequest) {
       { merge: true }
     );
 
+    const memberName = clean((intake as any)?.memberName, 160) || 'Member';
+    const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
+
     try {
-      const memberName = clean((intake as any)?.memberName, 160) || 'Member';
-      const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
       await notifyAlftWorkflowParties({
         admin,
         adminDb,
@@ -156,6 +157,36 @@ export async function POST(req: NextRequest) {
       });
     } catch {
       // best-effort only
+    }
+
+    // Caspio member note: ISP back to admin for final approval.
+    try {
+      const memberId = clean(
+        (intake as any)?.memberClientId ||
+          (intake as any)?.clientId2 ||
+          (intake as any)?.Client_ID2 ||
+          (intake as any)?.memberId,
+        120
+      );
+      if (memberId) {
+        const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+        await appendCaspioClientNote({
+          clientId2: memberId,
+          comments: [
+            'ISP returned to admin for final approval after RN signature.',
+            `Member: ${memberName || memberId}.`,
+            mrn ? `MRN: ${mrn}.` : '',
+            `Admin reviewer: ${recipientName || recipientEmail || '—'}.`,
+            `Routed by: ${name || email || '—'}.`,
+          ]
+            .filter(Boolean)
+            .join(' '),
+          assignedStaffName: name || undefined,
+          sourceTag: 'isp-routed-to-admin-final',
+        });
+      }
+    } catch (noteErr) {
+      console.warn('[alft/workflow/route-to-final-manager] Caspio note failed:', noteErr);
     }
 
     return NextResponse.json({ success: true, intakeId });

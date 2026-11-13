@@ -245,6 +245,31 @@ export async function POST(req: NextRequest) {
       { merge: true }
     );
 
+    // Caspio member note: manual ISP Tracker / Workflow action reminder.
+    try {
+      const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+      const roleLabel =
+        needed.role === 'msw' ? 'MSW / social worker' : needed.role === 'rn' ? 'RN' : 'admin';
+      const recipientLabel = [needed.recipientName, deliveryEmail].filter(Boolean).join(' — ') || deliveryEmail;
+      await appendCaspioClientNote({
+        clientId2: memberId,
+        comments: [
+          `ISP reminder emailed to ${roleLabel} ${recipientLabel}.`,
+          `Member: ${memberName || memberId}.`,
+          mrn ? `MRN: ${mrn}.` : '',
+          `Stage: ${needed.stageLabel}.`,
+          `Next action: ${nextAction}.`,
+          `Sent by: ${name || email || '—'}.`,
+        ]
+          .filter(Boolean)
+          .join(' '),
+        assignedStaffName: name || undefined,
+        sourceTag: 'isp-action-reminder-sent',
+      });
+    } catch (noteErr) {
+      console.warn('[alft/reminders/send-action-needed] Caspio note failed:', noteErr);
+    }
+
     return NextResponse.json({
       success: true,
       role: needed.role,
