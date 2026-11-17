@@ -4,7 +4,8 @@ import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export const KAISER_SDS_CLAIM_RUNS_COLLECTION = 'kaiser_sds_claim_runs';
+/** Route files may only export HTTP handlers + config — keep this unexported. */
+const KAISER_SDS_CLAIM_RUNS_COLLECTION = 'kaiser_sds_claim_runs';
 
 /** Log a downloaded Kaiser SDS 837P batch for audit. */
 export async function POST(request: NextRequest) {
