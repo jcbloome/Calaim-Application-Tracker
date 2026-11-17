@@ -26,8 +26,8 @@ import {
 import { isAuthorizedCalaimStatus } from '@/lib/t2038-claims';
 import { Download, FileSpreadsheet, Loader2, RefreshCw, Upload } from 'lucide-react';
 
-function downloadArrayBuffer(buffer: ArrayBuffer, fileName: string) {
-  const blob = new Blob([buffer], {
+function downloadExcelBytes(bytes: Uint8Array, fileName: string) {
+  const blob = new Blob([bytes], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
   const url = URL.createObjectURL(blob);
@@ -232,7 +232,7 @@ export default function KaiserMifComparePage() {
 
   const downloadWorkbook = () => {
     if (!result) return;
-    downloadArrayBuffer(
+    downloadExcelBytes(
       buildKaiserMifCompareWorkbook(result),
       `Kaiser-MIF-compare-${new Date().toISOString().slice(0, 10)}.xlsx`
     );
@@ -241,10 +241,11 @@ export default function KaiserMifComparePage() {
   const downloadOursOnlyForIls = () => {
     if (!result) return;
     const dateStamp = new Date().toISOString().slice(0, 10);
-    downloadArrayBuffer(
+    downloadExcelBytes(
       buildKaiserMifOursOnlyIlsWorkbook(result, {
         portalFileName: fileName || undefined,
         comparedAt: new Date().toISOString(),
+        rosterForEnrichment: authorized.length ? authorized : allKaiser,
       }),
       `ILS-Kaiser-ours-only-missing-from-portal-${dateStamp}.xlsx`
     );

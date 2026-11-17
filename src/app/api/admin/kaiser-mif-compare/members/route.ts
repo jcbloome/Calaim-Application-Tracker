@@ -1,11 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { fetchAllCalAIMMembers, getCaspioCredentialsFromEnv } from '@/lib/caspio-api-utils';
-import { collectAuthorizedKaiserMembers } from '@/lib/kaiser-mif-compare';
+import {
+  collectAuthorizedKaiserMembers,
+  preferKaiserMrnIdentifier,
+} from '@/lib/kaiser-mif-compare';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 180;
+
+const MRN_MERGE_FIELDS = [
+  'Member_MRN',
+  'Kaiser_MRN',
+  'MRN',
+  'Medical_Record_Number',
+  'Medical_Record_Number_MRN',
+  'MCP_CIN',
+  'memberMrn',
+  'MediCal_Number',
+  'Medical_Number',
+  'Medi_Cal_Number',
+  'memberMediCalNum',
+  'CIN',
+];
 
 function mergeMemberRecords(
   primary: Array<Record<string, unknown>>,
@@ -28,13 +46,20 @@ function mergeMemberRecords(
       byClient.set(key, { ...row });
       return;
     }
-    // Fill blank identity fields from the other source (cache often has Member_MRN / MediCal_Number).
+    // Fill blank fields; for MRN/CIN prefer the zero-padded / longer form.
     const merged: Record<string, unknown> = { ...existing };
     for (const [field, value] of Object.entries(row)) {
       const next = String(value ?? '').trim();
       if (!next) continue;
       const prev = String(merged[field] ?? '').trim();
-      if (!prev) merged[field] = value;
+      if (!prev) {
+        merged[field] = value;
+        continue;
+      }
+      if (MRN_MERGE_FIELDS.includes(field)) {
+        const preferred = preferKaiserMrnIdentifier(prev, next);
+        if (preferred && preferred !== prev) merged[field] = preferred;
+      }
     }
     byClient.set(key, merged);
   };

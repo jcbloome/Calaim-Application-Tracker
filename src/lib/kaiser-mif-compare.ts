@@ -68,6 +68,104 @@ function formatSpreadsheetIdentifier(value: unknown): string {
   return text.replace(/^'/, '').trim();
 }
 
+const KAISER_MRN_PAD_LENGTH = 12;
+
+/**
+ * Caspio/JSON often returns MRN as a number (zeros already lost) or as zero-padded text.
+ * Keep existing leading zeros from strings; pad pure digit values to 12 when short.
+ */
+export function formatKaiserMrnIdentifier(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const fromNumber = typeof value === 'number' && Number.isFinite(value);
+  let text = '';
+  if (fromNumber) {
+    text = String(Math.trunc(value as number));
+  } else {
+    text = formatSpreadsheetIdentifier(value);
+  }
+  text = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!text) return '';
+  if (/^\d+$/.test(text) && text.length < KAISER_MRN_PAD_LENGTH) {
+    return text.padStart(KAISER_MRN_PAD_LENGTH, '0');
+  }
+  return text;
+}
+
+/** Prefer the zero-padded / longer form when two IDs are numerically the same. */
+export function preferKaiserMrnIdentifier(existing: unknown, incoming: unknown): string {
+  const a = formatKaiserMrnIdentifier(existing);
+  const b = formatKaiserMrnIdentifier(incoming);
+  if (!a) return b;
+  if (!b) return a;
+  if (/^\d+$/.test(a) && /^\d+$/.test(b) && stripLeadingZeros(a) === stripLeadingZeros(b)) {
+    return a.length >= b.length ? a : b;
+  }
+  return a;
+}
+
+function collectCaspioMrnCandidates(raw: Record<string, unknown>): string[] {
+  const preferredKeys = [
+    'Member_MRN',
+    'Kaiser_MRN',
+    'MRN',
+    'Medical_Record_Number',
+    'Medical_Record_Number_MRN',
+    'MCP_CIN',
+    'memberMrn',
+    'MediCal_Number',
+    'Medical_Number',
+    'Medi_Cal_Number',
+    'memberMediCalNum',
+    'CIN',
+  ];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: unknown) => {
+    const next = formatKaiserMrnIdentifier(value);
+    if (!next || seen.has(next)) return;
+    seen.add(next);
+    out.push(next);
+  };
+  for (const key of preferredKeys) push(raw[key]);
+  for (const [key, value] of Object.entries(raw || {})) {
+    const nk = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!nk) continue;
+    if (
+      nk.includes('mrn') ||
+      nk.includes('medicaid') ||
+      nk.includes('medical') ||
+      nk.includes('mcpcin') ||
+      nk === 'cin'
+    ) {
+      push(value);
+    }
+  }
+  return out;
+}
+
+/** Force SheetJS text cells so Excel does not strip leading zeros. */
+function forceSheetColumnsAsText(sheet: XLSX.WorkSheet, columnHeaders: string[]) {
+  const ref = sheet['!ref'];
+  if (!ref) return;
+  const range = XLSX.utils.decode_range(ref);
+  const headerByCol = new Map<number, string>();
+  for (let c = range.s.c; c <= range.e.c; c += 1) {
+    const addr = XLSX.utils.encode_cell({ r: range.s.r, c });
+    headerByCol.set(c, String(sheet[addr]?.v ?? ''));
+  }
+  const targetCols = [...headerByCol.entries()]
+    .filter(([, name]) => columnHeaders.includes(name))
+    .map(([c]) => c);
+  for (const c of targetCols) {
+    for (let r = range.s.r + 1; r <= range.e.r; r += 1) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = sheet[addr];
+      if (!cell || cell.v === undefined || cell.v === null || cell.v === '') continue;
+      sheet[addr] = { t: 's', v: String(cell.v), z: '@' };
+    }
+  }
+}
+
 export type KaiserMifCompareMember = {
   clientId2: string;
   memberFirstName: string;
@@ -350,31 +448,32 @@ export function mapCaspioRawToKaiserCompareMember(
   const memberFirstName = pickFirst(raw.Senior_First, raw.memberFirstName, raw.First_Name);
   const memberLastName = pickFirst(raw.Senior_Last, raw.memberLastName, raw.Last_Name);
   const clientId2 = pickFirst(raw.Client_ID2, raw.client_ID2, raw.clientId2);
-  // Caspio UI "MRN" → Member_MRN/MRN. Kaiser batches often also store MRN in MCP_CIN / memberMrn.
-  const memberMrnField = normalizeId(
-    pickFirst(
-      raw.Member_MRN,
-      raw.Kaiser_MRN,
-      raw.MRN,
-      raw.Medical_Record_Number,
-      raw.Medical_Record_Number_MRN
-    )
+  // Pull every MRN/CIN-like Caspio field (and pad short numeric IDs back to 12 digits).
+  const idCandidates = collectCaspioMrnCandidates(raw);
+  const memberMrnField = formatKaiserMrnIdentifier(
+    pickFirst(raw.Member_MRN, raw.Kaiser_MRN, raw.MRN, raw.Medical_Record_Number, raw.Medical_Record_Number_MRN)
   );
-  // Caspio UI "MediCal Number" → MediCal_Number (true CIN). MCP_CIN is often the Kaiser MRN.
-  const mediCalField = normalizeId(
+  const mediCalField = formatKaiserMrnIdentifier(
     pickFirst(raw.MediCal_Number, raw.Medical_Number, raw.Medi_Cal_Number, raw.memberMediCalNum)
   );
-  const mcpCin = normalizeId(pickFirst(raw.MCP_CIN, raw.CIN));
-  const trackerMrn = normalizeId(pickFirst(raw.memberMrn));
+  const mcpCin = formatKaiserMrnIdentifier(pickFirst(raw.MCP_CIN, raw.CIN));
+  const trackerMrn = formatKaiserMrnIdentifier(pickFirst(raw.memberMrn));
+  // Do NOT drop MCP_CIN/memberMrn when equal to MediCal — Caspio often stores the same
+  // value in both MRN and MediCal Number (e.g. 000014038714).
   const mrnFinal =
     memberMrnField ||
-    (mcpCin && mcpCin !== mediCalField ? mcpCin : '') ||
-    (trackerMrn && trackerMrn !== mediCalField ? trackerMrn : '') ||
+    mcpCin ||
+    trackerMrn ||
+    mediCalField ||
+    idCandidates[0] ||
     '';
-  const cin = mediCalField || (mcpCin && mcpCin !== mrnFinal ? mcpCin : '') || '';
+  const cin =
+    mediCalField ||
+    (mcpCin && stripLeadingZeros(mcpCin) !== stripLeadingZeros(mrnFinal) ? mcpCin : '') ||
+    '';
   const altIds = Array.from(
     new Set(
-      [memberMrnField, mediCalField, mcpCin, trackerMrn, mrnFinal, cin].filter((value) => Boolean(value))
+      [memberMrnField, mediCalField, mcpCin, trackerMrn, mrnFinal, cin, ...idCandidates].filter(Boolean)
     )
   );
   const dob = formatUsDate(
@@ -870,7 +969,15 @@ export function kaiserMifCompareHitsToSheetRows(hits: KaiserMifCompareHit[]) {
   }));
 }
 
-export function buildKaiserMifCompareWorkbook(result: KaiserMifCompareResult): ArrayBuffer {
+/** Browser-safe XLSX write — `type:'array'` may return number[] without `.buffer`. */
+function xlsxBookToUint8Array(book: XLSX.WorkBook): Uint8Array {
+  const out = XLSX.write(book, { type: 'array', bookType: 'xlsx' });
+  if (out instanceof Uint8Array) return out;
+  if (out instanceof ArrayBuffer) return new Uint8Array(out);
+  return Uint8Array.from(out as number[]);
+}
+
+export function buildKaiserMifCompareWorkbook(result: KaiserMifCompareResult): Uint8Array {
   const book = XLSX.utils.book_new();
   const sheets: Array<[string, KaiserMifCompareHit[]]> = [
     ['Portal only', result.portalOnly],
@@ -899,52 +1006,85 @@ export function buildKaiserMifCompareWorkbook(result: KaiserMifCompareResult): A
     ],
   ]);
   XLSX.utils.book_append_sheet(book, summary, 'Summary');
-  const out = XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as Uint8Array;
-  return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength);
+  return xlsxBookToUint8Array(book);
 }
 
-/** Clean ILS handoff sheet: Authorized Caspio members missing from the Kaiser portal MIF. */
-export function kaiserMifOursOnlyToIlsSheetRows(hits: KaiserMifCompareHit[]) {
+/** Best available MRN for ILS export (dedicated MRN, then alt IDs / CIN). */
+export function resolveKaiserMifExportMrn(
+  member: Pick<KaiserMifCompareMember, 'mrn' | 'cin' | 'altIds'> | null | undefined
+): string {
+  if (!member) return '';
+  let best = '';
+  const consider = (value: unknown) => {
+    best = preferKaiserMrnIdentifier(best, value);
+  };
+  consider(member.mrn);
+  for (const alt of member.altIds || []) consider(alt);
+  consider(member.cin);
+  return best;
+}
+
+/** Slim ILS handoff: name, MRN, auth dates, birthdate only. */
+export function kaiserMifOursOnlyToIlsSheetRows(
+  hits: KaiserMifCompareHit[],
+  rosterForEnrichment?: KaiserMifCompareMember[]
+) {
+  const byClient = new Map<string, KaiserMifCompareMember>();
+  const byName = new Map<string, KaiserMifCompareMember>();
+  for (const member of rosterForEnrichment || []) {
+    const clientKey = normalizeId(member.clientId2);
+    if (clientKey && !byClient.has(clientKey)) byClient.set(clientKey, member);
+    const nameKey = `${normalizeName(member.memberLastName)}|${normalizeName(member.memberFirstName)}`;
+    if (nameKey !== '|' && !byName.has(nameKey)) byName.set(nameKey, member);
+  }
+
   return hits
     .filter((hit) => hit.bucket === 'ours_only' && hit.ours)
-    .map((hit, index) => {
+    .map((hit) => {
       const ours = hit.ours!;
+      const enriched =
+        (normalizeId(ours.clientId2) && byClient.get(normalizeId(ours.clientId2))) ||
+        byName.get(`${normalizeName(ours.memberLastName)}|${normalizeName(ours.memberFirstName)}`) ||
+        null;
+      const mrn = preferKaiserMrnIdentifier(
+        resolveKaiserMifExportMrn(ours),
+        resolveKaiserMifExportMrn(enriched)
+      );
       return {
-        Row: index + 1,
-        Member_Last_Name: ours.memberLastName || '',
-        Member_First_Name: ours.memberFirstName || '',
-        Member_Name: ours.memberName || '',
-        MRN: ours.mrn || '',
-        MediCal_CIN: ours.cin || '',
-        DOB: ours.dob || '',
-        Client_ID2: ours.clientId2 || '',
-        CalAIM_Status: ours.calaimStatus || '',
-        Kaiser_Status: ours.kaiserStatus || '',
-        Authorization_Number: ours.authorizationNumber || '',
+        Member_Name: ours.memberName || [ours.memberLastName, ours.memberFirstName].filter(Boolean).join(', '),
+        MRN: mrn,
         Authorization_Start: ours.authorizationStart || '',
         Authorization_End: ours.authorizationEnd || '',
-        Issue:
-          'Authorized in our Caspio roster but not found on the uploaded Kaiser portal MIF — please advise why this member does not appear in the Kaiser/ILS portal tool.',
+        Birthdate: ours.dob || '',
       };
     });
 }
 
 export function buildKaiserMifOursOnlyIlsWorkbook(
   result: KaiserMifCompareResult,
-  meta?: { portalFileName?: string; comparedAt?: string }
-): ArrayBuffer {
+  meta?: {
+    portalFileName?: string;
+    comparedAt?: string;
+    rosterForEnrichment?: KaiserMifCompareMember[];
+  }
+): Uint8Array {
   const book = XLSX.utils.book_new();
-  const rows = kaiserMifOursOnlyToIlsSheetRows(result.oursOnly);
+  const rows = kaiserMifOursOnlyToIlsSheetRows(result.oursOnly, meta?.rosterForEnrichment);
   const sheet = XLSX.utils.json_to_sheet(
     rows.length
       ? rows
       : [
           {
-            Row: 0,
-            Issue: 'No Authorized members were missing from the uploaded Kaiser portal MIF.',
+            Member_Name: '',
+            MRN: '',
+            Authorization_Start: '',
+            Authorization_End: '',
+            Birthdate: '',
           },
         ]
   );
+  // SheetJS coerces digit strings to numbers — force text so Excel keeps leading zeros.
+  forceSheetColumnsAsText(sheet, ['MRN']);
   XLSX.utils.book_append_sheet(book, sheet, 'Ours only for ILS');
   const summary = XLSX.utils.aoa_to_sheet([
     ['Authorized Caspio members missing from Kaiser portal MIF'],
@@ -954,10 +1094,7 @@ export function buildKaiserMifOursOnlyIlsWorkbook(
     ['Portal MIF rows', result.summary.portalCount],
     ['Our Authorized in Caspio', result.summary.oursCount],
     ['Ours only (this list)', rows.length],
-    ['Matched', result.summary.matched],
-    ['Portal only', result.summary.portalOnly],
   ]);
   XLSX.utils.book_append_sheet(book, summary, 'Cover note');
-  const out = XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as Uint8Array;
-  return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength);
+  return xlsxBookToUint8Array(book);
 }
