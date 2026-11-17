@@ -254,10 +254,12 @@ export function collectServiceDatesFromClaimRow(row: Record<string, unknown>): D
 /**
  * Staff enter rows in CalAIM_Claim_Submit_T2038 before they are sent; Claim_Status stays blank
  * until submission ("Claim Submitted", "Payment Received", …). Blank = entered, not submitted.
- * Rows without a Claim_Status key at all (legacy cache) are treated as submitted.
+ *
+ * Compact Firestore storage used to omit empty Claim_Status, so a missing key on a stored row
+ * means it was blank when saved — treat as not submitted (not as submitted).
  */
 export function isClaimRowSubmitted(raw: Record<string, unknown>): boolean {
-  if (!raw || !Object.prototype.hasOwnProperty.call(raw, 'Claim_Status')) return true;
+  if (!raw) return false;
   return clean(raw.Claim_Status) !== '';
 }
 

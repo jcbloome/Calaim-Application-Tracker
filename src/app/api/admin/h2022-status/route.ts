@@ -504,6 +504,41 @@ function summarizeRows(
   };
 }
 
+function hasActiveT2038Auth(row: ReturnType<typeof buildMemberRow>, todayMs = startOfLocalDayMs()) {
+  const end = row.t2038EndDate;
+  if (!end) return false;
+  const endMs = Date.parse(`${end}T00:00:00`);
+  if (!Number.isFinite(endMs) || endMs < todayMs) return false;
+  const start = row.t2038StartDate;
+  if (start) {
+    const startMs = Date.parse(`${start}T00:00:00`);
+    // T2038 not started yet — H2022 may still be needed until then.
+    if (Number.isFinite(startMs) && startMs > todayMs) return false;
+  }
+  return true;
+}
+
+/**
+ * Kaiser Authorized members stay on the H2022 Status list only while H2022 still needs attention:
+ * missing dates, current/ending-soon H2022, ended H2022 with a renewal request, or ended H2022
+ * with no active T2038. Once H2022 has ended, nothing is requested, and T2038 is active
+ * (e.g. Adrienne Gammage), they drop off on full pull or per-row refresh.
+ */
+function kaiserStillNeedsH2022(row: ReturnType<typeof buildMemberRow>) {
+  const status = normalizeText(row.calaimStatus).toLowerCase();
+  if (status === 'h2022') return true;
+  if (status !== 'authorized') return false;
+  if (row.missingH2022Dates || !row.h2022EndDate) return true;
+
+  const daysUntil = row.h2022DaysUntilEnd;
+  // Not ended yet (current or ending soon).
+  if (daysUntil === null || daysUntil >= 0) return true;
+  // Ended — keep if renewal already requested or there is no active T2038 to replace H2022.
+  if (row.kaiserH2022Requested) return true;
+  if (!hasActiveT2038Auth(row)) return true;
+  return false;
+}
+
 function rowMatchesPlanScope(
   row: ReturnType<typeof buildMemberRow>,
   planScope: PlanScope
@@ -513,8 +548,9 @@ function rowMatchesPlanScope(
   } else if (row.plan !== planScope) {
     return false;
   }
-  if (row.plan === 'kaiser' && !isKaiserH2022EligibleStatus(row.calaimStatus)) {
-    return false;
+  if (row.plan === 'kaiser') {
+    if (!isKaiserH2022EligibleStatus(row.calaimStatus)) return false;
+    if (!kaiserStillNeedsH2022(row)) return false;
   }
   return true;
 }

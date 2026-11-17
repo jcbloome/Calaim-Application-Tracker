@@ -464,7 +464,13 @@ export default function H2022ClaimCheckerPage() {
       toast({
         title: 'Updated from Caspio',
         description: removed
-          ? `${nextRow.memberName || clientId2} no longer matches Kaiser/Health Net H2022 list criteria and was removed.`
+          ? `${nextRow.memberName || clientId2} no longer needs H2022 on this list (status ${
+              nextRow.calaimStatus || '—'
+            }${
+              nextRow.h2022EndDate ? `, H2022 ended ${formatDate(nextRow.h2022EndDate)}` : ''
+            }${
+              nextRow.t2038EndDate ? `, T2038 through ${formatDate(nextRow.t2038EndDate)}` : ''
+            }) and was removed.`
           : `${nextRow.memberName || clientId2}: H2022 ${formatDate(nextRow.h2022StartDate)} → ${formatDate(nextRow.h2022EndDate)}.`,
       });
     } catch (error: unknown) {
@@ -522,9 +528,11 @@ export default function H2022ClaimCheckerPage() {
               on any row to refresh that member only from Caspio (no full re-pull).
             </div>
             <div>
-              <span className="font-medium text-foreground">Kaiser:</span> only members with CalAIM_Status{' '}
-              <span className="font-mono">Authorized</span> or <span className="font-mono">H2022</span>. Uses
-              Authorization_Start/End_Date_H2022. Ending-soon window is 1 month.
+              <span className="font-medium text-foreground">Kaiser:</span> CalAIM_Status{' '}
+              <span className="font-mono">Authorized</span> or <span className="font-mono">H2022</span>, and H2022
+              still needs attention (missing dates, current/ending-soon, ended with a renewal request, or ended with
+              no active T2038). Members whose H2022 already ended with an active T2038 and no request drop off on
+              full pull or the per-row refresh icon. Ending-soon window is 1 month.
             </div>
             <div>
               <span className="font-medium text-foreground">Health Net:</span> uses Authorization dates and also
