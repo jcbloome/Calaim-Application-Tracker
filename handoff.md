@@ -11,7 +11,7 @@
 ## Changes 2026-11-16
 
 - **Fix App Hosting / deploy build:** `next build` failed typecheck because `src/app/api/admin/kaiser-sds-claims/runs/route.ts` exported `KAISER_SDS_CLAIM_RUNS_COLLECTION` (invalid Route export). Constant is now file-local. Commit: `02e372f6`.
-- **Kaiser T2038 Claim Audit UI:** Caspio claims-on-file table drops the redundant Month column (Date_of_Service only). Same DOS across multiple Caspio rows is grouped with a Rows ×N count so month “claimed” doesn’t look like duplicate months.
+- **Kaiser T2038 Claim Audit UI:** Expanded member view is months-only (claimed / not claimed / no claim / claimable + DOS). Removed the redundant Caspio claims-on-file table.
 
 - **New Tools page — Kaiser MIF Compare.** Upload the new Kaiser portal MIF Excel and compare against Caspio **Authorized** Kaiser members. Shows portal-only, ours-only, and matched; annotates portal-only rows found in Caspio under another status; export discrepancies workbook. Nav under **Tools → Kaiser**.
   - Files: `src/lib/kaiser-mif-compare.ts`, `src/app/api/admin/kaiser-mif-compare/members/route.ts`, `src/app/admin/tools/kaiser-mif-compare/page.tsx`, `src/app/admin/layout.tsx`, `src/lib/caspio-api-utils.ts`, `handoff.md`.

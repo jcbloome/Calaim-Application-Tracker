@@ -696,7 +696,7 @@ export default function KaiserT2038ClaimAuditPage() {
         <CardHeader>
           <CardTitle>Members</CardTitle>
           <CardDescription>
-            Expand a row for the month grid, Caspio claim dates, and justify checkoffs after your deep dive.
+            Expand a row for the month grid (claimed / not claimed + DOS) and No claim / Claimable checkoffs.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -859,7 +859,22 @@ export default function KaiserT2038ClaimAuditPage() {
                                       <Badge variant="outline" className="bg-emerald-50 text-emerald-900 text-[10px]">
                                         claimed
                                       </Badge>
-                                    ) : null}
+                                    ) : isJustified ? (
+                                      <Badge variant="outline" className="bg-sky-50 text-sky-900 text-[10px]">
+                                        no claim
+                                      </Badge>
+                                    ) : isClaimable ? (
+                                      <Badge variant="outline" className="bg-violet-50 text-violet-900 text-[10px]">
+                                        claimable
+                                      </Badge>
+                                    ) : (
+                                      <Badge
+                                        variant="outline"
+                                        className="bg-amber-50 text-amber-950 border-amber-300 text-[10px]"
+                                      >
+                                        not claimed
+                                      </Badge>
+                                    )}
                                     {month.claimDates.length > 0 ? (
                                       <span className="truncate text-xs text-muted-foreground">
                                         DOS {month.claimDates.join(', ')}
@@ -905,85 +920,9 @@ export default function KaiserT2038ClaimAuditPage() {
                         </div>
                       ) : null}
                       <p className="mt-2 text-[11px] text-muted-foreground">
-                        No claim = not submitting. Claimable = forgotten claim — queued for a future Caspio batch
-                        submit.
+                        Not claimed = open gap. No claim = not submitting. Claimable = forgotten claim — queued for a
+                        future Caspio batch submit. DOS on claimed months comes from Caspio.
                       </p>
-                    </div>
-
-                    <div>
-                      {(() => {
-                        // Month grid uses unique DOS; Caspio may have multiple rows for the same date.
-                        const byDos = new Map<
-                          string,
-                          { dateOfService: string; clientFirst: string; clientLast: string; count: number }
-                        >();
-                        for (const claim of row.submittedClaims) {
-                          const key = claim.dateOfServiceIso || claim.dateOfService || `blank-${claim.clientFirst}-${claim.clientLast}`;
-                          if (!key) continue;
-                          const existing = byDos.get(key);
-                          if (existing) {
-                            existing.count += 1;
-                            if (!existing.clientFirst && claim.clientFirst) existing.clientFirst = claim.clientFirst;
-                            if (!existing.clientLast && claim.clientLast) existing.clientLast = claim.clientLast;
-                          } else {
-                            byDos.set(key, {
-                              dateOfService: claim.dateOfService || '—',
-                              clientFirst: claim.clientFirst || '',
-                              clientLast: claim.clientLast || '',
-                              count: 1,
-                            });
-                          }
-                        }
-                        const uniqueClaims = Array.from(byDos.entries())
-                          .sort(([a], [b]) => a.localeCompare(b))
-                          .map(([, value]) => value);
-                        const rawRowCount = row.submittedClaims.length;
-                        return (
-                          <>
-                            <div className="mb-2 text-sm font-medium">
-                              Caspio claims on file ({uniqueClaims.length} date
-                              {uniqueClaims.length === 1 ? '' : 's'}
-                              {rawRowCount > uniqueClaims.length
-                                ? ` · ${rawRowCount} Caspio rows`
-                                : ''}
-                              )
-                            </div>
-                            {uniqueClaims.length === 0 ? (
-                              <div className="text-xs text-muted-foreground">
-                                No rows in CalAIM_Claim_Submit_T2038 for this Client_ID2.
-                              </div>
-                            ) : (
-                              <div className="max-h-48 overflow-auto rounded border bg-white">
-                                <table className="w-full text-xs">
-                                  <thead className="bg-muted/50 text-left">
-                                    <tr>
-                                      <th className="px-2 py-1.5">Date_of_Service</th>
-                                      <th className="px-2 py-1.5">Client_First</th>
-                                      <th className="px-2 py-1.5">Client_Last</th>
-                                      <th className="px-2 py-1.5">Rows</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {uniqueClaims.map((claim) => (
-                                      <tr
-                                        key={`${claim.dateOfService}-${claim.clientFirst}-${claim.clientLast}`}
-                                        className="border-t"
-                                      >
-                                        <td className="px-2 py-1.5">{claim.dateOfService}</td>
-                                        <td className="px-2 py-1.5">{claim.clientFirst || '—'}</td>
-                                        <td className="px-2 py-1.5">{claim.clientLast || '—'}</td>
-                                        <td className="px-2 py-1.5 text-muted-foreground">
-                                          {claim.count > 1 ? `×${claim.count}` : '1'}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
                     </div>
                   </div>
                 ) : null}
