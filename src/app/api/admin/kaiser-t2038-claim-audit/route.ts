@@ -3,6 +3,7 @@ import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { fetchAllCalAIMMembers, getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { isKaiserPlan, T2038_CLAIM_SUBMIT_TABLE } from '@/lib/t2038-claims';
 import {
+  applyActionableGapMonthPolicy,
   buildKaiserT2038ClaimAuditRows,
   claimDocIdFromRecord,
   compactAuditRowForStorage,
@@ -15,10 +16,13 @@ import {
   KAISER_T2038_CLAIM_AUDIT_STATE_COLLECTION,
   KAISER_T2038_CLAIM_AUDIT_STATE_DOC_ID,
   maxClaimPkFromRecords,
+  DEFAULT_CLAIMABLE_REASON,
+  DEFAULT_JUSTIFY_REASON,
   summarizeKaiserT2038ClaimAudit,
   type KaiserT2038ClaimAuditRunMeta,
   type KaiserT2038ClaimAuditRunMode,
   type KaiserT2038ClaimAuditRow,
+  type MonthDisposition,
   type MonthJustification,
 } from '@/lib/kaiser-t2038-claim-audit';
 
@@ -341,10 +345,15 @@ async function loadJustifications(adminDb: any) {
     const clientId2 = String(data.clientId2 || '').trim();
     const monthKey = String(data.monthKey || '').trim();
     if (!clientId2 || !monthKey) return;
+    const dispositionRaw = String(data.disposition || '').trim().toLowerCase();
+    const reason = String(data.reason || '').trim();
+    const disposition: MonthDisposition =
+      dispositionRaw === 'claimable' || reason === DEFAULT_CLAIMABLE_REASON ? 'claimable' : 'justified';
     byKey.set(`${clientId2}__${monthKey}`, {
       clientId2,
       monthKey,
-      reason: String(data.reason || '').trim(),
+      disposition,
+      reason,
       justifiedBy: String(data.justifiedBy || '').trim(),
       justifiedByEmail: String(data.justifiedByEmail || '').trim(),
       updatedAt: String(data.updatedAt || '').trim(),
@@ -536,13 +545,14 @@ export async function GET(request: NextRequest) {
           fetchedAt: '',
         });
       }
+      const rows = applyActionableGapMonthPolicy(saved.rows || []);
       return NextResponse.json({
         success: true,
         mode: 'saved',
         hasSavedRun: true,
         runId: saved.runId,
-        summary: saved.meta?.summary || summarizeKaiserT2038ClaimAudit(saved.rows || []),
-        rows: saved.rows || [],
+        summary: summarizeKaiserT2038ClaimAudit(rows),
+        rows,
         claimRowsFetched: saved.meta?.claimCount || 0,
         claimRowsLive: saved.meta?.claimRowsLive || 0,
         claimRowsCached: saved.meta?.claimRowsCached || 0,
@@ -732,22 +742,21 @@ export async function POST(request: NextRequest) {
       clientId2?: string;
       monthKey?: string;
       reason?: string;
+      disposition?: string;
       clear?: boolean;
     };
     const clientId2 = String(body.clientId2 || '').trim();
     const monthKey = String(body.monthKey || '').trim();
-    const reason = String(body.reason || '').trim();
     const clear = Boolean(body.clear);
+    const disposition: MonthDisposition =
+      String(body.disposition || '').trim().toLowerCase() === 'claimable' ? 'claimable' : 'justified';
+    const reason =
+      String(body.reason || '').trim() ||
+      (disposition === 'claimable' ? DEFAULT_CLAIMABLE_REASON : DEFAULT_JUSTIFY_REASON);
 
     if (!clientId2 || !/^\d{4}-\d{2}$/.test(monthKey)) {
       return NextResponse.json(
         { success: false, error: 'clientId2 and monthKey (YYYY-MM) are required.' },
-        { status: 400 }
-      );
-    }
-    if (!clear && !reason) {
-      return NextResponse.json(
-        { success: false, error: 'Add a short reason when justifying a missing claim month.' },
         { status: 400 }
       );
     }
@@ -766,6 +775,7 @@ export async function POST(request: NextRequest) {
     const payload: MonthJustification = {
       clientId2,
       monthKey,
+      disposition,
       reason,
       justifiedBy: String(authz.name || authz.email || authz.uid || 'Admin').trim(),
       justifiedByEmail: String(authz.email || '').trim(),

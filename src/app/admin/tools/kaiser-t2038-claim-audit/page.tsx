@@ -11,14 +11,17 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import {
+  DEFAULT_CLAIMABLE_REASON,
+  DEFAULT_JUSTIFY_REASON,
   summarizeKaiserT2038ClaimAudit,
   type KaiserT2038ClaimAuditRow,
   type KaiserT2038ClaimAuditRunMode,
+  type MonthDisposition,
 } from '@/lib/kaiser-t2038-claim-audit';
 import { isAuthorizedCalaimStatus } from '@/lib/t2038-claims';
 import { AlertTriangle, ChevronDown, ChevronRight, Database, Loader2, RefreshCw } from 'lucide-react';
 
-type CoverageFilter = 'all' | 'incomplete' | 'complete' | 'no_claims_yet';
+type CoverageFilter = 'all' | 'incomplete' | 'gaps_only' | 'no_claims_yet' | 'complete';
 type AuthFilter = 'all' | 'open' | 'ended' | 'missing_dates';
 /** `all` | `Authorized` | exact CalAIM_Status label from data (e.g. Member Died). */
 type StatusFilter = 'all' | 'Authorized' | string;
@@ -94,7 +97,8 @@ export default function KaiserT2038ClaimAuditPage() {
   const [authFilter, setAuthFilter] = useState<AuthFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('Authorized');
   const [expandedId, setExpandedId] = useState('');
-  const [draftReasons, setDraftReasons] = useState<Record<string, string>>({});
+  const [summaryGapsOpen, setSummaryGapsOpen] = useState(false);
+  const [summaryNoClaimsOpen, setSummaryNoClaimsOpen] = useState(false);
   const [savingKey, setSavingKey] = useState('');
 
   const applyAuditResponse = useCallback((body: Record<string, unknown>) => {
@@ -200,8 +204,9 @@ export default function KaiserT2038ClaimAuditPage() {
     return rows.filter((row) => {
       if (!matchesStatusAndAuth(row)) return false;
       if (coverageFilter === 'incomplete' && row.openMissingMonthCount <= 0 && !row.noClaimsYet) return false;
-      if (coverageFilter === 'complete' && !row.claimsComplete) return false;
+      if (coverageFilter === 'gaps_only' && (row.noClaimsYet || row.openMissingMonthCount <= 0)) return false;
       if (coverageFilter === 'no_claims_yet' && !row.noClaimsYet) return false;
+      if (coverageFilter === 'complete' && !row.claimsComplete) return false;
       if (!needle) return true;
       const haystack = [
         row.memberName,
@@ -227,6 +232,8 @@ export default function KaiserT2038ClaimAuditPage() {
         id: row.id,
         name: row.memberName || row.clientId2 || 'Member',
         clientId2: row.clientId2,
+        authorizationStart: row.authorizationStart,
+        authorizationEnd: row.authorizationEnd,
       }));
     const gapMembers = scoped
       .filter((row) => !row.noClaimsYet && row.openMissingMonthCount > 0)
@@ -238,6 +245,9 @@ export default function KaiserT2038ClaimAuditPage() {
           id: row.id,
           name: row.memberName || row.clientId2 || 'Member',
           clientId2: row.clientId2,
+          authorizationStart: row.authorizationStart,
+          authorizationEnd: row.authorizationEnd,
+          firstClaimDate: row.firstClaimDate,
           openGaps: row.openMissingMonthCount,
           months,
         };
@@ -260,19 +270,17 @@ export default function KaiserT2038ClaimAuditPage() {
     };
   }, [rows, matchesStatusAndAuth]);
 
-  const saveJustification = async (row: KaiserT2038ClaimAuditRow, monthKey: string, clear = false) => {
+  const saveMonthDisposition = async (
+    row: KaiserT2038ClaimAuditRow,
+    monthKey: string,
+    opts: { disposition?: MonthDisposition; clear?: boolean }
+  ) => {
     const user = auth.currentUser;
     if (!user) return;
     const draftKey = `${row.clientId2}__${monthKey}`;
-    const reason = clean(draftReasons[draftKey] || row.months.find((m) => m.monthKey === monthKey)?.justificationReason);
-    if (!clear && !reason) {
-      toast({
-        variant: 'destructive',
-        title: 'Reason required',
-        description: 'Enter why this month was not claimed (e.g. not eligible / on hold).',
-      });
-      return;
-    }
+    const clear = Boolean(opts.clear);
+    const disposition: MonthDisposition = opts.disposition || 'justified';
+    const reason = disposition === 'claimable' ? DEFAULT_CLAIMABLE_REASON : DEFAULT_JUSTIFY_REASON;
     setSavingKey(draftKey);
     try {
       const idToken = await user.getIdToken();
@@ -285,6 +293,7 @@ export default function KaiserT2038ClaimAuditPage() {
         body: JSON.stringify({
           clientId2: row.clientId2,
           monthKey,
+          disposition: clear ? undefined : disposition,
           reason: clear ? '' : reason,
           clear,
         }),
@@ -294,10 +303,13 @@ export default function KaiserT2038ClaimAuditPage() {
         throw new Error(String(body?.error || `HTTP ${response.status}`));
       }
       toast({
-        title: clear ? 'Justification cleared' : 'Month justified',
+        title: clear
+          ? 'Cleared'
+          : disposition === 'claimable'
+            ? 'Marked claimable'
+            : 'Marked no-claim',
         description: `${row.memberName} · ${monthKey}`,
       });
-      // Patch local state only — do not re-hit Caspio after a justification save.
       setRows((prev) => {
         const next = prev.map((item) => {
           if (item.clientId2 !== row.clientId2) return item;
@@ -314,7 +326,7 @@ export default function KaiserT2038ClaimAuditPage() {
             }
             return {
               ...month,
-              status: 'justified' as const,
+              status: disposition === 'claimable' ? ('claimable' as const) : ('justified' as const),
               justificationReason: reason,
               justifiedBy: String(body?.justification?.justifiedBy || user.displayName || user.email || 'Admin'),
               justifiedAt: String(body?.justification?.updatedAt || new Date().toISOString()),
@@ -323,12 +335,15 @@ export default function KaiserT2038ClaimAuditPage() {
           const openMissingFromGrid = months.filter((m) => m.status === 'missing').length;
           const justifiedMonthCount = months.filter((m) => m.status === 'justified').length;
           const claimedMonthCount = months.filter((m) => m.status === 'claimed').length;
+          const resolvedCount = months.filter(
+            (m) => m.status === 'justified' || m.status === 'claimable'
+          ).length;
           return {
             ...item,
             months,
             claimedMonthCount,
             justifiedMonthCount,
-            missingMonthCount: item.noClaimsYet ? 1 : openMissingFromGrid + justifiedMonthCount,
+            missingMonthCount: item.noClaimsYet ? 1 : openMissingFromGrid + resolvedCount,
             openMissingMonthCount: item.noClaimsYet ? 1 : openMissingFromGrid,
             claimsComplete: !item.noClaimsYet && months.length > 0 && openMissingFromGrid === 0,
           };
@@ -374,7 +389,8 @@ export default function KaiserT2038ClaimAuditPage() {
             <span className="font-medium">Kaiser-only</span>{' '}
             <code className="text-xs">CalAIM_Claim_Submit_T2038</code> rows (<code className="text-xs">MCP</code>). Gap
             months start at the <span className="font-medium">first submitted claim</span> (not Caspio auth start —
-            ILS may release later) through auth end / today. Also flags new auths with{' '}
+            ILS may release later) through auth end / today. Gaps from <span className="font-medium">2025</span> or{' '}
+            <span className="font-medium">older than 6 months</span> are ignored. Also flags new auths with{' '}
             <span className="font-medium">no claims yet</span>.
           </p>
           {fetchedAt ? (
@@ -487,70 +503,120 @@ export default function KaiserT2038ClaimAuditPage() {
               {queueSummary.totalOpenGapMonths === 1 ? '' : 's'} · {queueSummary.noClaimsMembers.length} no claims yet
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 lg:grid-cols-2">
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-amber-950">Gap months (by month)</div>
-              {queueSummary.gapMonthsByMonth.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No open gap months in this filter set.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {queueSummary.gapMonthsByMonth.map((month) => (
-                    <Badge
-                      key={month.key}
-                      variant="outline"
-                      className="bg-amber-50 text-amber-950 border-amber-300 font-normal"
-                    >
-                      {month.label}
-                      <span className="ml-1 text-amber-800/80">· {month.count}</span>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-              {queueSummary.gapMembers.length > 0 ? (
-                <div className="max-h-48 space-y-1 overflow-y-auto rounded border bg-white p-2 text-xs">
-                  {queueSummary.gapMembers.map((member) => (
-                    <button
-                      key={member.id}
-                      type="button"
-                      className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded px-1 py-0.5 text-left hover:bg-amber-50"
-                      onClick={() => {
-                        setCoverageFilter('incomplete');
-                        setQuery(member.clientId2 || member.name);
-                        setExpandedId(member.id);
-                      }}
-                    >
-                      <span className="font-medium">{member.name}</span>
-                      <span className="text-muted-foreground">
-                        {member.months.map((month) => month.label).join(', ') || `${member.openGaps} gaps`}
-                      </span>
-                    </button>
-                  ))}
+          <CardContent className="space-y-2">
+            {queueSummary.gapMonthsByMonth.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 pb-1">
+                {queueSummary.gapMonthsByMonth.map((month) => (
+                  <Badge
+                    key={month.key}
+                    variant="outline"
+                    className="bg-amber-50 text-amber-950 border-amber-300 font-normal"
+                  >
+                    {month.label}
+                    <span className="ml-1 text-amber-800/80">· {month.count}</span>
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="rounded border">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-amber-50/70"
+                onClick={() => setSummaryGapsOpen((open) => !open)}
+              >
+                {summaryGapsOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="font-medium text-amber-950">Gap members</span>
+                <Badge variant="outline" className="bg-amber-50 text-amber-950 border-amber-300">
+                  {queueSummary.gapMembers.length}
+                </Badge>
+                <span className="truncate text-xs text-muted-foreground">
+                  {queueSummary.totalOpenGapMonths} open gap month
+                  {queueSummary.totalOpenGapMonths === 1 ? '' : 's'}
+                </span>
+              </button>
+              {summaryGapsOpen ? (
+                <div className="max-h-56 space-y-0.5 overflow-y-auto border-t bg-white px-2 py-1.5 text-xs">
+                  {queueSummary.gapMembers.length === 0 ? (
+                    <p className="px-1 py-2 text-muted-foreground">No gap members in this filter set.</p>
+                  ) : (
+                    queueSummary.gapMembers.map((member) => (
+                      <button
+                        key={member.id}
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-amber-50"
+                        onClick={() => {
+                          setCoverageFilter('gaps_only');
+                          setQuery(member.clientId2 || member.name);
+                          setExpandedId(member.id);
+                        }}
+                      >
+                        <span className="min-w-0 truncate font-medium">{member.name}</span>
+                        <span className="hidden shrink-0 text-muted-foreground sm:inline">
+                          Auth {member.authorizationStart || '—'} → {member.authorizationEnd || '—'}
+                        </span>
+                        <span className="hidden shrink-0 text-muted-foreground md:inline">
+                          First {member.firstClaimDate || '—'}
+                        </span>
+                        <span className="ml-auto min-w-0 truncate text-muted-foreground">
+                          {member.months.map((month) => month.label).join(', ') || `${member.openGaps} gaps`}
+                        </span>
+                      </button>
+                    ))
+                  )}
                 </div>
               ) : null}
             </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-sky-950">No claims yet (members)</div>
-              {queueSummary.noClaimsMembers.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No members awaiting a first claim in this filter set.</p>
-              ) : (
-                <div className="max-h-56 space-y-1 overflow-y-auto rounded border border-sky-200 bg-sky-50/50 p-2 text-xs">
-                  {queueSummary.noClaimsMembers.map((member) => (
-                    <button
-                      key={member.id}
-                      type="button"
-                      className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left hover:bg-sky-100/80"
-                      onClick={() => {
-                        setCoverageFilter('no_claims_yet');
-                        setQuery(member.clientId2 || member.name);
-                        setExpandedId(member.id);
-                      }}
-                    >
-                      <span className="font-medium">{member.name}</span>
-                      <span className="text-muted-foreground">Client_ID2 {member.clientId2 || '—'}</span>
-                    </button>
-                  ))}
+
+            <div className="rounded border border-sky-200">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-sky-50/70"
+                onClick={() => setSummaryNoClaimsOpen((open) => !open)}
+              >
+                {summaryNoClaimsOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="font-medium text-sky-950">No claims yet</span>
+                <Badge variant="outline" className="bg-sky-50 text-sky-950 border-sky-300">
+                  {queueSummary.noClaimsMembers.length}
+                </Badge>
+                <span className="truncate text-xs text-muted-foreground">Awaiting first CalAIM_Claim_Submit_T2038 row</span>
+              </button>
+              {summaryNoClaimsOpen ? (
+                <div className="max-h-56 space-y-0.5 overflow-y-auto border-t bg-sky-50/40 px-2 py-1.5 text-xs">
+                  {queueSummary.noClaimsMembers.length === 0 ? (
+                    <p className="px-1 py-2 text-muted-foreground">No members awaiting a first claim in this filter set.</p>
+                  ) : (
+                    queueSummary.noClaimsMembers.map((member) => (
+                      <button
+                        key={member.id}
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-sky-100/80"
+                        onClick={() => {
+                          setCoverageFilter('no_claims_yet');
+                          setQuery(member.clientId2 || member.name);
+                          setExpandedId(member.id);
+                        }}
+                      >
+                        <span className="min-w-0 truncate font-medium">{member.name}</span>
+                        <span className="hidden shrink-0 text-muted-foreground sm:inline">
+                          Auth {member.authorizationStart || '—'} → {member.authorizationEnd || '—'}
+                        </span>
+                        <span className="ml-auto shrink-0 text-muted-foreground">
+                          Client_ID2 {member.clientId2 || '—'} · First claim —
+                        </span>
+                      </button>
+                    ))
+                  )}
                 </div>
-              )}
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -581,7 +647,8 @@ export default function KaiserT2038ClaimAuditPage() {
               onChange={(event) => setCoverageFilter(event.target.value as CoverageFilter)}
             >
               <option value="incomplete">Gaps + no claims yet</option>
-              <option value="no_claims_yet">No claims yet only</option>
+              <option value="gaps_only">Gaps only</option>
+              <option value="no_claims_yet">No claims only</option>
               <option value="complete">Complete / justified</option>
               <option value="all">All members</option>
             </select>
@@ -648,19 +715,22 @@ export default function KaiserT2038ClaimAuditPage() {
             const expanded = expandedId === row.id;
             const gapMonths = (row.months || []).filter((month) => month.status === 'missing');
             const gapMonthLabels = gapMonths.map((month) => month.label || month.monthKey);
+            const isCompactQueueRow = row.noClaimsYet || gapMonthLabels.length > 0;
             return (
               <div key={row.id} className="rounded border">
                 <button
                   type="button"
-                  className="flex w-full items-start gap-3 px-3 py-3 text-left hover:bg-muted/40"
+                  className={`flex w-full items-center gap-3 px-3 text-left hover:bg-muted/40 ${
+                    isCompactQueueRow && !expanded ? 'py-2' : 'items-start py-3'
+                  }`}
                   onClick={() => setExpandedId(expanded ? '' : row.id)}
                 >
-                  <span className="mt-0.5 text-muted-foreground">
+                  <span className="shrink-0 text-muted-foreground">
                     {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   </span>
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{row.memberName || row.clientId2}</span>
+                  <div className={`min-w-0 flex-1 ${isCompactQueueRow && !expanded ? '' : 'space-y-1'}`}>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="truncate font-medium">{row.memberName || row.clientId2}</span>
                       <Badge variant="outline" className={badge.className}>
                         {badge.label}
                       </Badge>
@@ -677,36 +747,62 @@ export default function KaiserT2038ClaimAuditPage() {
                           Claims complete
                         </Badge>
                       ) : null}
+                      {isCompactQueueRow && !expanded ? (
+                        <>
+                          <span className="hidden text-xs text-muted-foreground md:inline">
+                            {row.clientId2 || '—'}
+                          </span>
+                          <span className="min-w-0 truncate text-xs text-muted-foreground">
+                            Auth {row.authorizationStart || '—'} → {row.authorizationEnd || '—'}
+                          </span>
+                          <span className="min-w-0 truncate text-xs text-muted-foreground">
+                            {row.noClaimsYet
+                              ? 'First claim —'
+                              : `First claim ${row.firstClaimDate || '—'}`}
+                          </span>
+                          {row.noClaimsYet ? (
+                            <span className="truncate text-xs text-sky-900/80">Awaiting first claim</span>
+                          ) : gapMonthLabels.length > 0 ? (
+                            <span className="min-w-0 truncate text-xs text-amber-900">
+                              Gaps {gapMonthLabels.join(' · ')}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : null}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      Client_ID2 {row.clientId2 || '—'} · Auth {row.authorizationStart || '—'} →{' '}
-                      {row.authorizationEnd || '—'}
-                      {row.authorizationNumber ? ` · #${row.authorizationNumber}` : ''} · Status{' '}
-                      {row.calaimStatus || '—'}
-                    </div>
-                    <div className="text-xs">
-                      {row.noClaimsYet
-                        ? 'New / unused auth — no CalAIM_Claim_Submit_T2038 rows yet'
-                        : `First claim ${row.firstClaimDate || '—'} (${row.firstClaimMonthKey || '—'}) · Gap window ${
-                            row.gapStartMonthKey || '—'
-                          } → auth end/today · Claimed ${row.claimedMonthCount} · Justified ${
-                            row.justifiedMonthCount
-                          } · Open gaps ${row.openMissingMonthCount}`}
-                    </div>
-                    {!row.noClaimsYet && gapMonthLabels.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <span className="text-[11px] font-medium text-amber-900">Gaps:</span>
-                        {gapMonthLabels.map((label) => (
-                          <Badge
-                            key={`${row.id}-${label}`}
-                            variant="outline"
-                            className="bg-amber-50 text-amber-950 border-amber-300 text-[11px] font-normal"
-                          >
-                            {label}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
+                    {(!isCompactQueueRow || expanded) && (
+                      <>
+                        <div className="text-xs text-muted-foreground">
+                          Client_ID2 {row.clientId2 || '—'} · Auth {row.authorizationStart || '—'} →{' '}
+                          {row.authorizationEnd || '—'}
+                          {row.authorizationNumber ? ` · #${row.authorizationNumber}` : ''} · Status{' '}
+                          {row.calaimStatus || '—'}
+                        </div>
+                        <div className="text-xs">
+                          {row.noClaimsYet
+                            ? 'New / unused auth — no CalAIM_Claim_Submit_T2038 rows yet'
+                            : `First claim ${row.firstClaimDate || '—'} (${row.firstClaimMonthKey || '—'}) · Gap window ${
+                                row.gapStartMonthKey || '—'
+                              } → auth end/today · Claimed ${row.claimedMonthCount} · Justified ${
+                                row.justifiedMonthCount
+                              } · Open gaps ${row.openMissingMonthCount}`}
+                        </div>
+                        {!row.noClaimsYet && gapMonthLabels.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                            <span className="text-[11px] font-medium text-amber-900">Gaps:</span>
+                            {gapMonthLabels.map((label) => (
+                              <Badge
+                                key={`${row.id}-${label}`}
+                                variant="outline"
+                                className="bg-amber-50 text-amber-950 border-amber-300 text-[11px] font-normal"
+                              >
+                                {label}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 </button>
 
@@ -716,113 +812,102 @@ export default function KaiserT2038ClaimAuditPage() {
                       <div className="mb-2 text-sm font-medium">
                         {row.noClaimsYet
                           ? 'No claim months yet'
-                          : `Month coverage (first claim → auth end or today)`}
+                          : 'Months — check No claim or Claimable'}
                       </div>
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                        {row.noClaimsYet ? (
-                          <div className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-3 rounded border border-sky-200 bg-sky-50/80 p-3">
-                            Authorization is on file but no claims have been submitted in{' '}
-                            <code>CalAIM_Claim_Submit_T2038</code> for this Client_ID2. Submit the first claim, then
-                            gaps will be measured from that month forward while the auth remains active.
+                      {row.noClaimsYet ? (
+                        <div className="rounded border border-sky-200 bg-sky-50/80 p-3 text-xs text-muted-foreground">
+                          Authorization is on file but no claims have been submitted in{' '}
+                          <code>CalAIM_Claim_Submit_T2038</code> for this Client_ID2. Submit the first claim, then gaps
+                          will be measured from that month forward.
+                        </div>
+                      ) : null}
+                      {!row.noClaimsYet && row.months.length === 0 ? (
+                        <div className="text-xs text-muted-foreground">
+                          No gap months to show — add T2038 authorization dates or confirm claim DOS fields.
+                        </div>
+                      ) : null}
+                      {!row.noClaimsYet && row.months.length > 0 ? (
+                        <div className="overflow-hidden rounded border bg-white">
+                          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 border-b bg-muted/40 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+                            <span>Month</span>
+                            <span className="w-20 text-center">No claim</span>
+                            <span className="w-20 text-center">Claimable</span>
                           </div>
-                        ) : null}
-                        {!row.noClaimsYet && row.months.length === 0 ? (
-                          <div className="text-xs text-muted-foreground">
-                            No gap months to show — add T2038 authorization dates or confirm claim DOS fields.
-                          </div>
-                        ) : null}
-                        {row.months.map((month) => {
-                          const draftKey = `${row.clientId2}__${month.monthKey}`;
-                          const isSaving = savingKey === draftKey;
-                          return (
-                            <div
-                              key={month.monthKey}
-                              className={`rounded border bg-white p-2 text-xs ${
-                                month.status === 'missing'
-                                  ? 'border-amber-300'
-                                  : month.status === 'justified'
-                                    ? 'border-sky-300'
-                                    : 'border-emerald-200'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-medium">{month.label}</span>
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    month.status === 'claimed'
-                                      ? 'bg-emerald-50 text-emerald-900'
-                                      : month.status === 'justified'
-                                        ? 'bg-sky-50 text-sky-900'
-                                        : 'bg-amber-50 text-amber-950'
-                                  }
-                                >
-                                  {month.status}
-                                </Badge>
-                              </div>
-                              {month.claimDates.length > 0 ? (
-                                <div className="mt-1 text-muted-foreground">
-                                  DOS: {month.claimDates.join(', ')}
-                                </div>
-                              ) : null}
-                              {month.status !== 'claimed' ? (
-                                <div className="mt-2 space-y-2">
-                                  <label className="flex items-start gap-2">
-                                    <Checkbox
-                                      checked={month.status === 'justified'}
-                                      disabled={isSaving}
-                                      onCheckedChange={(checked) => {
-                                        if (checked === true) void saveJustification(row, month.monthKey, false);
-                                        else void saveJustification(row, month.monthKey, true);
-                                      }}
-                                    />
-                                    <span>Justify no claim (not eligible / on hold / other)</span>
-                                  </label>
-                                  <Input
-                                    value={draftReasons[draftKey] ?? month.justificationReason}
-                                    onChange={(event) =>
-                                      setDraftReasons((prev) => ({ ...prev, [draftKey]: event.target.value }))
-                                    }
-                                    placeholder="Reason after Caspio deep dive"
-                                    className="h-8 text-xs"
-                                  />
-                                  <div className="flex flex-wrap gap-2">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="secondary"
-                                      disabled={isSaving}
-                                      onClick={() => void saveJustification(row, month.monthKey, false)}
-                                    >
-                                      {isSaving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
-                                      Save reason
-                                    </Button>
-                                    {month.status === 'justified' ? (
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        disabled={isSaving}
-                                        onClick={() => void saveJustification(row, month.monthKey, true)}
-                                      >
-                                        Clear
-                                      </Button>
+                          {row.months.map((month) => {
+                            const draftKey = `${row.clientId2}__${month.monthKey}`;
+                            const isSaving = savingKey === draftKey;
+                            const isClaimed = month.status === 'claimed';
+                            const isJustified = month.status === 'justified';
+                            const isClaimable = month.status === 'claimable';
+                            return (
+                              <div
+                                key={month.monthKey}
+                                className={`grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-t px-3 py-2 text-sm ${
+                                  month.status === 'missing'
+                                    ? 'bg-amber-50/40'
+                                    : isClaimable
+                                      ? 'bg-violet-50/50'
+                                      : isJustified
+                                        ? 'bg-sky-50/40'
+                                        : ''
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-medium">{month.label}</span>
+                                    {isClaimed ? (
+                                      <Badge variant="outline" className="bg-emerald-50 text-emerald-900 text-[10px]">
+                                        claimed
+                                      </Badge>
+                                    ) : null}
+                                    {month.claimDates.length > 0 ? (
+                                      <span className="truncate text-xs text-muted-foreground">
+                                        DOS {month.claimDates.join(', ')}
+                                      </span>
                                     ) : null}
                                   </div>
-                                  {month.justifiedBy ? (
-                                    <div className="text-[11px] text-muted-foreground">
-                                      {month.justifiedBy}
-                                      {month.justifiedAt
-                                        ? ` · ${new Date(month.justifiedAt).toLocaleString()}`
-                                        : ''}
-                                    </div>
-                                  ) : null}
                                 </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
+                                <label className="flex w-20 cursor-pointer items-center justify-center gap-1.5 text-xs">
+                                  <Checkbox
+                                    checked={isJustified}
+                                    disabled={isSaving || isClaimed}
+                                    onCheckedChange={(checked) => {
+                                      if (checked === true) {
+                                        void saveMonthDisposition(row, month.monthKey, {
+                                          disposition: 'justified',
+                                        });
+                                      } else if (isJustified) {
+                                        void saveMonthDisposition(row, month.monthKey, { clear: true });
+                                      }
+                                    }}
+                                  />
+                                  <span className="sr-only">No claim</span>
+                                </label>
+                                <label className="flex w-20 cursor-pointer items-center justify-center gap-1.5 text-xs">
+                                  <Checkbox
+                                    checked={isClaimable}
+                                    disabled={isSaving || isClaimed}
+                                    onCheckedChange={(checked) => {
+                                      if (checked === true) {
+                                        void saveMonthDisposition(row, month.monthKey, {
+                                          disposition: 'claimable',
+                                        });
+                                      } else if (isClaimable) {
+                                        void saveMonthDisposition(row, month.monthKey, { clear: true });
+                                      }
+                                    }}
+                                  />
+                                  <span className="sr-only">Claimable</span>
+                                </label>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        No claim = not submitting. Claimable = forgotten claim — queued for a future Caspio batch
+                        submit.
+                      </p>
                     </div>
 
                     <div>

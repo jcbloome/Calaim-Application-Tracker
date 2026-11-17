@@ -89,7 +89,10 @@ export function parseClaimServiceDate(value: unknown): Date | null {
   return parseDateOnly(value);
 }
 
-export type MonthStatus = 'claimed' | 'missing' | 'justified';
+export type MonthStatus = 'claimed' | 'missing' | 'justified' | 'claimable';
+
+/** Staff disposition for a missing month (persisted for audit / future Caspio batch). */
+export type MonthDisposition = 'justified' | 'claimable';
 
 export type ClaimMonthCell = {
   monthKey: string;
@@ -147,11 +150,16 @@ export type KaiserT2038ClaimAuditRow = {
 export type MonthJustification = {
   clientId2: string;
   monthKey: string;
+  /** justified = no claim needed; claimable = forgotten claim queued for Caspio batch. */
+  disposition: MonthDisposition;
   reason: string;
   justifiedBy: string;
   justifiedByEmail: string;
   updatedAt: string;
 };
+
+export const DEFAULT_JUSTIFY_REASON = 'No claim — staff review';
+export const DEFAULT_CLAIMABLE_REASON = 'Claimable — forgotten claim queued for Caspio batch';
 
 export function monthKeyFromDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -176,6 +184,32 @@ export function listMonthKeysInclusive(start: Date, end: Date): string[] {
     cursor.setMonth(cursor.getMonth() + 1);
   }
   return keys;
+}
+
+/** Open gaps older than this many calendar months are ignored. */
+export const CLAIM_AUDIT_GAP_MAX_AGE_MONTHS = 6;
+
+/**
+ * Actionable gap months only: drop calendar year 2025 (and earlier),
+ * and anything more than six months before today's month.
+ */
+export function isActionableClaimAuditMonth(monthKey: string, today = startOfToday()): boolean {
+  const match = String(monthKey || '').trim().match(/^(\d{4})-(\d{2})$/);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return false;
+  if (year <= 2025) return false;
+  const monthStart = new Date(year, month - 1, 1);
+  const cutoff = new Date(today.getFullYear(), today.getMonth() - CLAIM_AUDIT_GAP_MAX_AGE_MONTHS, 1);
+  return monthStart.getTime() >= cutoff.getTime();
+}
+
+export function filterActionableClaimAuditMonths(
+  monthKeys: string[],
+  today = startOfToday()
+): string[] {
+  return monthKeys.filter((key) => isActionableClaimAuditMonth(key, today));
 }
 
 export function collectServiceDatesFromClaimRow(row: Record<string, unknown>): Date[] {
@@ -387,15 +421,24 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
       );
       const gapStart = firstClaimDateObj || authStart;
       if (gapStart) {
-        gapStartMonthKey = monthKeyFromDate(new Date(gapStart.getFullYear(), gapStart.getMonth(), 1));
-        expectedMonths = listMonthKeysInclusive(gapStart, rangeEnd);
+        expectedMonths = filterActionableClaimAuditMonths(
+          listMonthKeysInclusive(gapStart, rangeEnd),
+          today
+        );
+        gapStartMonthKey = expectedMonths[0] || '';
       }
     } else if (submittedClaims.length > 0 && authStart) {
       // Claim rows exist but DOS could not be parsed — still audit from auth start.
-      expectedMonths = listMonthKeysInclusive(authStart, rangeEnd);
+      expectedMonths = filterActionableClaimAuditMonths(
+        listMonthKeysInclusive(authStart, rangeEnd),
+        today
+      );
       gapStartMonthKey = expectedMonths[0] || '';
     } else if (!noClaimsYet && authStart) {
-      expectedMonths = listMonthKeysInclusive(authStart, rangeEnd);
+      expectedMonths = filterActionableClaimAuditMonths(
+        listMonthKeysInclusive(authStart, rangeEnd),
+        today
+      );
       gapStartMonthKey = expectedMonths[0] || '';
     }
 
@@ -404,7 +447,11 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
       const justification = opts.justificationsByKey.get(`${base.clientId2}__${monthKey}`);
       let status: MonthStatus = 'missing';
       if (claimDates.length > 0) status = 'claimed';
-      else if (justification?.reason) status = 'justified';
+      else if (justification?.disposition === 'claimable' || justification?.reason === DEFAULT_CLAIMABLE_REASON) {
+        status = 'claimable';
+      } else if (justification?.disposition === 'justified' || justification?.reason) {
+        status = 'justified';
+      }
       return {
         monthKey,
         label: formatMonthLabel(monthKey),
@@ -421,11 +468,12 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
     const claimedMonthCount = months.filter((m) => m.status === 'claimed').length;
     const justifiedMonthCount = months.filter((m) => m.status === 'justified').length;
     const openMissingFromGrid = months.filter((m) => m.status === 'missing').length;
+    const resolvedCount = months.filter(
+      (m) => m.status === 'justified' || m.status === 'claimable'
+    ).length;
     // New auth with zero claims counts as incomplete (1 open gap) until first claim lands.
     const openMissingMonthCount = noClaimsYet ? 1 : openMissingFromGrid;
-    const missingMonthCount = noClaimsYet
-      ? 1
-      : openMissingFromGrid + justifiedMonthCount;
+    const missingMonthCount = noClaimsYet ? 1 : openMissingFromGrid + resolvedCount;
 
     rows.push({
       ...base,
@@ -470,6 +518,36 @@ export function summarizeKaiserT2038ClaimAudit(rows: KaiserT2038ClaimAuditRow[])
       0
     ),
   };
+}
+
+/** Drop 2025 / >6-month-old gap months from a saved run without rebuilding from Caspio. */
+export function applyActionableGapMonthPolicy(
+  rows: KaiserT2038ClaimAuditRow[],
+  today = startOfToday()
+): KaiserT2038ClaimAuditRow[] {
+  return rows.map((row) => {
+    if (row.noClaimsYet) return row;
+    const months = (row.months || []).filter((month) =>
+      isActionableClaimAuditMonth(month.monthKey, today)
+    );
+    const claimedMonthCount = months.filter((m) => m.status === 'claimed').length;
+    const justifiedMonthCount = months.filter((m) => m.status === 'justified').length;
+    const openMissingFromGrid = months.filter((m) => m.status === 'missing').length;
+    const resolvedCount = months.filter(
+      (m) => m.status === 'justified' || m.status === 'claimable'
+    ).length;
+    return {
+      ...row,
+      months,
+      gapStartMonthKey: months[0]?.monthKey || row.gapStartMonthKey,
+      expectedMonthCount: months.length,
+      claimedMonthCount,
+      justifiedMonthCount,
+      missingMonthCount: openMissingFromGrid + resolvedCount,
+      openMissingMonthCount: openMissingFromGrid,
+      claimsComplete: months.length > 0 && openMissingFromGrid === 0,
+    };
+  });
 }
 
 export function justificationDocId(clientId2: string, monthKey: string) {
