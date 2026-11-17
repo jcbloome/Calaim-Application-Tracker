@@ -25,6 +25,7 @@
 - **New Tools page — Kaiser T2038 Claim Audit.** Lists authorized Kaiser members (including ended authorizations), matches **Kaiser-only** `CalAIM_Claim_Submit_T2038` rows (`MCP LIKE '%Kaiser%'`) by `Client_ID2` / DOS, flags missing months, and lets staff justify gaps. **Gap window starts at the first submitted claim** through auth end/today; also flags **new auths with no claims yet**. Filters include **CalAIM_Status** (default Authorized; also Member Died, Not Interested, Non_Active, etc. from the run). **Firestore-persisted runs** (`kaiser_t2038_claim_audit_claims` / `_runs` / `_state`). Page opens from **saved** snapshot. **Update new claims** = Kaiser delta only; **Full rebuild** uses Firestore inventory + Kaiser Caspio delta. Justifications in `kaiser_t2038_claim_month_justifications`. Nav under **Tools → Kaiser**.
   - Files: `src/lib/kaiser-t2038-claim-audit.ts`, `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `src/app/admin/layout.tsx`, `src/lib/t2038-claims.ts`, `handoff.md`.
   - Route: `/admin/tools/kaiser-t2038-claim-audit`.
+  - Commit: `4b33721f`.
 
 ## Changes 2026-11-13
 
