@@ -99,6 +99,8 @@ export type ClaimMonthCell = {
   label: string;
   status: MonthStatus;
   claimDates: string[];
+  /** DOS on rows entered in Caspio with blank Claim_Status (not yet submitted). */
+  unsubmittedDates?: string[];
   justificationReason: string;
   justifiedBy: string;
   justifiedAt: string;
@@ -111,6 +113,8 @@ export type SubmittedClaimRow = {
   dateOfService: string;
   dateOfServiceIso: string;
   monthKey: string;
+  /** False when the row exists but Claim_Status is blank (entered, not submitted). */
+  submitted?: boolean;
   raw: Record<string, unknown>;
 };
 
@@ -147,6 +151,9 @@ export type KaiserT2038ClaimAuditRow = {
   claimsComplete: boolean;
   months: ClaimMonthCell[];
   submittedClaims: SubmittedClaimRow[];
+  /** Rows entered with blank Claim_Status — not counted as submitted. */
+  unsubmittedClaimCount?: number;
+  unsubmittedClaimDates?: string[];
 };
 
 export type MonthJustification = {
@@ -214,30 +221,44 @@ export function filterActionableClaimAuditMonths(
   return monthKeys.filter((key) => isActionableClaimAuditMonth(key, today));
 }
 
+const CLAIM_SUBMIT_DATE_FIELDS = new Set(['Claim_Date', 'ClaimDate']);
+
+/** Date_of_Service and other service-day columns — never Claim_Date (submission date). */
+export function isClaimServiceDateField(field: string): boolean {
+  if (CLAIM_SUBMIT_DATE_FIELDS.has(field)) return false;
+  const nk = field.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (nk.includes('input') || nk.includes('modified') || nk.includes('created')) return false;
+  return nk === 'dos' || nk.includes('service');
+}
+
 export function collectServiceDatesFromClaimRow(row: Record<string, unknown>): Date[] {
-  const dates: Date[] = [];
-  const seen = new Set<number>();
-  for (const field of T2038_CLAIM_DOS_FIELDS) {
-    const date = parseClaimServiceDate(row[field]);
-    if (!date) continue;
-    const key = date.getTime();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    dates.push(date);
-  }
-  // Scan any remaining keys that look like service/claim dates.
-  for (const [field, value] of Object.entries(row || {})) {
-    const nk = field.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (!nk.includes('date') && !nk.includes('dos') && !nk.includes('service')) continue;
-    if (nk.includes('input') || nk.includes('modified') || nk.includes('created')) continue;
-    const date = parseClaimServiceDate(value);
-    if (!date) continue;
-    const key = date.getTime();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    dates.push(date);
-  }
-  return dates;
+  const collect = (fields: string[]) => {
+    const dates: Date[] = [];
+    const seen = new Set<number>();
+    for (const field of fields) {
+      const date = parseClaimServiceDate(row[field]);
+      if (!date) continue;
+      const key = date.getTime();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      dates.push(date);
+    }
+    return dates;
+  };
+  const serviceDates = collect(Object.keys(row || {}).filter(isClaimServiceDateField));
+  if (serviceDates.length) return serviceDates;
+  // Claim_Date is the submission date, not DOS — only a fallback for rows with no service date.
+  return collect(Array.from(CLAIM_SUBMIT_DATE_FIELDS));
+}
+
+/**
+ * Staff enter rows in CalAIM_Claim_Submit_T2038 before they are sent; Claim_Status stays blank
+ * until submission ("Claim Submitted", "Payment Received", …). Blank = entered, not submitted.
+ * Rows without a Claim_Status key at all (legacy cache) are treated as submitted.
+ */
+export function isClaimRowSubmitted(raw: Record<string, unknown>): boolean {
+  if (!raw || !Object.prototype.hasOwnProperty.call(raw, 'Claim_Status')) return true;
+  return clean(raw.Claim_Status) !== '';
 }
 
 export function indexClaimsByClientId2(
@@ -251,6 +272,7 @@ export function indexClaimsByClientId2(
     const clientFirst = pickFirst(raw.Client_First, raw.Senior_First);
     const clientLast = pickFirst(raw.Client_Last, raw.Senior_Last);
     const dates = collectServiceDatesFromClaimRow(raw);
+    const submitted = isClaimRowSubmitted(raw);
     const list = byClient.get(clientId2) || [];
     if (dates.length === 0) {
       // Still record that a claim row exists for this member (avoids false "no claims yet").
@@ -261,6 +283,7 @@ export function indexClaimsByClientId2(
         dateOfService: '',
         dateOfServiceIso: '',
         monthKey: '',
+        submitted,
         raw,
       });
     } else {
@@ -272,6 +295,7 @@ export function indexClaimsByClientId2(
           dateOfService: formatUsDate(date),
           dateOfServiceIso: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
           monthKey: monthKeyFromDate(date),
+          submitted,
           raw,
         });
       }
@@ -389,11 +413,24 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
   const today = opts.today || startOfToday();
   const rows: KaiserT2038ClaimAuditRow[] = [];
   const seen = new Set<string>();
+  const claimsByMrn = new Map<string, SubmittedClaimRow[]>();
+  for (const list of opts.claimsByClient.values()) {
+    for (const claim of list) {
+      const mrnKey = claimMrnKey(claim.raw);
+      if (!mrnKey) continue;
+      const bucket = claimsByMrn.get(mrnKey) || [];
+      bucket.push(claim);
+      claimsByMrn.set(mrnKey, bucket);
+    }
+  }
 
   opts.rawMembers.forEach((raw, index) => {
     const base = mapKaiserMemberForClaimAudit(raw || {}, index, today);
-    if (!base?.clientId2) return;
-    const key = normalize(base.clientId2);
+    if (!base) return;
+    // New members may not have a Client_ID2 yet — keep them (dedupe on MRN / name instead).
+    const key = base.clientId2
+      ? normalize(base.clientId2)
+      : `noid:${normalizeMrnKey(base.mrn) || normalize(base.memberName)}`;
     if (seen.has(key)) return;
     seen.add(key);
 
@@ -407,8 +444,38 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
           : today;
 
     const clientKey = normalizeClientId2Key(base.clientId2) || clean(base.clientId2);
-    const submittedClaims = opts.claimsByClient.get(clientKey) || opts.claimsByClient.get(base.clientId2) || [];
-    const datedClaims = submittedClaims.filter((claim) => Boolean(claim.monthKey && claim.dateOfService));
+    const byClientId = clientKey
+      ? opts.claimsByClient.get(clientKey) || opts.claimsByClient.get(base.clientId2) || []
+      : [];
+    // Claim rows sometimes carry a placeholder Client_ID2 (e.g. 10000); MCP_CIN/MRN is the reliable link.
+    const memberMrnKeys = new Set(
+      [base.mrn, raw?.MCP_CIN, raw?.Kaiser_MRN, raw?.Member_MRN, raw?.MRN]
+        .map(normalizeMrnKey)
+        .filter(Boolean)
+    );
+    const matchedClaims = memberMrnKeys.size
+      ? Array.from(
+          new Set([
+            ...byClientId.filter((claim) => {
+              const claimKey = claimMrnKey(claim.raw);
+              return !claimKey || memberMrnKeys.has(claimKey);
+            }),
+            ...Array.from(memberMrnKeys).flatMap((k) => claimsByMrn.get(k) || []),
+          ])
+        )
+      : byClientId;
+    const submittedClaims = matchedClaims.filter((claim) => claim.submitted !== false);
+    const unsubmittedClaims = matchedClaims.filter((claim) => claim.submitted === false);
+    const unsubmittedByMonth = new Map<string, string[]>();
+    for (const claim of unsubmittedClaims) {
+      if (!claim.monthKey || !claim.dateOfService) continue;
+      const list = unsubmittedByMonth.get(claim.monthKey) || [];
+      if (!list.includes(claim.dateOfService)) list.push(claim.dateOfService);
+      unsubmittedByMonth.set(claim.monthKey, list);
+    }
+    const datedClaims = submittedClaims
+      .filter((claim) => Boolean(claim.monthKey && claim.dateOfService))
+      .sort((a, b) => String(a.dateOfServiceIso).localeCompare(String(b.dateOfServiceIso)));
     const claimsByMonth = new Map<string, string[]>();
     for (const claim of datedClaims) {
       const list = claimsByMonth.get(claim.monthKey) || [];
@@ -419,9 +486,11 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
     const firstClaim = datedClaims[0] || null;
     const firstClaimDate = firstClaim?.dateOfService || '';
     const firstClaimMonthKey = firstClaim?.monthKey || '';
-    // "No claims yet" only when we truly have zero claim rows for this Client_ID2.
+    // "No claims yet": zero claim rows and either T2038 auth on file or CalAIM_Status Authorized
+    // (new members often have Authorized status before auth dates are entered).
     const noClaimsYet =
-      submittedClaims.length === 0 && Boolean(authStart || authEnd || base.authorizationNumber);
+      submittedClaims.length === 0 &&
+      Boolean(authStart || authEnd || base.authorizationNumber || normalize(base.calaimStatus) === 'authorized');
 
     let expectedMonths: string[] = [];
     let gapStartMonthKey = '';
@@ -467,6 +536,7 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
         label: formatMonthLabel(monthKey),
         status,
         claimDates,
+        unsubmittedDates: unsubmittedByMonth.get(monthKey) || [],
         justificationReason: justification?.reason || '',
         justifiedBy: justification?.justifiedBy || '',
         justifiedAt: justification?.updatedAt || '',
@@ -499,6 +569,10 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
       claimsComplete: !noClaimsYet && months.length > 0 && openMissingFromGrid === 0,
       months,
       submittedClaims,
+      unsubmittedClaimCount: unsubmittedClaims.length,
+      unsubmittedClaimDates: unsubmittedClaims
+        .map((claim) => claim.dateOfService)
+        .filter((value, i, all) => Boolean(value) && all.indexOf(value) === i),
     });
   });
 
@@ -602,6 +676,25 @@ export function claimDocIdFromRecord(row: Record<string, unknown>): string {
     .slice(0, 700);
 }
 
+/** MRN / CIN compare key: alphanumerics only, leading zeros dropped. */
+export function normalizeMrnKey(value: unknown): string {
+  return clean(value)
+    .toUpperCase()
+    .replace(/[^0-9A-Z]/g, '')
+    .replace(/^0+(?=\d)/, '');
+}
+
+function claimMrnKey(raw: Record<string, unknown> | undefined): string {
+  if (!raw) return '';
+  return normalizeMrnKey(pickFirst(raw.MCP_CIN, raw.Kaiser_MRN, raw.Member_MRN, raw.MRN));
+}
+
+/**
+ * Bump when stored claim records need a full Caspio re-pull.
+ * 2 = all service-date columns kept · 3 = blank Claim_Status stored explicitly.
+ */
+export const KAISER_T2038_CLAIM_STORAGE_SCHEMA = 3;
+
 /** Compact Caspio claim fields we keep in Firestore for rebuilds. */
 export function compactClaimRecordForStorage(row: Record<string, unknown>): Record<string, unknown> {
   const fields = [
@@ -615,15 +708,23 @@ export function compactClaimRecordForStorage(row: Record<string, unknown>): Reco
     'Client_Last',
     'Claim_Status',
     'MCP',
+    'MCP_CIN',
+    'Kaiser_MRN',
+    'Member_MRN',
+    'MRN',
     ...T2038_CLAIM_DOS_FIELDS,
   ] as const;
   const out: Record<string, unknown> = {};
-  for (const field of fields) {
+  const keep = new Set<string>([...fields, ...Object.keys(row || {}).filter(isClaimServiceDateField)]);
+  for (const field of keep) {
     if (row[field] !== undefined && row[field] !== null && String(row[field]).trim() !== '') {
       out[field] = row[field];
     }
   }
   if (!out.Client_ID2 && row.clientId2) out.Client_ID2 = row.clientId2;
+  // Keep blank Claim_Status explicitly — blank means entered, not submitted.
+  if (out.Claim_Status === undefined) out.Claim_Status = clean(row.Claim_Status);
+  out._claimSchema = KAISER_T2038_CLAIM_STORAGE_SCHEMA;
   return out;
 }
 

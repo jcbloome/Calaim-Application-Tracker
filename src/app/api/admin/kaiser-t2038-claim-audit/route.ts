@@ -8,7 +8,9 @@ import {
   claimDocIdFromRecord,
   compactAuditRowForStorage,
   compactClaimRecordForStorage,
+  KAISER_T2038_CLAIM_STORAGE_SCHEMA,
   indexClaimsByClientId2,
+  isClaimRowSubmitted,
   justificationDocId,
   KAISER_T2038_CLAIM_AUDIT_CLAIMS_COLLECTION,
   KAISER_T2038_CLAIM_AUDIT_JUSTIFICATIONS_COLLECTION,
@@ -31,27 +33,6 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 180;
 
 const FIRESTORE_BATCH_LIMIT = 400;
-
-/** Keep select list to known Caspio columns — invalid names make q.select 400. */
-const CLAIM_SELECT = [
-  'PK_ID',
-  'Record_ID',
-  'Client_ID2',
-  'Client_First',
-  'Client_Last',
-  'Claim_Status',
-  'MCP',
-  'Date_of_Service',
-  'Claim_Date',
-  'Days_of_Service_Last1',
-  'Days_of_Service_Last2',
-  'Days_of_Service_Last3',
-  'Days_of_Service_Last4',
-  'Days_of_Service_First1',
-  'Days_of_Service_First2',
-  'Days_of_Service_First3',
-  'Days_of_Service_First4',
-].join(',');
 
 /** Caspio WHERE fragment — Kaiser MCP only (this audit never needs Health Net rows). */
 const KAISER_MCP_WHERE = `(MCP LIKE '%Kaiser%' OR MCP='Kaiser')`;
@@ -102,10 +83,10 @@ function combineWhere(...parts: Array<string | undefined | null>) {
 async function caspioClaimPage(
   credentials: ReturnType<typeof getCaspioCredentialsFromEnv>,
   token: string,
-  params: URLSearchParams
+  params: URLSearchParams,
+  table: string = T2038_CLAIM_SUBMIT_TABLE
 ): Promise<{ ok: boolean; status: number; rows: Array<Record<string, unknown>>; text: string }> {
-  const url =
-    `${credentials.baseUrl}/integrations/rest/v3/tables/${T2038_CLAIM_SUBMIT_TABLE}/records?${params.toString()}`;
+  const url = `${credentials.baseUrl}/integrations/rest/v3/tables/${table}/records?${params.toString()}`;
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     cache: 'no-store',
@@ -128,12 +109,95 @@ async function caspioClaimPage(
   };
 }
 
+/**
+ * Kaiser rows from CalAIM_tbl_Members via PK_ID cursor. The shared member loader pages with
+ * q.pageNumber, which Caspio can repeat/skip — that silently dropped newer members.
+ * Returns null when the cursor is not supported so callers can fall back.
+ */
+async function fetchKaiserMembersByCursor(
+  credentials: ReturnType<typeof getCaspioCredentialsFromEnv>
+): Promise<Array<Record<string, unknown>> | null> {
+  const token = await getCaspioToken(credentials);
+  const out: Array<Record<string, unknown>> = [];
+  let lastPk = '';
+  for (let i = 0; i < 100; i += 1) {
+    const params = new URLSearchParams();
+    params.set('q.orderBy', 'PK_ID');
+    params.set('q.limit', '1000');
+    params.set('q.where', combineWhere(`CalAIM_MCO LIKE '%Kaiser%'`, lastPk ? `PK_ID>${lastPk}` : ''));
+    const page = await caspioClaimPage(credentials, token, params, 'CalAIM_tbl_Members');
+    if (!page.ok) {
+      console.warn(
+        `[kaiser-t2038-claim-audit] member PK_ID cursor failed (HTTP ${page.status}): ${page.text.slice(0, 160)}`
+      );
+      return i === 0 ? null : out;
+    }
+    if (!page.rows.length) break;
+    out.push(...page.rows);
+    const nextPk = String(page.rows[page.rows.length - 1]?.PK_ID || '').trim();
+    if (!/^\d+$/.test(nextPk) || nextPk === lastPk) break;
+    lastPk = nextPk;
+    if (page.rows.length < 1000) break;
+  }
+  return out;
+}
+
+function memberRecordKey(row: Record<string, unknown>) {
+  const pk = String(row.PK_ID || '').trim();
+  if (pk) return `pk:${pk}`;
+  const id = String(row.Client_ID2 || row.client_ID2 || row.clientId2 || '').trim();
+  if (id) return `id:${id}`;
+  return `name:${String(row.Senior_Last || '')}|${String(row.Senior_First || '')}|${String(row.MCP_CIN || '')}`;
+}
+
+function mergeMemberRecords(...groups: Array<Array<Record<string, unknown>>>) {
+  const byKey = new Map<string, Record<string, unknown>>();
+  const seenClientIds = new Set<string>();
+  for (const group of groups) {
+    for (const row of group) {
+      const key = memberRecordKey(row);
+      const clientId = String(row.Client_ID2 || row.client_ID2 || row.clientId2 || '').trim();
+      if (byKey.has(key) || (clientId && seenClientIds.has(clientId))) continue;
+      byKey.set(key, row);
+      if (clientId) seenClientIds.add(clientId);
+    }
+  }
+  return Array.from(byKey.values());
+}
+
+async function fetchClaimsByPks(
+  credentials: ReturnType<typeof getCaspioCredentialsFromEnv>,
+  pks: string[]
+): Promise<Array<Record<string, unknown>>> {
+  const token = await getCaspioToken(credentials);
+  const chunks: string[][] = [];
+  for (let i = 0; i < pks.length; i += 100) chunks.push(pks.slice(i, i + 100));
+  const out: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < chunks.length; i += 4) {
+    const pages = await Promise.all(
+      chunks.slice(i, i + 4).map((chunk) => {
+        const params = new URLSearchParams();
+        params.set('q.where', `PK_ID IN (${chunk.join(',')})`);
+        params.set('q.limit', '1000');
+        return caspioClaimPage(credentials, token, params);
+      })
+    );
+    for (const page of pages) {
+      if (!page.ok) {
+        console.warn(`[kaiser-t2038-claim-audit] PK refresh failed (HTTP ${page.status}): ${page.text.slice(0, 160)}`);
+        continue;
+      }
+      out.push(...filterKaiserClaims(page.rows));
+    }
+  }
+  return out;
+}
+
 async function fetchSubmittedT2038Claims(
   credentials: ReturnType<typeof getCaspioCredentialsFromEnv>,
   opts?: { afterPk?: string }
 ) {
   const token = await getCaspioToken(credentials);
-  let useSelect = true;
   let useKaiserWhere = true;
   const byKey = new Map<string, Record<string, unknown>>();
   const afterPk = String(opts?.afterPk || '').trim();
@@ -153,19 +217,12 @@ async function fetchSubmittedT2038Claims(
   let cursorWorked = false;
   for (let i = 0; i < 200; i += 1) {
     const params = new URLSearchParams();
-    if (useSelect) params.set('q.select', CLAIM_SELECT);
     params.set('q.orderBy', 'PK_ID');
     params.set('q.limit', '1000');
     const where = combineWhere(useKaiserWhere ? KAISER_MCP_WHERE : '', pkWhere(lastPk));
     if (where) params.set('q.where', where);
     const page = await caspioClaimPage(credentials, token, params);
     if (!page.ok && i === 0) {
-      const lower = page.text.toLowerCase();
-      if (useSelect && (lower.includes('invalid column') || lower.includes('q.select') || page.status === 400)) {
-        useSelect = false;
-        i -= 1;
-        continue;
-      }
       if (useKaiserWhere && page.status === 400) {
         console.warn('[kaiser-t2038-claim-audit] Kaiser MCP where rejected; filtering client-side');
         useKaiserWhere = false;
@@ -190,22 +247,14 @@ async function fetchSubmittedT2038Claims(
 
   // Strategy B: pageNumber only for full pulls when cursor failed / underfetched
   if (!afterPk && (!cursorWorked || byKey.size < 200)) {
-    useSelect = true;
     useKaiserWhere = true;
     for (let pageNumber = 1; pageNumber <= 120; pageNumber += 1) {
       const params = new URLSearchParams();
-      if (useSelect) params.set('q.select', CLAIM_SELECT);
       params.set('q.pageSize', '1000');
       params.set('q.pageNumber', String(pageNumber));
       if (useKaiserWhere) params.set('q.where', KAISER_MCP_WHERE);
       const page = await caspioClaimPage(credentials, token, params);
       if (!page.ok && pageNumber === 1) {
-        const lower = page.text.toLowerCase();
-        if (useSelect && (lower.includes('invalid column') || lower.includes('q.select') || page.status === 400)) {
-          useSelect = false;
-          pageNumber = 0;
-          continue;
-        }
         if (useKaiserWhere && page.status === 400) {
           useKaiserWhere = false;
           pageNumber = 0;
@@ -238,7 +287,6 @@ async function fetchClaimsForOneClient(
 ): Promise<Array<Record<string, unknown>>> {
   const escaped = clientId.replace(/'/g, "''");
   const out: Array<Record<string, unknown>> = [];
-  let useSelect = true;
   let useKaiserWhere = true;
   for (let pageNumber = 1; pageNumber <= 3; pageNumber += 1) {
     const params = new URLSearchParams();
@@ -246,16 +294,10 @@ async function fetchClaimsForOneClient(
       'q.where',
       combineWhere(`Client_ID2='${escaped}'`, useKaiserWhere ? KAISER_MCP_WHERE : '')
     );
-    if (useSelect) params.set('q.select', CLAIM_SELECT);
     params.set('q.pageSize', '1000');
     params.set('q.pageNumber', String(pageNumber));
     const page = await caspioClaimPage(credentials, token, params);
     if (!page.ok && pageNumber === 1) {
-      if (useSelect) {
-        useSelect = false;
-        pageNumber = 0;
-        continue;
-      }
       if (useKaiserWhere) {
         useKaiserWhere = false;
         pageNumber = 0;
@@ -591,7 +633,11 @@ export async function GET(request: NextRequest) {
 
     // Never force-refresh the entire members table here — that alone can take minutes.
     // Members come from the existing Caspio/Firestore member cache.
-    const [membersResult, storedClaims, webhookCachedClaims, justificationsByKey] = await Promise.all([
+    const [cursorMembers, membersResult, storedClaims, webhookCachedClaims, justificationsByKey] = await Promise.all([
+      fetchKaiserMembersByCursor(credentials).catch((err) => {
+        console.warn('[kaiser-t2038-claim-audit] member cursor error', err);
+        return null;
+      }),
       fetchAllCalAIMMembers(credentials, {
         includeRawData: true,
         forceRefresh: false,
@@ -612,6 +658,11 @@ export async function GET(request: NextRequest) {
     cachedClaims = kaiserCached;
     const baseInventory = mergeClaimRecords(kaiserStored, isIncremental ? [] : kaiserCached);
     const inventoryMaxPk = maxClaimPkFromRecords(baseInventory) || priorMaxPk;
+    // Rows stored before the full-column pull lack Date 0f Service — re-scrape once on full rebuild.
+    const inventoryStale =
+      !isIncremental &&
+      kaiserStored.some((row) => row._claimSchema !== KAISER_T2038_CLAIM_STORAGE_SCHEMA);
+    const scrapeAll = forceCaspio || inventoryStale;
 
     if (isIncremental) {
       const deltaLive = await fetchSubmittedT2038Claims(credentials, {
@@ -619,7 +670,7 @@ export async function GET(request: NextRequest) {
       });
       liveClaims = deltaLive;
       newClaims = mergeClaimRecords(deltaLive, kaiserCached);
-    } else if (forceCaspio) {
+    } else if (scrapeAll) {
       // Explicit full Caspio scrape of Kaiser MCP rows only.
       liveClaims = await fetchSubmittedT2038Claims(credentials);
       newClaims = mergeClaimRecords(liveClaims, kaiserCached);
@@ -635,10 +686,27 @@ export async function GET(request: NextRequest) {
       newClaims = mergeClaimRecords(liveClaims, kaiserCached);
     }
 
-    let claims = mergeClaimRecords(baseInventory, newClaims);
-    const rawMembers = Array.isArray(membersResult.rawMembers)
-      ? membersResult.rawMembers
-      : membersResult.members || [];
+    // Rows stored with blank Claim_Status get marked submitted later — re-read them by PK_ID.
+    let refreshedClaims: Array<Record<string, unknown>> = [];
+    if (!scrapeAll) {
+      const blankPks = baseInventory
+        .filter((row) => !isClaimRowSubmitted(row))
+        .map((row) => String(row.PK_ID || '').trim())
+        .filter((pk) => /^\d+$/.test(pk));
+      if (blankPks.length) {
+        refreshedClaims = await fetchClaimsByPks(credentials, blankPks);
+        newClaims = mergeClaimRecords(refreshedClaims, newClaims);
+      }
+    }
+
+    let claims = mergeClaimRecords(newClaims, baseInventory);
+    const cachedMembers = (
+      Array.isArray(membersResult.rawMembers) ? membersResult.rawMembers : membersResult.members || []
+    ) as Array<Record<string, unknown>>;
+    const rawMembers = mergeMemberRecords(cursorMembers || [], cachedMembers);
+    console.log(
+      `[kaiser-t2038-claim-audit] members: cursor ${cursorMembers ? cursorMembers.length : 'n/a'} · cache ${cachedMembers.length} · merged ${rawMembers.length}`
+    );
     let claimsByClient = indexClaimsByClientId2(claims);
     let rows = buildKaiserT2038ClaimAuditRows({
       rawMembers: rawMembers as Array<Record<string, unknown>>,
@@ -667,8 +735,8 @@ export async function GET(request: NextRequest) {
       });
       claimRowsTargeted = targeted.length;
       if (targeted.length > 0) {
-        newClaims = mergeClaimRecords(newClaims, targeted);
-        claims = mergeClaimRecords(claims, targeted);
+        newClaims = mergeClaimRecords(targeted, newClaims);
+        claims = mergeClaimRecords(targeted, claims);
         claimsByClient = indexClaimsByClientId2(claims);
         rows = buildKaiserT2038ClaimAuditRows({
           rawMembers: rawMembers as Array<Record<string, unknown>>,
@@ -680,8 +748,9 @@ export async function GET(request: NextRequest) {
 
     // Persist only net-new claim rows (not the entire inventory every full rebuild).
     const existingKeys = new Set(baseInventory.map((row) => claimRecordKey(row)));
-    const claimsToUpsert = (forceCaspio ? claims : newClaims).filter(
-      (row) => forceCaspio || !existingKeys.has(claimRecordKey(row))
+    const claimsToUpsert = mergeClaimRecords(
+      refreshedClaims,
+      (scrapeAll ? claims : newClaims).filter((row) => scrapeAll || !existingKeys.has(claimRecordKey(row)))
     );
     // First seed: inventory was thin — write the merged set so incremental works next time.
     const seedWrite = !forceCaspio && baseInventory.length < 100 ? claims : claimsToUpsert;
@@ -716,6 +785,8 @@ export async function GET(request: NextRequest) {
       claimRowsTargeted,
       claimRowsNew: isIncremental ? newClaims.length : claims.length,
       claimClientsIndexed: claimsByClient.size,
+      membersFromCursor: cursorMembers ? cursorMembers.length : null,
+      membersFromCache: cachedMembers.length,
       maxClaimPk: saved.meta.maxClaimPk,
       fetchedAt,
     });

@@ -56,6 +56,20 @@ type Summary = {
 
 const clean = (value: unknown) => String(value || '').trim();
 
+const lastClaimDateFor = (row: KaiserT2038ClaimAuditRow) => {
+  let best: { iso: string; display: string } | null = null;
+  for (const claim of row.submittedClaims || []) {
+    if (!claim.dateOfServiceIso) continue;
+    if (!best || claim.dateOfServiceIso > best.iso) {
+      best = { iso: claim.dateOfServiceIso, display: claim.dateOfService };
+    }
+  }
+  return best?.display || '';
+};
+
+const statusLine = (calaimStatus: string, kaiserStatus: string) =>
+  `CalAIM ${calaimStatus || '—'} · Kaiser ${kaiserStatus || '—'}`;
+
 const windowBadge = (row: KaiserT2038ClaimAuditRow) => {
   if (row.window === 'missing_dates') return { label: 'Missing auth dates', className: 'bg-slate-100 text-slate-800' };
   if (row.window === 'not_started') return { label: 'Not started', className: 'bg-blue-100 text-blue-900' };
@@ -89,6 +103,7 @@ export default function KaiserT2038ClaimAuditPage() {
     total: 0,
     clients: 0,
   });
+  const [memberStats, setMemberStats] = useState<{ cursor: number | null; cache: number } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<KaiserT2038ClaimAuditRunMode | ''>('');
   const [error, setError] = useState('');
@@ -101,6 +116,7 @@ export default function KaiserT2038ClaimAuditPage() {
   const [expandedId, setExpandedId] = useState('');
   const [summaryGapsOpen, setSummaryGapsOpen] = useState(false);
   const [summaryNoClaimsOpen, setSummaryNoClaimsOpen] = useState(false);
+  const [summaryExAuthOpen, setSummaryExAuthOpen] = useState(false);
   const [savingKey, setSavingKey] = useState('');
 
   const applyAuditResponse = useCallback((body: Record<string, unknown>) => {
@@ -118,6 +134,14 @@ export default function KaiserT2038ClaimAuditPage() {
       total: Number(body.claimRowsFetched || 0) || 0,
       clients: Number(body.claimClientsIndexed || 0) || 0,
     });
+    setMemberStats(
+      body.membersFromCache !== undefined
+        ? {
+            cursor: body.membersFromCursor === null ? null : Number(body.membersFromCursor) || 0,
+            cache: Number(body.membersFromCache) || 0,
+          }
+        : null
+    );
   }, []);
 
   const load = useCallback(
@@ -240,34 +264,61 @@ export default function KaiserT2038ClaimAuditPage() {
   }, [rows, query, lastNameFilter, mrnFilter, coverageFilter, matchesStatusAndAuth]);
 
   /** Top-of-page work summary for current CalAIM_Status + Authorization filters. */
+  const cardSummary = useMemo(
+    () => (rows.length ? (summarizeKaiserT2038ClaimAudit(rows.filter(matchesStatusAndAuth)) as Summary) : summary),
+    [rows, matchesStatusAndAuth, summary]
+  );
+
   const queueSummary = useMemo(() => {
     const scoped = rows.filter(matchesStatusAndAuth);
+    const toGapMember = (row: KaiserT2038ClaimAuditRow) => {
+      const months = (row.months || [])
+        .filter((month) => month.status === 'missing')
+        .map((month) => ({ key: month.monthKey, label: month.label || month.monthKey }));
+      return {
+        id: row.id,
+        name: row.memberName || row.clientId2 || 'Member',
+        clientId2: row.clientId2,
+        calaimStatus: row.calaimStatus,
+        kaiserStatus: row.kaiserStatus,
+        authorizationStart: row.authorizationStart,
+        authorizationEnd: row.authorizationEnd,
+        firstClaimDate: row.firstClaimDate,
+        lastClaimDate: lastClaimDateFor(row),
+        openGaps: row.openMissingMonthCount,
+        months,
+      };
+    };
     const noClaimsMembers = scoped
       .filter((row) => row.noClaimsYet)
       .map((row) => ({
         id: row.id,
         name: row.memberName || row.clientId2 || 'Member',
         clientId2: row.clientId2,
+        calaimStatus: row.calaimStatus,
+        kaiserStatus: row.kaiserStatus,
         authorizationStart: row.authorizationStart,
         authorizationEnd: row.authorizationEnd,
+        unsubmittedClaimCount: row.unsubmittedClaimCount || 0,
       }));
-    const gapMembers = scoped
-      .filter((row) => !row.noClaimsYet && row.openMissingMonthCount > 0)
-      .map((row) => {
-        const months = (row.months || [])
-          .filter((month) => month.status === 'missing')
-          .map((month) => ({ key: month.monthKey, label: month.label || month.monthKey }));
-        return {
-          id: row.id,
-          name: row.memberName || row.clientId2 || 'Member',
-          clientId2: row.clientId2,
-          authorizationStart: row.authorizationStart,
-          authorizationEnd: row.authorizationEnd,
-          firstClaimDate: row.firstClaimDate,
-          openGaps: row.openMissingMonthCount,
-          months,
-        };
-      });
+    const gapMembers = scoped.filter((row) => !row.noClaimsYet && row.openMissingMonthCount > 0).map(toGapMember);
+    // Members we did bill, now off CalAIM_Status Authorized, with gaps inside the 6-month window —
+    // ignores the status/auth filters so stopped billing is always visible.
+    const exAuthGapMembers = rows
+      .filter(
+        (row) =>
+          !isAuthorizedCalaimStatus(row.calaimStatus) &&
+          !row.noClaimsYet &&
+          Boolean(row.firstClaimDate) &&
+          row.openMissingMonthCount > 0
+      )
+      .map(toGapMember);
+    const hiddenNoClaimsByStatus = new Map<string, number>();
+    for (const row of rows) {
+      if (!row.noClaimsYet || matchesStatusAndAuth(row)) continue;
+      const label = clean(row.calaimStatus) || '(blank)';
+      hiddenNoClaimsByStatus.set(label, (hiddenNoClaimsByStatus.get(label) || 0) + 1);
+    }
     const monthRollup = new Map<string, { key: string; label: string; count: number }>();
     for (const member of gapMembers) {
       for (const month of member.months) {
@@ -281,6 +332,9 @@ export default function KaiserT2038ClaimAuditPage() {
       scopedCount: scoped.length,
       noClaimsMembers,
       gapMembers,
+      exAuthGapMembers,
+      exAuthOpenGapMonths: exAuthGapMembers.reduce((sum, member) => sum + member.openGaps, 0),
+      hiddenNoClaims: Array.from(hiddenNoClaimsByStatus.entries()).sort((a, b) => b[1] - a[1]),
       gapMonthsByMonth,
       totalOpenGapMonths: gapMembers.reduce((sum, member) => sum + member.openGaps, 0),
     };
@@ -416,6 +470,7 @@ export default function KaiserT2038ClaimAuditPage() {
               {runId ? ` · ${runId.slice(0, 8)}…` : ''} · claims {claimStats.total}
               {claimStats.newClaims ? ` (+${claimStats.newClaims} new)` : ''}
               {claimStats.targeted ? ` · targeted ${claimStats.targeted}` : ''} · {claimStats.clients} Client_ID2 keys
+              {memberStats ? ` · members cursor ${memberStats.cursor ?? 'n/a'} / cache ${memberStats.cache}` : ''}
             </p>
           ) : null}
         </div>
@@ -469,28 +524,31 @@ export default function KaiserT2038ClaimAuditPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Kaiser members in scope</CardDescription>
-            <CardTitle>{summary?.total ?? '—'}</CardTitle>
+            <CardTitle>{cardSummary?.total ?? '—'}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            Open auth {summary?.openAuth ?? 0} · Ended {summary?.authEnded ?? 0}
+            Open auth {cardSummary?.openAuth ?? 0} · Ended {cardSummary?.authEnded ?? 0}
+            {summary && cardSummary && cardSummary.total !== summary.total
+              ? ` · ${summary.total} total before CalAIM_Status / auth filters`
+              : ''}
           </CardContent>
         </Card>
-        <Card className={summary?.incomplete ? 'border-amber-400' : undefined}>
+        <Card className={cardSummary?.incomplete ? 'border-amber-400' : undefined}>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-1">
               <AlertTriangle className="h-3.5 w-3.5 text-amber-600" /> Incomplete claims
             </CardDescription>
-            <CardTitle>{summary?.incomplete ?? '—'}</CardTitle>
+            <CardTitle>{cardSummary?.incomplete ?? '—'}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {summary?.openMissingMonths ?? 0} gap month{summary?.openMissingMonths === 1 ? '' : 's'} after first claim ·{' '}
-            {summary?.noClaimsYet ?? 0} with no claims yet
+            {cardSummary?.openMissingMonths ?? 0} gap month{cardSummary?.openMissingMonths === 1 ? '' : 's'} after
+            first claim · {cardSummary?.noClaimsYet ?? 0} with no claims yet
           </CardContent>
         </Card>
-        <Card className={summary?.noClaimsYet ? 'border-sky-300' : undefined}>
+        <Card className={cardSummary?.noClaimsYet ? 'border-sky-300' : undefined}>
           <CardHeader className="pb-2">
             <CardDescription>No claims yet</CardDescription>
-            <CardTitle>{summary?.noClaimsYet ?? '—'}</CardTitle>
+            <CardTitle>{cardSummary?.noClaimsYet ?? '—'}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
             Auth on file, zero rows in CalAIM_Claim_Submit_T2038
@@ -499,7 +557,7 @@ export default function KaiserT2038ClaimAuditPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Claims complete</CardDescription>
-            <CardTitle>{summary?.complete ?? '—'}</CardTitle>
+            <CardTitle>{cardSummary?.complete ?? '—'}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
             Every month from first claim → auth end/today claimed or justified
@@ -578,6 +636,9 @@ export default function KaiserT2038ClaimAuditPage() {
                         <span className="hidden shrink-0 text-muted-foreground md:inline">
                           First {member.firstClaimDate || '—'}
                         </span>
+                        <span className="hidden shrink-0 text-muted-foreground lg:inline">
+                          {statusLine(member.calaimStatus, member.kaiserStatus)}
+                        </span>
                         <span className="ml-auto min-w-0 truncate text-muted-foreground">
                           {member.months.map((month) => month.label).join(', ') || `${member.openGaps} gaps`}
                         </span>
@@ -625,8 +686,98 @@ export default function KaiserT2038ClaimAuditPage() {
                         <span className="hidden shrink-0 text-muted-foreground sm:inline">
                           Auth {member.authorizationStart || '—'} → {member.authorizationEnd || '—'}
                         </span>
+                        <span className="hidden shrink-0 text-muted-foreground md:inline">
+                          {statusLine(member.calaimStatus, member.kaiserStatus)}
+                        </span>
                         <span className="ml-auto shrink-0 text-muted-foreground">
-                          Client_ID2 {member.clientId2 || '—'} · First claim —
+                          Client_ID2 {member.clientId2 || 'none yet'} ·{' '}
+                          {member.unsubmittedClaimCount
+                            ? `${member.unsubmittedClaimCount} entered, not submitted`
+                            : 'First claim —'}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                  {queueSummary.hiddenNoClaims.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5 border-t border-sky-200 px-1 pt-2 pb-1 text-muted-foreground">
+                      <span>
+                        Hidden by filters:{' '}
+                        {queueSummary.hiddenNoClaims.map(([label, count]) => `${label} ${count}`).join(' · ')}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 text-xs"
+                        onClick={() => {
+                          setStatusFilter('all');
+                          setAuthFilter('all');
+                          setCoverageFilter('no_claims_yet');
+                        }}
+                      >
+                        Show all statuses
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded border border-rose-200">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-rose-50/70"
+                onClick={() => setSummaryExAuthOpen((open) => !open)}
+              >
+                {summaryExAuthOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="font-medium text-rose-950">No longer authorized — recent gaps</span>
+                <Badge variant="outline" className="bg-rose-50 text-rose-950 border-rose-300">
+                  {queueSummary.exAuthGapMembers.length}
+                </Badge>
+                <span className="truncate text-xs text-muted-foreground">
+                  Billed before, CalAIM_Status not Authorized · {queueSummary.exAuthOpenGapMonths} gap month
+                  {queueSummary.exAuthOpenGapMonths === 1 ? '' : 's'} (last 6 months, all filters ignored)
+                </span>
+              </button>
+              {summaryExAuthOpen ? (
+                <div className="max-h-72 space-y-0.5 overflow-y-auto border-t bg-rose-50/30 px-2 py-1.5 text-xs">
+                  {queueSummary.exAuthGapMembers.length === 0 ? (
+                    <p className="px-1 py-2 text-muted-foreground">
+                      No non-Authorized members with recent gaps after their first claim.
+                    </p>
+                  ) : (
+                    queueSummary.exAuthGapMembers.map((member) => (
+                      <button
+                        key={member.id}
+                        type="button"
+                        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded px-1.5 py-1 text-left hover:bg-rose-100/70"
+                        onClick={() => {
+                          setStatusFilter('all');
+                          setAuthFilter('all');
+                          setCoverageFilter('gaps_only');
+                          setQuery(member.clientId2 || member.name);
+                          setExpandedId(member.id);
+                        }}
+                      >
+                        <span className="min-w-0 truncate font-medium">{member.name}</span>
+                        <Badge variant="outline" className="bg-white text-rose-950 border-rose-300 font-normal">
+                          {member.calaimStatus || 'No CalAIM_Status'}
+                        </Badge>
+                        <Badge variant="outline" className="bg-white font-normal">
+                          Kaiser {member.kaiserStatus || '—'}
+                        </Badge>
+                        <span className="text-muted-foreground">
+                          Auth {member.authorizationStart || '—'} → {member.authorizationEnd || '—'}
+                        </span>
+                        <span className="text-muted-foreground">
+                          First {member.firstClaimDate || '—'} · Last {member.lastClaimDate || '—'}
+                        </span>
+                        <span className="ml-auto min-w-0 truncate text-rose-900">
+                          Gaps: {member.months.map((month) => month.label).join(', ') || `${member.openGaps}`}
                         </span>
                       </button>
                     ))
@@ -795,7 +946,11 @@ export default function KaiserT2038ClaimAuditPage() {
                               : `First claim ${row.firstClaimDate || '—'}`}
                           </span>
                           {row.noClaimsYet ? (
-                            <span className="truncate text-xs text-sky-900/80">Awaiting first claim</span>
+                            <span className="truncate text-xs text-sky-900/80">
+                              {row.unsubmittedClaimCount
+                                ? `Awaiting first claim · ${row.unsubmittedClaimCount} entered, not submitted`
+                                : 'Awaiting first claim'}
+                            </span>
                           ) : gapMonthLabels.length > 0 ? (
                             <span className="min-w-0 truncate text-xs text-amber-900">
                               Gaps {gapMonthLabels.join(' · ')}
@@ -815,7 +970,11 @@ export default function KaiserT2038ClaimAuditPage() {
                         </div>
                         <div className="text-xs">
                           {row.noClaimsYet
-                            ? 'New / unused auth — no CalAIM_Claim_Submit_T2038 rows yet'
+                            ? row.unsubmittedClaimCount
+                              ? `No submitted claims — ${row.unsubmittedClaimCount} row(s) entered with blank Claim_Status (DOS ${
+                                  (row.unsubmittedClaimDates || []).join(', ') || '—'
+                                })`
+                              : 'New / unused auth — no CalAIM_Claim_Submit_T2038 rows yet'
                             : `First claim ${row.firstClaimDate || '—'} (${row.firstClaimMonthKey || '—'}) · Gap window ${
                                 row.gapStartMonthKey || '—'
                               } → auth end/today · Claimed ${row.claimedMonthCount} · Justified ${
@@ -915,6 +1074,11 @@ export default function KaiserT2038ClaimAuditPage() {
                                         DOS {month.claimDates.join(', ')}
                                       </span>
                                     ) : null}
+                                    {month.claimDates.length === 0 && (month.unsubmittedDates || []).length > 0 ? (
+                                      <span className="truncate text-xs text-violet-800">
+                                        Entered, not submitted · DOS {(month.unsubmittedDates || []).join(', ')}
+                                      </span>
+                                    ) : null}
                                   </div>
                                 </div>
                                 <label className="flex w-20 cursor-pointer items-center justify-center gap-1.5 text-xs">
@@ -956,7 +1120,8 @@ export default function KaiserT2038ClaimAuditPage() {
                       ) : null}
                       <p className="mt-2 text-[11px] text-muted-foreground">
                         Not claimed = open gap. No claim = not submitting. Claimable = forgotten claim — queued for a
-                        future Caspio batch submit. DOS on claimed months comes from Caspio.
+                        future Caspio batch submit. DOS on claimed months comes from Caspio. Rows with a blank
+                        Claim_Status are shown as entered, not submitted.
                       </p>
                     </div>
                   </div>
