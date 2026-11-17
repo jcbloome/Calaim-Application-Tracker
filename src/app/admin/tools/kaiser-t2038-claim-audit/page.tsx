@@ -911,35 +911,79 @@ export default function KaiserT2038ClaimAuditPage() {
                     </div>
 
                     <div>
-                      <div className="mb-2 text-sm font-medium">
-                        Caspio claims on file ({row.submittedClaims.length})
-                      </div>
-                      {row.submittedClaims.length === 0 ? (
-                        <div className="text-xs text-muted-foreground">
-                          No rows in CalAIM_Claim_Submit_T2038 for this Client_ID2.
-                        </div>
-                      ) : (
-                        <div className="max-h-48 overflow-auto rounded border bg-white">
-                          <table className="w-full text-xs">
-                            <thead className="bg-muted/50 text-left">
-                              <tr>
-                                <th className="px-2 py-1.5">Date_of_Service</th>
-                                <th className="px-2 py-1.5">Client_First</th>
-                                <th className="px-2 py-1.5">Client_Last</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {row.submittedClaims.map((claim, index) => (
-                                <tr key={`${claim.dateOfServiceIso}-${index}`} className="border-t">
-                                  <td className="px-2 py-1.5">{claim.dateOfService}</td>
-                                  <td className="px-2 py-1.5">{claim.clientFirst || '—'}</td>
-                                  <td className="px-2 py-1.5">{claim.clientLast || '—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
+                      {(() => {
+                        // Month grid uses unique DOS; Caspio may have multiple rows for the same date.
+                        const byDos = new Map<
+                          string,
+                          { dateOfService: string; clientFirst: string; clientLast: string; count: number }
+                        >();
+                        for (const claim of row.submittedClaims) {
+                          const key = claim.dateOfServiceIso || claim.dateOfService || `blank-${claim.clientFirst}-${claim.clientLast}`;
+                          if (!key) continue;
+                          const existing = byDos.get(key);
+                          if (existing) {
+                            existing.count += 1;
+                            if (!existing.clientFirst && claim.clientFirst) existing.clientFirst = claim.clientFirst;
+                            if (!existing.clientLast && claim.clientLast) existing.clientLast = claim.clientLast;
+                          } else {
+                            byDos.set(key, {
+                              dateOfService: claim.dateOfService || '—',
+                              clientFirst: claim.clientFirst || '',
+                              clientLast: claim.clientLast || '',
+                              count: 1,
+                            });
+                          }
+                        }
+                        const uniqueClaims = Array.from(byDos.entries())
+                          .sort(([a], [b]) => a.localeCompare(b))
+                          .map(([, value]) => value);
+                        const rawRowCount = row.submittedClaims.length;
+                        return (
+                          <>
+                            <div className="mb-2 text-sm font-medium">
+                              Caspio claims on file ({uniqueClaims.length} date
+                              {uniqueClaims.length === 1 ? '' : 's'}
+                              {rawRowCount > uniqueClaims.length
+                                ? ` · ${rawRowCount} Caspio rows`
+                                : ''}
+                              )
+                            </div>
+                            {uniqueClaims.length === 0 ? (
+                              <div className="text-xs text-muted-foreground">
+                                No rows in CalAIM_Claim_Submit_T2038 for this Client_ID2.
+                              </div>
+                            ) : (
+                              <div className="max-h-48 overflow-auto rounded border bg-white">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-muted/50 text-left">
+                                    <tr>
+                                      <th className="px-2 py-1.5">Date_of_Service</th>
+                                      <th className="px-2 py-1.5">Client_First</th>
+                                      <th className="px-2 py-1.5">Client_Last</th>
+                                      <th className="px-2 py-1.5">Rows</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {uniqueClaims.map((claim) => (
+                                      <tr
+                                        key={`${claim.dateOfService}-${claim.clientFirst}-${claim.clientLast}`}
+                                        className="border-t"
+                                      >
+                                        <td className="px-2 py-1.5">{claim.dateOfService}</td>
+                                        <td className="px-2 py-1.5">{claim.clientFirst || '—'}</td>
+                                        <td className="px-2 py-1.5">{claim.clientLast || '—'}</td>
+                                        <td className="px-2 py-1.5 text-muted-foreground">
+                                          {claim.count > 1 ? `×${claim.count}` : '1'}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 ) : null}
