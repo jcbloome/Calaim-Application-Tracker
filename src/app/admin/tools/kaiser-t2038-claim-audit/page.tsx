@@ -93,6 +93,8 @@ export default function KaiserT2038ClaimAuditPage() {
   const [loadingMode, setLoadingMode] = useState<KaiserT2038ClaimAuditRunMode | ''>('');
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [lastNameFilter, setLastNameFilter] = useState('');
+  const [mrnFilter, setMrnFilter] = useState('');
   const [coverageFilter, setCoverageFilter] = useState<CoverageFilter>('incomplete');
   const [authFilter, setAuthFilter] = useState<AuthFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('Authorized');
@@ -201,17 +203,31 @@ export default function KaiserT2038ClaimAuditPage() {
 
   const filteredRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
+    const lastNeedle = lastNameFilter.trim().toLowerCase();
+    // Compare MRNs on digits/letters only; strip leading zeros so 000001732688 matches 1732688.
+    const normalizeMrn = (value: unknown) =>
+      String(value || '')
+        .toUpperCase()
+        .replace(/[^0-9A-Z]/g, '')
+        .replace(/^0+(?=\d)/, '');
+    const mrnNeedle = normalizeMrn(mrnFilter);
     return rows.filter((row) => {
       if (!matchesStatusAndAuth(row)) return false;
       if (coverageFilter === 'incomplete' && row.openMissingMonthCount <= 0 && !row.noClaimsYet) return false;
       if (coverageFilter === 'gaps_only' && (row.noClaimsYet || row.openMissingMonthCount <= 0)) return false;
       if (coverageFilter === 'no_claims_yet' && !row.noClaimsYet) return false;
       if (coverageFilter === 'complete' && !row.claimsComplete) return false;
+      if (lastNeedle) {
+        const last = String(row.memberLastName || row.memberName.split(',')[0] || '').toLowerCase();
+        if (!last.startsWith(lastNeedle) && !last.includes(lastNeedle)) return false;
+      }
+      if (mrnNeedle && !normalizeMrn(row.mrn).includes(mrnNeedle)) return false;
       if (!needle) return true;
       const haystack = [
         row.memberName,
         row.memberFirstName,
         row.memberLastName,
+        row.mrn,
         row.clientId2,
         row.authorizationNumber,
         row.calaimStatus,
@@ -221,7 +237,7 @@ export default function KaiserT2038ClaimAuditPage() {
         .toLowerCase();
       return haystack.includes(needle);
     });
-  }, [rows, query, coverageFilter, matchesStatusAndAuth]);
+  }, [rows, query, lastNameFilter, mrnFilter, coverageFilter, matchesStatusAndAuth]);
 
   /** Top-of-page work summary for current CalAIM_Status + Authorization filters. */
   const queueSummary = useMemo(() => {
@@ -631,12 +647,30 @@ export default function KaiserT2038ClaimAuditPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <label className="space-y-1 text-sm">
+            <span className="text-xs text-muted-foreground">Last name</span>
+            <Input
+              value={lastNameFilter}
+              onChange={(event) => setLastNameFilter(event.target.value)}
+              placeholder="e.g. Davis"
+              className="w-40"
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-xs text-muted-foreground">MRN</span>
+            <Input
+              value={mrnFilter}
+              onChange={(event) => setMrnFilter(event.target.value)}
+              placeholder="Kaiser MRN"
+              className="w-44"
+            />
+          </label>
+          <label className="space-y-1 text-sm">
             <span className="text-xs text-muted-foreground">Search</span>
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Name, Client_ID2, auth #"
-              className="w-64"
+              className="w-56"
             />
           </label>
           <label className="space-y-1 text-sm">
@@ -773,7 +807,8 @@ export default function KaiserT2038ClaimAuditPage() {
                     {(!isCompactQueueRow || expanded) && (
                       <>
                         <div className="text-xs text-muted-foreground">
-                          Client_ID2 {row.clientId2 || '—'} · Auth {row.authorizationStart || '—'} →{' '}
+                          Client_ID2 {row.clientId2 || '—'}
+                          {row.mrn ? ` · MRN ${row.mrn}` : ''} · Auth {row.authorizationStart || '—'} →{' '}
                           {row.authorizationEnd || '—'}
                           {row.authorizationNumber ? ` · #${row.authorizationNumber}` : ''} · Status{' '}
                           {row.calaimStatus || '—'}

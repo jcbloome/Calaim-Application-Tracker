@@ -120,6 +120,8 @@ export type KaiserT2038ClaimAuditRow = {
   memberFirstName: string;
   memberLastName: string;
   memberName: string;
+  /** Kaiser MRN (falls back to MCP_CIN / Medi-Cal) — may be blank on older saved runs. */
+  mrn?: string;
   calaimStatus: string;
   kaiserStatus: string;
   authorizationNumber: string;
@@ -346,6 +348,14 @@ export function mapKaiserMemberForClaimAudit(
     memberName: [memberLastName, memberFirstName].filter(Boolean).join(', ') || clientId2 || `Member ${index}`,
     calaimStatus: calaimStatus || (hasAuthDates ? 'Has T2038 dates' : ''),
     kaiserStatus: pickFirst(rawMember.Kaiser_Status, rawMember.Kaiser_ID_Status),
+    mrn: pickFirst(
+      rawMember.Kaiser_MRN,
+      rawMember.Member_MRN,
+      rawMember.MRN,
+      rawMember.memberMrn,
+      rawMember.MCP_CIN,
+      rawMember.MediCal_Number
+    ),
     authorizationNumber: pickFirst(
       rawMember.Authorization_Number_T2038,
       rawMember.Authorization_Number_T038
