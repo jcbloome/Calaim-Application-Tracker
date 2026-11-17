@@ -14,6 +14,9 @@ import {
 
 const CLAIM_SELECT = [
   'Client_ID2',
+  'Client_First',
+  'Client_Last',
+  'Date_of_Service',
   'Days_of_Service_First1',
   'Days_of_Service_Last1',
   'Days_of_Service_First2',

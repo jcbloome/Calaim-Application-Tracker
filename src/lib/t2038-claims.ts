@@ -350,6 +350,7 @@ export function summarizeT2038Rows(rows: T2038ClaimMemberRow[]) {
 }
 
 const CLAIM_SERVICE_DATE_FIELDS = [
+  'Date_of_Service',
   'Days_of_Service_Last1',
   'Days_of_Service_Last2',
   'Days_of_Service_Last3',

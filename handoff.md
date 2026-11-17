@@ -8,6 +8,12 @@
 
 ---
 
+## Changes 2026-11-16
+
+- **New Tools page — Kaiser T2038 Claim Audit.** Lists authorized Kaiser members (including ended authorizations), builds expected claim months from T2038 auth start→end (or today), matches `CalAIM_Claim_Submit_T2038` by `Client_ID2` / `Date_of_Service` (plus Days_of_Service_* fallbacks), flags missing months, and lets staff justify gaps after Caspio review. Filter to incomplete claims. Justifications stored in Firestore `kaiser_t2038_claim_month_justifications`. Nav item lives under **Tools → Kaiser** (not Health Net).
+  - Files: `src/lib/kaiser-t2038-claim-audit.ts`, `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `src/app/admin/layout.tsx`, `src/lib/t2038-claims.ts`, `handoff.md`.
+  - Route: `/admin/tools/kaiser-t2038-claim-audit`.
+
 ## Changes 2026-11-13
 
 - **Kaiser cover sheet — viewable is staff-only; KP auto-fill is for downloaded Acrobat PDF.** Removed the temporary KP Tier viewable-preview control. Internal preview keeps KP blank. Kaiser picks tier on the **downloaded** fillable PDF in Adobe Acrobat; Max Tier Expenses + Total Costs auto-fill there (Keystroke/Format/Validate/MouseUp/Blur + `calculateNow()`).
