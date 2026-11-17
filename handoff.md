@@ -11,8 +11,9 @@
 ## Changes 2026-11-16
 
 - **New Tools page — Kaiser MIF Compare.** Upload the new Kaiser portal MIF Excel and compare against Caspio **Authorized** Kaiser members. Shows portal-only, ours-only, and matched; annotates portal-only rows found in Caspio under another status; export discrepancies workbook. Nav under **Tools → Kaiser**.
-  - Files: `src/lib/kaiser-mif-compare.ts`, `src/app/api/admin/kaiser-mif-compare/members/route.ts`, `src/app/admin/tools/kaiser-mif-compare/page.tsx`, `src/app/admin/layout.tsx`, `handoff.md`.
+  - Files: `src/lib/kaiser-mif-compare.ts`, `src/app/api/admin/kaiser-mif-compare/members/route.ts`, `src/app/admin/tools/kaiser-mif-compare/page.tsx`, `src/app/admin/layout.tsx`, `src/lib/caspio-api-utils.ts`, `handoff.md`.
   - Route: `/admin/tools/kaiser-mif-compare`.
+  - Commit: `eb0bcc86`.
   - **MRN / sheet parse fix:** Portal `*_MIF_CS.xlsx` files put members on the **CS_MIF** tab; the first tab is often **Lists** (no MRN/CIN). Compare now uses the same CS_MIF parser as ILS MIF consolidator, preserves leading-zero MRNs, and matches Caspio with/without zero-padding.
   - **Status filter:** Discrepancy list can hide / include / show-only rows whose Caspio `Kaiser_Status` or `CalAIM_Status` is **Member Died** or **Non-Active** (default: hide). Notes and export include both status fields.
   - **Full roster match + Authorized ours-only:** Matching uses **all** Caspio Kaiser members (every `CalAIM_Status`) so portal-only means not in Caspio. **Ours only** is limited to current **CalAIM_Status Authorized** members missing from the portal MIF.
