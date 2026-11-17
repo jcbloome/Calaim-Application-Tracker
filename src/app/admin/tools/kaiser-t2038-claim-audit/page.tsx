@@ -926,7 +926,6 @@ export default function KaiserT2038ClaimAuditPage() {
                                 <th className="px-2 py-1.5">Date_of_Service</th>
                                 <th className="px-2 py-1.5">Client_First</th>
                                 <th className="px-2 py-1.5">Client_Last</th>
-                                <th className="px-2 py-1.5">Month</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -935,7 +934,6 @@ export default function KaiserT2038ClaimAuditPage() {
                                   <td className="px-2 py-1.5">{claim.dateOfService}</td>
                                   <td className="px-2 py-1.5">{claim.clientFirst || '—'}</td>
                                   <td className="px-2 py-1.5">{claim.clientLast || '—'}</td>
-                                  <td className="px-2 py-1.5">{claim.monthKey}</td>
                                 </tr>
                               ))}
                             </tbody>
