@@ -10,6 +10,16 @@
 
 ## Changes 2026-11-16
 
+- **New Tools page — Kaiser MIF Compare.** Upload the new Kaiser portal MIF Excel and compare against Caspio **Authorized** Kaiser members. Shows portal-only, ours-only, and matched; annotates portal-only rows found in Caspio under another status; export discrepancies workbook. Nav under **Tools → Kaiser**.
+  - Files: `src/lib/kaiser-mif-compare.ts`, `src/app/api/admin/kaiser-mif-compare/members/route.ts`, `src/app/admin/tools/kaiser-mif-compare/page.tsx`, `src/app/admin/layout.tsx`, `handoff.md`.
+  - Route: `/admin/tools/kaiser-mif-compare`.
+  - **MRN / sheet parse fix:** Portal `*_MIF_CS.xlsx` files put members on the **CS_MIF** tab; the first tab is often **Lists** (no MRN/CIN). Compare now uses the same CS_MIF parser as ILS MIF consolidator, preserves leading-zero MRNs, and matches Caspio with/without zero-padding.
+  - **Status filter:** Discrepancy list can hide / include / show-only rows whose Caspio `Kaiser_Status` or `CalAIM_Status` is **Member Died** or **Non-Active** (default: hide). Notes and export include both status fields.
+  - **Full roster match + Authorized ours-only:** Matching uses **all** Caspio Kaiser members (every `CalAIM_Status`) so portal-only means not in Caspio. **Ours only** is limited to current **CalAIM_Status Authorized** members missing from the portal MIF.
+  - **Portal-only false positives:** Stronger identity match (zero-pad MRN keys, cross MRN/CIN/`MCP_CIN`/`MediCal_Number`/`Member_MRN`, `Birth_Date`) plus merge of live Caspio + `caspio_members_cache` so members like Vicki McClain (`000001732688` / `99851593H`) match instead of false portal-only.
+  - **Our roster filter:** Discrepancy list defaults to **Currently Authorized only** (optional: all CalAIM_Status). Matching still uses the full Caspio Kaiser roster so portal-only stays accurate.
+  - **ILS ours-only export:** Download button builds an Excel of Authorized Caspio members missing from the portal MIF (name, MRN, CIN, DOB, Client_ID2, statuses, auth dates + cover note) to send to ILS.
+
 - **New Tools page — Kaiser T2038 Claim Audit.** Lists authorized Kaiser members (including ended authorizations), builds expected claim months from T2038 auth start→end (or today), matches `CalAIM_Claim_Submit_T2038` by `Client_ID2` / `Date_of_Service` (plus Days_of_Service_* fallbacks), flags missing months, and lets staff justify gaps after Caspio review. Filter to incomplete claims. Justifications stored in Firestore `kaiser_t2038_claim_month_justifications`. Nav item lives under **Tools → Kaiser** (not Health Net).
   - Files: `src/lib/kaiser-t2038-claim-audit.ts`, `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `src/app/admin/layout.tsx`, `src/lib/t2038-claims.ts`, `handoff.md`.
   - Route: `/admin/tools/kaiser-t2038-claim-audit`.

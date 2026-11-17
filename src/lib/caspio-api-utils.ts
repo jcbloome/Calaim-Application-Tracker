@@ -546,7 +546,9 @@ export async function fetchAllCaspioRecords(
   // CRITICAL: Deduplicate records by unique identifier
   const recordMap = new Map();
   allRecords.forEach(record => {
-    const recordId = record.client_ID2 || record.id || Math.random().toString();
+    const recordId =
+      String(record.Client_ID2 || record.client_ID2 || record.clientId2 || record.id || '').trim() ||
+      Math.random().toString();
     if (!recordMap.has(recordId)) {
       recordMap.set(recordId, record);
     }

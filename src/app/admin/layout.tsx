@@ -185,6 +185,7 @@ const adminNavLinks: AdminNavLink[] = [
       { href: '/admin/tools/kaiser-rcfe-facility-list', label: 'Kaiser RCFE Facility List', icon: FileSpreadsheet },
       { href: '/admin/tools/tier-level-definitions', label: 'Tier Level Definitions', icon: FileText },
       { href: '/admin/tools/kaiser-t2038-claim-audit', label: 'Kaiser T2038 Claim Audit', icon: ClipboardCheck },
+      { href: '/admin/tools/kaiser-mif-compare', label: 'Kaiser MIF Compare', icon: FileSpreadsheet },
       { isDivider: true, label: 'ISP & ALFT', icon: ClipboardList },
       { href: '/admin/tools/isp-workflow', label: 'ISP Workflow', icon: ClipboardList },
       { href: '/admin/tools/isp-assignment', label: 'SW ISP Assignments', icon: ClipboardList },
