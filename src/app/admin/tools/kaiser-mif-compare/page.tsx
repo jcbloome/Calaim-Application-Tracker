@@ -12,16 +12,20 @@ import { useToast } from '@/hooks/use-toast';
 import {
   buildKaiserMifCompareWorkbook,
   buildKaiserMifOursOnlyIlsWorkbook,
+  buildKaiserPortalMifUploadDiffWorkbook,
   compareKaiserPortalToAuthorized,
   filterKaiserMifHitsByRoster,
   filterKaiserMifHitsByStatus,
   kaiserMifHitIsDiedOrNonActive,
   parseKaiserPortalMifFile,
+  storedPortalMembersToCompareMembers,
   type KaiserMifCompareHit,
   type KaiserMifCompareMember,
   type KaiserMifCompareResult,
   type KaiserMifRosterFilter,
   type KaiserMifStatusFilter,
+  type KaiserPortalMifUploadDiff,
+  type KaiserPortalMifUploadSummary,
 } from '@/lib/kaiser-mif-compare';
 import { isAuthorizedCalaimStatus } from '@/lib/t2038-claims';
 import { Download, FileSpreadsheet, Loader2, RefreshCw, Upload } from 'lucide-react';
@@ -69,6 +73,14 @@ export default function KaiserMifComparePage() {
   const [rosterFilter, setRosterFilter] = useState<KaiserMifRosterFilter>('authorized');
   const [statusFilter, setStatusFilter] = useState<KaiserMifStatusFilter>('hide_died_nonactive');
   const [query, setQuery] = useState('');
+  const [savedUploads, setSavedUploads] = useState<KaiserPortalMifUploadSummary[]>([]);
+  const [isLoadingUploads, setIsLoadingUploads] = useState(false);
+  const [isSavingUpload, setIsSavingUpload] = useState(false);
+  const [baselineUploadId, setBaselineUploadId] = useState('');
+  const [newerUploadId, setNewerUploadId] = useState('');
+  const [uploadDiff, setUploadDiff] = useState<KaiserPortalMifUploadDiff | null>(null);
+  const [isComparingUploads, setIsComparingUploads] = useState(false);
+  const [lastSavedUploadId, setLastSavedUploadId] = useState('');
 
   const authorizedRosterCount = useMemo(
     () => authorized.filter((m) => isAuthorizedCalaimStatus(m.calaimStatus)).length,
@@ -109,9 +121,41 @@ export default function KaiserMifComparePage() {
     [auth]
   );
 
+  const loadSavedUploads = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setIsLoadingUploads(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/admin/kaiser-mif-compare/uploads?limit=40', {
+        headers: { Authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(String(body?.error || `HTTP ${response.status}`));
+      }
+      const uploads = Array.isArray(body.uploads) ? (body.uploads as KaiserPortalMifUploadSummary[]) : [];
+      setSavedUploads(uploads);
+      if (uploads.length >= 2) {
+        setNewerUploadId((prev) => prev || uploads[0]?.id || '');
+        setBaselineUploadId((prev) => prev || uploads[1]?.id || '');
+      } else if (uploads.length === 1) {
+        setNewerUploadId((prev) => prev || uploads[0]?.id || '');
+      }
+    } catch (err: unknown) {
+      console.error('[kaiser-mif-compare] load uploads', err);
+    } finally {
+      setIsLoadingUploads(false);
+    }
+  }, [auth]);
+
   useEffect(() => {
-    if (!isAdminLoading && isAdmin) void loadMembers(false);
-  }, [isAdmin, isAdminLoading, loadMembers]);
+    if (!isAdminLoading && isAdmin) {
+      void loadMembers(false);
+      void loadSavedUploads();
+    }
+  }, [isAdmin, isAdminLoading, loadMembers, loadSavedUploads]);
 
   const runCompare = useCallback(
     (portalMembers: KaiserMifCompareMember[]) => {
@@ -127,6 +171,55 @@ export default function KaiserMifComparePage() {
       });
     },
     [authorized, allKaiser, toast]
+  );
+
+  const savePortalUpload = useCallback(
+    async (opts: {
+      fileName: string;
+      sheetName: string;
+      headerRow: number;
+      rowsWithMrn: number;
+      rowsWithCin: number;
+      members: KaiserMifCompareMember[];
+    }) => {
+      const user = auth.currentUser;
+      if (!user) return null;
+      setIsSavingUpload(true);
+      try {
+        const idToken = await user.getIdToken();
+        const response = await fetch('/api/admin/kaiser-mif-compare/uploads', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(opts),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body?.success) {
+          throw new Error(String(body?.error || `HTTP ${response.status}`));
+        }
+        const saved = body.upload as KaiserPortalMifUploadSummary;
+        setLastSavedUploadId(saved.id);
+        setNewerUploadId(saved.id);
+        setSavedUploads((prev) => [saved, ...prev.filter((row) => row.id !== saved.id)].slice(0, 40));
+        toast({
+          title: 'Portal list saved',
+          description: `Stored “${saved.fileName}” (${saved.rowCount} members) in Firestore for later diff.`,
+        });
+        return saved;
+      } catch (err: unknown) {
+        toast({
+          variant: 'destructive',
+          title: 'Could not save portal list',
+          description: String((err as { message?: string })?.message || 'Firestore save failed.'),
+        });
+        return null;
+      } finally {
+        setIsSavingUpload(false);
+      }
+    },
+    [auth, toast]
   );
 
   const onFileSelected = async (file: File | null) => {
@@ -172,6 +265,14 @@ export default function KaiserMifComparePage() {
         });
       }
       runCompare(parsed.members);
+      await savePortalUpload({
+        fileName: file.name,
+        sheetName: parsed.sheetName,
+        headerRow: parsed.headerRow,
+        rowsWithMrn: parsed.rowsWithMrn,
+        rowsWithCin: parsed.rowsWithCin,
+        members: parsed.members,
+      });
     } catch (err: unknown) {
       setResult(null);
       setPortalMeta(null);
@@ -180,6 +281,116 @@ export default function KaiserMifComparePage() {
       setIsParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const compareSavedUploads = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    if (!baselineUploadId || !newerUploadId) {
+      toast({
+        variant: 'destructive',
+        title: 'Pick two uploads',
+        description: 'Choose a baseline list and a newer list to compare.',
+      });
+      return;
+    }
+    if (baselineUploadId === newerUploadId) {
+      toast({
+        variant: 'destructive',
+        title: 'Choose different uploads',
+        description: 'Baseline and newer must be two different saved portal lists.',
+      });
+      return;
+    }
+    setIsComparingUploads(true);
+    setUploadDiff(null);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch(
+        `/api/admin/kaiser-mif-compare/uploads?baselineId=${encodeURIComponent(
+          baselineUploadId
+        )}&newerId=${encodeURIComponent(newerUploadId)}`,
+        {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(String(body?.error || `HTTP ${response.status}`));
+      }
+      setUploadDiff(body.diff as KaiserPortalMifUploadDiff);
+      toast({
+        title: 'Upload diff ready',
+        description: `${body.diff?.summary?.added ?? 0} added · ${body.diff?.summary?.removed ?? 0} removed · ${
+          body.diff?.summary?.unchanged ?? 0
+        } unchanged`,
+      });
+    } catch (err: unknown) {
+      setError(String((err as { message?: string })?.message || 'Could not compare saved uploads.'));
+    } finally {
+      setIsComparingUploads(false);
+    }
+  };
+
+  const loadSavedUploadIntoCompare = async (uploadId: string) => {
+    const user = auth.currentUser;
+    if (!user || !uploadId) return;
+    if (!authorized.length) {
+      toast({
+        variant: 'destructive',
+        title: 'Load Caspio roster first',
+        description: 'Refresh from Caspio, then reload the saved portal list.',
+      });
+      return;
+    }
+    setIsParsing(true);
+    setError('');
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch(
+        `/api/admin/kaiser-mif-compare/uploads?id=${encodeURIComponent(uploadId)}`,
+        {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success || !body.upload) {
+        throw new Error(String(body?.error || `HTTP ${response.status}`));
+      }
+      const upload = body.upload as KaiserPortalMifUploadSummary & {
+        members: Parameters<typeof storedPortalMembersToCompareMembers>[0];
+      };
+      const members = storedPortalMembersToCompareMembers(upload.members);
+      setFileName(upload.fileName);
+      setPortalMeta({
+        sheetName: upload.sheetName,
+        headerRow: upload.headerRow,
+        count: members.length,
+        mrnColumn: 'Medical Record Number (MRN)',
+        cinColumn: 'Medi-Cal Member Client Index Number (CIN)',
+        rowsWithMrn: upload.rowsWithMrn,
+        rowsWithCin: upload.rowsWithCin,
+      });
+      runCompare(members);
+      toast({
+        title: 'Saved portal list loaded',
+        description: `Re-compared “${upload.fileName}” (${members.length} members) to Caspio.`,
+      });
+    } catch (err: unknown) {
+      setError(String((err as { message?: string })?.message || 'Could not load saved portal upload.'));
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  const downloadUploadDiff = () => {
+    if (!uploadDiff) return;
+    downloadExcelBytes(
+      buildKaiserPortalMifUploadDiffWorkbook(uploadDiff),
+      `Kaiser-portal-MIF-upload-diff-${new Date().toISOString().slice(0, 10)}.xlsx`
+    );
   };
 
   const bucketHits = useMemo(() => {
@@ -370,6 +581,208 @@ export default function KaiserMifComparePage() {
                 Download ours-only for ILS ({result.oursOnly.length})
               </Button>
             </>
+          ) : null}
+          {isSavingUpload ? (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving portal list to Firestore…
+            </span>
+          ) : lastSavedUploadId ? (
+            <span className="text-xs text-muted-foreground">Saved to Firestore · id {lastSavedUploadId}</span>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Saved portal uploads</CardTitle>
+          <CardDescription>
+            Each Excel upload is stored in Firestore so you can diff Kaiser portal lists over time (added /
+            removed members).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="space-y-1 text-sm">
+              <span className="text-xs text-muted-foreground">Baseline (older)</span>
+              <select
+                className="block h-10 min-w-[240px] rounded-md border bg-white px-3 text-sm"
+                value={baselineUploadId}
+                onChange={(event) => setBaselineUploadId(event.target.value)}
+              >
+                <option value="">Select baseline…</option>
+                {savedUploads.map((upload) => (
+                  <option key={`base-${upload.id}`} value={upload.id}>
+                    {upload.uploadedAt
+                      ? new Date(upload.uploadedAt).toLocaleString()
+                      : 'Unknown date'}{' '}
+                    · {upload.fileName} · {upload.rowCount} rows
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="text-xs text-muted-foreground">Newer</span>
+              <select
+                className="block h-10 min-w-[240px] rounded-md border bg-white px-3 text-sm"
+                value={newerUploadId}
+                onChange={(event) => setNewerUploadId(event.target.value)}
+              >
+                <option value="">Select newer…</option>
+                {savedUploads.map((upload) => (
+                  <option key={`newer-${upload.id}`} value={upload.id}>
+                    {upload.uploadedAt
+                      ? new Date(upload.uploadedAt).toLocaleString()
+                      : 'Unknown date'}{' '}
+                    · {upload.fileName} · {upload.rowCount} rows
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              type="button"
+              onClick={() => void compareSavedUploads()}
+              disabled={isComparingUploads || !baselineUploadId || !newerUploadId}
+            >
+              {isComparingUploads ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+              )}
+              Compare uploads
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void loadSavedUploads()}
+              disabled={isLoadingUploads}
+            >
+              {isLoadingUploads ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Refresh list
+            </Button>
+            {uploadDiff ? (
+              <Button type="button" variant="secondary" onClick={downloadUploadDiff}>
+                <Download className="mr-2 h-4 w-4" />
+                Download upload diff
+              </Button>
+            ) : null}
+          </div>
+
+          {savedUploads.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No saved portal lists yet. Upload an Excel file above to store the first one.
+            </p>
+          ) : (
+            <div className="max-h-48 overflow-auto rounded border text-xs">
+              <table className="w-full text-left">
+                <thead className="sticky top-0 bg-muted/80">
+                  <tr>
+                    <th className="px-2 py-2">Uploaded</th>
+                    <th className="px-2 py-2">File</th>
+                    <th className="px-2 py-2">Rows</th>
+                    <th className="px-2 py-2">By</th>
+                    <th className="px-2 py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {savedUploads.map((upload) => (
+                    <tr key={upload.id} className="border-t">
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        {upload.uploadedAt ? new Date(upload.uploadedAt).toLocaleString() : '—'}
+                      </td>
+                      <td className="px-2 py-2">
+                        {upload.fileName}
+                        {upload.sheetName ? (
+                          <div className="text-muted-foreground">sheet “{upload.sheetName}”</div>
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-2">
+                        {upload.rowCount}
+                        <div className="text-muted-foreground">
+                          {upload.rowsWithMrn} MRN · {upload.rowsWithCin} CIN
+                        </div>
+                      </td>
+                      <td className="px-2 py-2">{upload.uploadedByName || upload.uploadedByEmail || '—'}</td>
+                      <td className="px-2 py-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={isParsing || authorized.length === 0}
+                          onClick={() => void loadSavedUploadIntoCompare(upload.id)}
+                        >
+                          Re-compare to Caspio
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {uploadDiff ? (
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription>Added on newer</CardDescription>
+                    <CardTitle>{uploadDiff.summary.added}</CardTitle>
+                  </CardHeader>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription>Removed since baseline</CardDescription>
+                    <CardTitle>{uploadDiff.summary.removed}</CardTitle>
+                  </CardHeader>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription>Unchanged</CardDescription>
+                    <CardTitle>{uploadDiff.summary.unchanged}</CardTitle>
+                  </CardHeader>
+                </Card>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="max-h-56 overflow-auto rounded border text-xs">
+                  <div className="sticky top-0 bg-muted/80 px-2 py-2 font-medium">Added</div>
+                  {uploadDiff.added.length === 0 ? (
+                    <p className="px-2 py-3 text-muted-foreground">None</p>
+                  ) : (
+                    <ul className="divide-y">
+                      {uploadDiff.added.slice(0, 100).map((member, index) => (
+                        <li key={`add-${member.mrn || member.cin || index}`} className="px-2 py-2">
+                          <div className="font-medium">{member.memberName}</div>
+                          <div className="text-muted-foreground">
+                            MRN {member.mrn || '—'} · CIN {member.cin || '—'}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="max-h-56 overflow-auto rounded border text-xs">
+                  <div className="sticky top-0 bg-muted/80 px-2 py-2 font-medium">Removed</div>
+                  {uploadDiff.removed.length === 0 ? (
+                    <p className="px-2 py-3 text-muted-foreground">None</p>
+                  ) : (
+                    <ul className="divide-y">
+                      {uploadDiff.removed.slice(0, 100).map((member, index) => (
+                        <li key={`rem-${member.mrn || member.cin || index}`} className="px-2 py-2">
+                          <div className="font-medium">{member.memberName}</div>
+                          <div className="text-muted-foreground">
+                            MRN {member.mrn || '—'} · CIN {member.cin || '—'}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
           ) : null}
         </CardContent>
       </Card>

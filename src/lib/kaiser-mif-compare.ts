@@ -10,6 +10,9 @@ import { canonicalInactiveCalaimStatus } from '@/lib/inactive-calaim-status';
 import { identityTokenLookupKeys } from '@/lib/member-identity';
 import { isAuthorizedCalaimStatus, isKaiserPlan, parseDateOnly, formatUsDate } from '@/lib/t2038-claims';
 
+/** Firestore collection for saved Kaiser portal MIF Excel uploads. */
+export const KAISER_PORTAL_MIF_UPLOADS_COLLECTION = 'kaiser_portal_mif_uploads';
+
 const clean = (value: unknown) => String(value ?? '').trim();
 
 const pickFirst = (...values: unknown[]) => {
@@ -214,6 +217,53 @@ export type KaiserMifStatusFilter = 'all' | 'hide_died_nonactive' | 'only_died_n
 
 /** Our-roster view: all Caspio statuses, or only currently Authorized. */
 export type KaiserMifRosterFilter = 'all' | 'authorized';
+
+/** Compact portal row stored on each Firestore upload doc. */
+export type KaiserPortalMifStoredMember = {
+  memberFirstName: string;
+  memberLastName: string;
+  memberName: string;
+  mrn: string;
+  cin: string;
+  dob: string;
+  clientId2: string;
+  rowNumber: number;
+};
+
+export type KaiserPortalMifUploadSummary = {
+  id: string;
+  fileName: string;
+  sheetName: string;
+  headerRow: number;
+  rowCount: number;
+  rowsWithMrn: number;
+  rowsWithCin: number;
+  uploadedAt: string;
+  uploadedByUid: string;
+  uploadedByEmail: string;
+  uploadedByName: string;
+};
+
+export type KaiserPortalMifUploadRecord = KaiserPortalMifUploadSummary & {
+  members: KaiserPortalMifStoredMember[];
+};
+
+export type KaiserPortalMifUploadDiff = {
+  added: KaiserPortalMifStoredMember[];
+  removed: KaiserPortalMifStoredMember[];
+  unchanged: number;
+  summary: {
+    baselineId: string;
+    baselineFileName: string;
+    baselineCount: number;
+    newerId: string;
+    newerFileName: string;
+    newerCount: number;
+    added: number;
+    removed: number;
+    unchanged: number;
+  };
+};
 
 /** True when CalAIM_Status or Kaiser_Status is Member Died or Non-Active (incl. Inactive). */
 export function isKaiserMifDiedOrNonActiveStatus(...statuses: unknown[]): boolean {
@@ -1096,5 +1146,153 @@ export function buildKaiserMifOursOnlyIlsWorkbook(
     ['Ours only (this list)', rows.length],
   ]);
   XLSX.utils.book_append_sheet(book, summary, 'Cover note');
+  return xlsxBookToUint8Array(book);
+}
+
+export function serializePortalMembersForStorage(
+  members: KaiserMifCompareMember[]
+): KaiserPortalMifStoredMember[] {
+  return (Array.isArray(members) ? members : []).map((member, index) => ({
+    memberFirstName: clean(member.memberFirstName),
+    memberLastName: clean(member.memberLastName),
+    memberName: clean(member.memberName),
+    mrn: formatKaiserMrnIdentifier(member.mrn),
+    cin: formatKaiserMrnIdentifier(member.cin),
+    dob: clean(member.dob),
+    clientId2: clean(member.clientId2),
+    rowNumber: Number(member.rowNumber || index + 1) || index + 1,
+  }));
+}
+
+export function storedPortalMembersToCompareMembers(
+  members: KaiserPortalMifStoredMember[] | null | undefined
+): KaiserMifCompareMember[] {
+  return (Array.isArray(members) ? members : []).map((member, index) => {
+    const mrn = formatKaiserMrnIdentifier(member.mrn);
+    const cin = formatKaiserMrnIdentifier(member.cin);
+    return {
+      clientId2: clean(member.clientId2),
+      memberFirstName: clean(member.memberFirstName),
+      memberLastName: clean(member.memberLastName),
+      memberName:
+        clean(member.memberName) ||
+        [clean(member.memberLastName), clean(member.memberFirstName)].filter(Boolean).join(', ') ||
+        mrn ||
+        cin ||
+        `Row ${index + 1}`,
+      mrn,
+      cin,
+      altIds: Array.from(new Set([mrn, cin].filter(Boolean))),
+      dob: clean(member.dob),
+      calaimStatus: '',
+      kaiserStatus: '',
+      authorizationNumber: '',
+      authorizationStart: '',
+      authorizationEnd: '',
+      source: 'portal' as const,
+      rowNumber: Number(member.rowNumber || index + 1) || index + 1,
+    };
+  });
+}
+
+function portalStoredMemberKey(member: KaiserPortalMifStoredMember): string {
+  const mrnKeys = identityTokenLookupKeys(formatKaiserMrnIdentifier(member.mrn));
+  if (mrnKeys[0]) return `mrn:${mrnKeys[0]}`;
+  const cinKeys = identityTokenLookupKeys(formatKaiserMrnIdentifier(member.cin));
+  if (cinKeys[0]) return `cin:${cinKeys[0]}`;
+  const client = normalizeId(member.clientId2);
+  if (client) return `client:${client}`;
+  const nameKey = `${normalizeName(member.memberLastName)}|${normalizeName(member.memberFirstName)}`;
+  if (nameKey !== '|' && member.dob) return `namedob:${nameKey}|${normalizeId(member.dob)}`;
+  if (nameKey !== '|') return `name:${nameKey}|row:${member.rowNumber || 0}`;
+  return `row:${member.rowNumber || 0}`;
+}
+
+/** Diff two saved portal uploads (newer vs baseline). */
+export function compareKaiserPortalMifUploads(opts: {
+  baseline: Pick<KaiserPortalMifUploadRecord, 'id' | 'fileName' | 'members'>;
+  newer: Pick<KaiserPortalMifUploadRecord, 'id' | 'fileName' | 'members'>;
+}): KaiserPortalMifUploadDiff {
+  const baselineMembers = Array.isArray(opts.baseline.members) ? opts.baseline.members : [];
+  const newerMembers = Array.isArray(opts.newer.members) ? opts.newer.members : [];
+  const baselineByKey = new Map<string, KaiserPortalMifStoredMember>();
+  const newerByKey = new Map<string, KaiserPortalMifStoredMember>();
+  for (const member of baselineMembers) {
+    const key = portalStoredMemberKey(member);
+    if (!baselineByKey.has(key)) baselineByKey.set(key, member);
+  }
+  for (const member of newerMembers) {
+    const key = portalStoredMemberKey(member);
+    if (!newerByKey.has(key)) newerByKey.set(key, member);
+  }
+
+  const added: KaiserPortalMifStoredMember[] = [];
+  const removed: KaiserPortalMifStoredMember[] = [];
+  let unchanged = 0;
+  for (const [key, member] of newerByKey) {
+    if (baselineByKey.has(key)) unchanged += 1;
+    else added.push(member);
+  }
+  for (const [key, member] of baselineByKey) {
+    if (!newerByKey.has(key)) removed.push(member);
+  }
+  added.sort((a, b) => a.memberName.localeCompare(b.memberName, undefined, { sensitivity: 'base' }));
+  removed.sort((a, b) => a.memberName.localeCompare(b.memberName, undefined, { sensitivity: 'base' }));
+
+  return {
+    added,
+    removed,
+    unchanged,
+    summary: {
+      baselineId: opts.baseline.id,
+      baselineFileName: opts.baseline.fileName,
+      baselineCount: baselineMembers.length,
+      newerId: opts.newer.id,
+      newerFileName: opts.newer.fileName,
+      newerCount: newerMembers.length,
+      added: added.length,
+      removed: removed.length,
+      unchanged,
+    },
+  };
+}
+
+export function buildKaiserPortalMifUploadDiffWorkbook(diff: KaiserPortalMifUploadDiff): Uint8Array {
+  const book = XLSX.utils.book_new();
+  const toRows = (members: KaiserPortalMifStoredMember[], change: string) =>
+    members.map((member) => ({
+      Change: change,
+      Member_Name: member.memberName,
+      MRN: member.mrn,
+      CIN: member.cin,
+      DOB: member.dob,
+      Client_ID2: member.clientId2,
+      Portal_Row: member.rowNumber || '',
+    }));
+  const addedSheet = XLSX.utils.json_to_sheet(
+    toRows(diff.added, 'Added on newer list').length
+      ? toRows(diff.added, 'Added on newer list')
+      : [{ Change: 'Added on newer list', Member_Name: '(none)' }]
+  );
+  forceSheetColumnsAsText(addedSheet, ['MRN', 'CIN']);
+  XLSX.utils.book_append_sheet(book, addedSheet, 'Added');
+  const removedSheet = XLSX.utils.json_to_sheet(
+    toRows(diff.removed, 'Removed since baseline').length
+      ? toRows(diff.removed, 'Removed since baseline')
+      : [{ Change: 'Removed since baseline', Member_Name: '(none)' }]
+  );
+  forceSheetColumnsAsText(removedSheet, ['MRN', 'CIN']);
+  XLSX.utils.book_append_sheet(book, removedSheet, 'Removed');
+  const summary = XLSX.utils.aoa_to_sheet([
+    ['Kaiser portal MIF upload diff'],
+    ['Baseline', diff.summary.baselineFileName, diff.summary.baselineId],
+    ['Newer', diff.summary.newerFileName, diff.summary.newerId],
+    ['Baseline rows', diff.summary.baselineCount],
+    ['Newer rows', diff.summary.newerCount],
+    ['Added', diff.summary.added],
+    ['Removed', diff.summary.removed],
+    ['Unchanged', diff.summary.unchanged],
+  ]);
+  XLSX.utils.book_append_sheet(book, summary, 'Summary');
   return xlsxBookToUint8Array(book);
 }
