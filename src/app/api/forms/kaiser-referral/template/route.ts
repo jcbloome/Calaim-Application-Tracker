@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
 import path from 'path';
 import { adminDb, adminStorage } from '@/firebase-admin';
+import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
 import { KAISER_REFERRAL_TEMPLATE_SETTINGS_DOC } from '@/lib/kaiser-referral-template';
 
 export const runtime = 'nodejs';
@@ -21,13 +22,25 @@ const PUBLIC_TEMPLATE_CANDIDATE_FILES = [
   path.join(process.cwd(), 'public', 'Templates', 'Kaiser Referral Form Jan 2026.pdf'),
   path.join(process.cwd(), 'public', 'templates', 'Kaiser Referral Form.pdf'),
 ];
-const DEFAULT_REFERRER_NAME = 'jason@carehomefinders.com';
+const DEFAULT_REFERRER_NAME = 'Jason Bloome';
 const DEFAULT_REFERRER_ORGANIZATION = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';
-const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 92262';
-const DEFAULT_REFERRER_EMAIL = 'jason@carehomefinders.com';
+const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 92262';const DEFAULT_REFERRER_EMAIL = 'jason@carehomefinders.com';
 const DEFAULT_REFERRER_PHONE = '800-330-5993';
 const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
+
+function resolveReferrerEmail(_value: string | null) {
+  // Always jason@ on Kaiser referral PDFs (legacy launchers still pass deydry@).
+  return DEFAULT_REFERRER_EMAIL;
+}
+
+function sanitizePathComponent(value: string) {
+  return String(value || '')
+    .trim()
+    .replace(/[^\w.\-]+/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 80);
+}
 
 function getTemplatePath() {
   return String(process.env.KAISER_REFERRAL_TEMPLATE_PATH || DEFAULT_TEMPLATE_PATH).trim();
@@ -260,7 +273,7 @@ export async function GET(req: NextRequest) {
     const prefill = {
       referralDate: asDisplayDate(params.get('referralDate')),
       referrerName: clean(params.get('referrerName')) || DEFAULT_REFERRER_NAME,
-      referrerEmail: (clean(params.get('referrerEmail')) || DEFAULT_REFERRER_EMAIL).toLowerCase(),
+      referrerEmail: resolveReferrerEmail(params.get('referrerEmail')),
       referrerPhone: normalizePhone(clean(params.get('referrerPhone')) || DEFAULT_REFERRER_PHONE),
       referrerOrganization: clean(params.get('referrerOrganization')) || DEFAULT_REFERRER_ORGANIZATION,
       referrerNpi: clean(params.get('referrerNpi')) || DEFAULT_REFERRER_NPI,
@@ -609,6 +622,60 @@ export async function GET(req: NextRequest) {
     }
 
     const filename = buildKaiserReferralFileName(prefill.memberName);
+    const applicationId = clean(params.get('applicationId'));
+    const userId = clean(params.get('userId'));
+    const memberClientId = clean(params.get('memberClientId') || params.get('clientId2'));
+    const memberMrn = clean(params.get('memberMrn') || params.get('memberMediCal'));
+    let archivedPath = '';
+
+    // Download Complete Document / send attachment uses download=1 — archive into member files.
+    if (download && (applicationId || memberClientId || memberMrn)) {
+      try {
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const appSegment = sanitizePathComponent(applicationId || memberClientId || memberMrn || 'standalone');
+        const fileSegment = sanitizePathComponent(filename.replace(/\.pdf$/i, '')) || 'Kaiser_Referral';
+        archivedPath = `kaiser-referral-forms/${appSegment}/${stamp}_${fileSegment}.pdf`;
+        await adminStorage.bucket().file(archivedPath).save(Buffer.from(pdfBytes), {
+          contentType: 'application/pdf',
+          resumable: false,
+          metadata: {
+            cacheControl: 'private, max-age=0, no-cache',
+            metadata: {
+              applicationId: applicationId || '',
+              userId: userId || '',
+              memberClientId: memberClientId || '',
+              memberMrn: memberMrn || '',
+              memberName: prefill.memberName || '',
+              source: 'kaiser-referral-template',
+            },
+          },
+        });
+        let downloadURL = '';
+        try {
+          const [signedUrl] = await adminStorage.bucket().file(archivedPath).getSignedUrl({
+            action: 'read',
+            expires: Date.now() + 1000 * 60 * 60 * 24 * 30,
+          });
+          downloadURL = String(signedUrl || '').trim();
+        } catch {
+          downloadURL = '';
+        }
+        await attachGeneratedFormToApplication({
+          applicationId: applicationId || undefined,
+          userId: userId || undefined,
+          memberClientId: memberClientId || undefined,
+          memberMrn: memberMrn || undefined,
+          formName: 'Kaiser Referral Form',
+          fileName: filename,
+          filePath: archivedPath,
+          downloadURL: downloadURL || undefined,
+          source: download ? 'kaiser-referral-download' : 'kaiser-referral-generate',
+        });
+      } catch (attachError) {
+        console.warn('[kaiser-referral/template] failed to attach PDF to member files', attachError);
+      }
+    }
+
     return new NextResponse(pdfBytes, {
       status: 200,
       headers: {
@@ -616,6 +683,7 @@ export async function GET(req: NextRequest) {
         'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${filename}"`,
         'Cache-Control': 'no-store',
         'x-kaiser-template-source': templateResult.source,
+        ...(archivedPath ? { 'x-kaiser-referral-archive-path': archivedPath } : {}),
       },
     });
   } catch {

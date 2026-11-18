@@ -11,7 +11,7 @@ import { caregiverFromBestContact } from '@/lib/kaiser-referral-caregiver';
 
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
-const DEFAULT_REFERRER_NAME = 'jason@carehomefinders.com';
+const DEFAULT_REFERRER_NAME = 'Jason Bloome';
 const DEFAULT_REFERRER_ORGANIZATION = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';
 const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 92262';
@@ -88,7 +88,15 @@ function KaiserReferralPrintableContent() {
       referrerOrganization: searchParams.get('referrerOrganization') || DEFAULT_REFERRER_ORGANIZATION,
       referrerNpi: searchParams.get('referrerNpi') || DEFAULT_REFERRER_NPI,
       referrerAddress: searchParams.get('referrerAddress') || DEFAULT_REFERRER_ADDRESS,
-      referrerEmail: searchParams.get('referrerEmail') || DEFAULT_REFERRER_EMAIL,
+      referrerEmail: (() => {
+        const email = String(searchParams.get('referrerEmail') || DEFAULT_REFERRER_EMAIL)
+          .trim()
+          .toLowerCase();
+        if (!email || email === 'deydry@carehomefinders.com' || email === 'dedry@carehomefinders.com') {
+          return DEFAULT_REFERRER_EMAIL;
+        }
+        return email;
+      })(),
       referrerPhone: searchParams.get('referrerPhone') || DEFAULT_REFERRER_PHONE,
       referrerRelationship: searchParams.get('referrerRelationship') || DEFAULT_REFERRER_RELATIONSHIP,
       // Prefill from Caspio Name_Where_Residing / Current_* via launcher query params.
@@ -239,6 +247,15 @@ function KaiserReferralPrintableContent() {
     respite11Subsets: '',
     section1Usage: '',
   }));
+
+  // Keep referral MRN aligned with the application/CS Summary launcher value.
+  React.useEffect(() => {
+    const nextMrn = String(formPrefill.memberMrn || formPrefill.memberMediCal || '').trim();
+    if (!nextMrn) return;
+    setFormFieldOverrides((prev) =>
+      String(prev.memberMrn || '').trim() === nextMrn ? prev : { ...prev, memberMrn: nextMrn }
+    );
+  }, [formPrefill.memberMrn, formPrefill.memberMediCal]);
   const [alft21Choice, setAlft21Choice] = useState<'A' | 'B'>('A');
   // Option B (Ongoing ALF / H2022 reauth) is intentionally disabled for now — always use A.
   React.useEffect(() => {
@@ -349,7 +366,7 @@ function KaiserReferralPrintableContent() {
       referrerOrganization: formFieldOverrides.referrerOrganization,
       referrerNpi: formFieldOverrides.referrerNpi,
       referrerAddress: formFieldOverrides.referrerAddress,
-      referrerEmail: formFieldOverrides.referrerEmail,
+      referrerEmail: DEFAULT_REFERRER_EMAIL,
       referrerPhone: formFieldOverrides.referrerPhone,
       referrerRelationship: formFieldOverrides.referrerRelationship,
       currentLocationName: formFieldOverrides.currentLocationName,

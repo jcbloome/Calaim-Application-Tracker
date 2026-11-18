@@ -227,11 +227,12 @@ const toMmDdYyyy = (value?: string) => {
   const yyyy = String(parsed.getFullYear());
   return `${mm}/${dd}/${yyyy}`;
 };
-const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
+const DEFAULT_REFERRER_NAME = 'Jason Bloome';
 const DEFAULT_REFERRER_ORG = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';
 const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 92262';
-const DEFAULT_REFERRER_EMAIL = 'deydry@carehomefinders.com';
+/** Always use Jason's email on Kaiser referral forms (replaces former deydry@ default). */
+const DEFAULT_REFERRER_EMAIL = 'jason@carehomefinders.com';
 const DEFAULT_REFERRER_PHONE = '800-330-5993';
 const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
@@ -239,6 +240,16 @@ const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
 const KAISER_REFERRAL_CC_RECIPIENTS = [JASON_COPY_EMAIL];
+
+const normalizeKaiserReferrerEmail = (value: unknown) => {
+  const email = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (!email || email === 'deydry@carehomefinders.com' || email === 'dedry@carehomefinders.com') {
+    return DEFAULT_REFERRER_EMAIL;
+  }
+  return email;
+};
 
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -392,7 +403,7 @@ export function PrintableKaiserReferralForm({
     referrerOrganization: lineValue(prefill.referrerOrganization) || DEFAULT_REFERRER_ORG,
     referrerNpi: lineValue(prefill.referrerNpi) || DEFAULT_REFERRER_NPI,
     referrerAddress: lineValue(prefill.referrerAddress) || DEFAULT_REFERRER_ADDRESS,
-    referrerEmail: lineValue(prefill.referrerEmail) || DEFAULT_REFERRER_EMAIL,
+    referrerEmail: normalizeKaiserReferrerEmail(prefill.referrerEmail),
     referrerPhone: lineValue(prefill.referrerPhone) || DEFAULT_REFERRER_PHONE,
     referrerRelationship: lineValue(prefill.referrerRelationship) || DEFAULT_REFERRER_RELATIONSHIP,
     currentLocationName: lineValue(prefill.currentLocationName),
@@ -414,6 +425,16 @@ export function PrintableKaiserReferralForm({
       return { ...prev, alft22CurrentCost: next };
     });
   }, [prefill.alft22CurrentCost]);
+
+  // CS Summary / application MRN is source of truth — keep the referral form in sync when it changes.
+  React.useEffect(() => {
+    const next = lineValue(prefill.memberMrn || prefill.memberMediCal);
+    if (!next) return;
+    setFormValues((prev) => {
+      if (lineValue(prev.memberMrn) === next) return prev;
+      return { ...prev, memberMrn: next };
+    });
+  }, [prefill.memberMrn, prefill.memberMediCal]);
 
   // Step 1 Best Contact confirmation can replace the Caregiver/Support Person after mount.
   React.useEffect(() => {
@@ -705,7 +726,7 @@ export function PrintableKaiserReferralForm({
       referrerOrganization: lineValue(formValues.referrerOrganization),
       referrerNpi: lineValue(formValues.referrerNpi),
       referrerAddress: lineValue(formValues.referrerAddress),
-      referrerEmail: lineValue(formValues.referrerEmail),
+      referrerEmail: DEFAULT_REFERRER_EMAIL,
       referrerPhone: lineValue(formValues.referrerPhone),
       referrerRelationship: lineValue(formValues.referrerRelationship),
       currentLocationName: lineValue(formValues.currentLocationName),
@@ -771,10 +792,15 @@ export function PrintableKaiserReferralForm({
           Object.prototype.hasOwnProperty.call(draftFormValues, 'memberAddress')
             ? nonEmptyOrPrev((draftFormValues as any).memberAddress, prev.memberAddress)
             : prev.memberAddress,
-        memberMrn:
-          Object.prototype.hasOwnProperty.call(draftFormValues, 'memberMrn')
-            ? nonEmptyOrPrev((draftFormValues as any).memberMrn, prev.memberMrn)
-            : prev.memberMrn,
+        // Prefer launcher/application MRN (CS Summary) over a stale autosaved draft MRN.
+        memberMrn: (() => {
+          const fromPrefill = lineValue(prefill.memberMrn || prefill.memberMediCal);
+          if (fromPrefill) return fromPrefill;
+          if (Object.prototype.hasOwnProperty.call(draftFormValues, 'memberMrn')) {
+            return nonEmptyOrPrev((draftFormValues as any).memberMrn, prev.memberMrn);
+          }
+          return prev.memberMrn;
+        })(),
         caregiverName:
           !caregiverReadOnly && Object.prototype.hasOwnProperty.call(draftFormValues, 'caregiverName')
             ? nonEmptyOrPrev((draftFormValues as any).caregiverName, prev.caregiverName)
@@ -803,10 +829,7 @@ export function PrintableKaiserReferralForm({
           Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerAddress')
             ? lineValue((draftFormValues as any).referrerAddress)
             : prev.referrerAddress,
-        referrerEmail:
-          Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerEmail')
-            ? lineValue((draftFormValues as any).referrerEmail)
-            : prev.referrerEmail,
+        referrerEmail: DEFAULT_REFERRER_EMAIL,
         referrerPhone:
           Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerPhone')
             ? lineValue((draftFormValues as any).referrerPhone)
@@ -931,7 +954,7 @@ export function PrintableKaiserReferralForm({
     return () => {
       cancelled = true;
     };
-  }, [applicationId, userId, draftStorageKey, shouldSkipDraftHydration]);
+  }, [applicationId, userId, draftStorageKey, shouldSkipDraftHydration, prefill.memberMrn, prefill.memberMediCal]);
 
   const saveDraftNow = React.useCallback(async (): Promise<boolean> => {
     if (!isDraftHydrated) return false;
@@ -1106,7 +1129,7 @@ export function PrintableKaiserReferralForm({
         referrerOrganization: lineValue(formValues.referrerOrganization),
         referrerNpi: lineValue(formValues.referrerNpi),
         referrerAddress: lineValue(formValues.referrerAddress),
-        referrerEmail: lineValue(formValues.referrerEmail),
+        referrerEmail: DEFAULT_REFERRER_EMAIL,
         referrerPhone: lineValue(formValues.referrerPhone),
         referrerRelationship: lineValue(formValues.referrerRelationship),
         currentLocationName: lineValue(formValues.currentLocationName),
@@ -1139,7 +1162,7 @@ export function PrintableKaiserReferralForm({
           memberCounty: memberCounty || '',
           addressRegionManuallyVerified: Boolean(addressRegionManuallyVerified),
           referrerName: referrerName || '',
-          referrerEmail: referrerEmail || '',
+          referrerEmail: DEFAULT_REFERRER_EMAIL,
           submitterName,
           submitterEmail,
           taskId: String(taskId || ''),
@@ -1857,9 +1880,10 @@ export function PrintableKaiserReferralForm({
                 <div className="font-semibold">Referrer Email*</div>
                 <div className="mt-1 min-h-[22px]">
                   <input
-                    value={formValues.referrerEmail}
-                    onChange={(event) => setFormValues((prev) => ({ ...prev, referrerEmail: event.target.value }))}
-                    className="w-full border border-transparent bg-transparent px-1 focus:border-black focus:outline-none"
+                    value={DEFAULT_REFERRER_EMAIL}
+                    readOnly
+                    title="Kaiser referral forms always use jason@carehomefinders.com"
+                    className="w-full border border-transparent bg-transparent px-1 text-slate-800 focus:outline-none"
                   />
                 </div>
               </div>

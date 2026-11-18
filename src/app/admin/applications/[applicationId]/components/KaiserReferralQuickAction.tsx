@@ -90,7 +90,7 @@ export function KaiserReferralQuickAction({
           referrerOrganization: 'Connections Care Home Consultants, LLC',
           referrerNpi: '1508537325',
           referrerAddress: '1763 East Sandalwood Drive, Palm Springs, CA 92262',
-          referrerEmail: 'deydry@carehomefinders.com',
+          referrerEmail: 'jason@carehomefinders.com',
           referrerPhone: '800-330-5993',
           referrerRelationship: 'Other',
           currentLocationName: qaCurrentLiving.name,
