@@ -16,6 +16,7 @@ import {
   fetchKaiserMembers,
   formatKaiserMembersFetchError,
   invalidateKaiserMembersCache,
+  KAISER_MEMBERS_SESSION_MAX_AGE_MS,
 } from '@/lib/fetch-kaiser-members';
 import { TemplateUploaderCard } from './template-uploader-card';
 
@@ -499,7 +500,11 @@ export default function KaiserIspCoverSheetToolPage() {
     return tokenUser.getIdToken();
   };
 
-  const fetchMembers = async (opts?: { clientId2?: string; source?: 'cache' | 'caspio' }) => {
+  const fetchMembers = async (opts?: {
+    clientId2?: string;
+    source?: 'cache' | 'caspio';
+    maxAgeMs?: number;
+  }) => {
     const requestedClientId2 = clean(opts?.clientId2);
     const source = opts?.source || (requestedClientId2 ? 'caspio' : 'cache');
     const fetchSeq = ++membersFetchSeqRef.current;
@@ -513,11 +518,12 @@ export default function KaiserIspCoverSheetToolPage() {
         source,
         refresh: source === 'caspio',
         clientId2: requestedClientId2 || undefined,
+        maxAgeMs: opts?.maxAgeMs,
         timeoutMs: source === 'caspio' ? 180_000 : 60_000,
         retryAction:
           source === 'caspio'
             ? 'click Refresh from Caspio again'
-            : 'click Sync from Caspio again',
+            : 'click Load from cache again',
       });
       if (fetchSeq !== membersFetchSeqRef.current) {
         // A newer Sync / Refresh finished first — ignore this stale response.
@@ -614,7 +620,7 @@ export default function KaiserIspCoverSheetToolPage() {
           retryAction:
             source === 'caspio'
               ? 'click Refresh from Caspio or Refresh Selected from Caspio'
-              : 'click Sync from Caspio',
+              : 'click Load from cache',
         }),
       });
     } finally {
@@ -635,7 +641,8 @@ export default function KaiserIspCoverSheetToolPage() {
       setIsSyncingMembersCache(true);
       toast({
         title: 'Syncing from Caspio…',
-        description: 'Kaiser pull usually takes 1–2 minutes. Search works after sync finishes.',
+        description:
+          'Full Kaiser cache rebuild usually takes 1–2 minutes. Keep searching the list already on screen; it updates when sync finishes.',
       });
       const idToken = await getIdToken();
       const response = await fetch('/api/caspio/members-cache/sync', {
@@ -864,6 +871,14 @@ export default function KaiserIspCoverSheetToolPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
 
+  // Immediate search: load the Firestore Kaiser mirror on open (seconds, not minutes).
+  // Sync from Caspio stays optional for a full cache rebuild.
+  useEffect(() => {
+    if (!user?.uid) return;
+    void fetchMembers({ source: 'cache', maxAgeMs: KAISER_MEMBERS_SESSION_MAX_AGE_MS });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -877,10 +892,24 @@ export default function KaiserIspCoverSheetToolPage() {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void fetchMembers({ source: 'cache' })}
+              disabled={isLoading || isSyncingMembersCache}
+              title="Reload the Firestore Kaiser member list (fast)"
+            >
+              {isLoading && !isSyncingMembersCache ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Load from cache
+            </Button>
+            <Button
               size="sm"
               onClick={() => void syncMembersCacheFromCaspio()}
               disabled={isSyncingMembersCache}
-              title="Pull latest Kaiser members from Caspio, then load the list (1–2 minutes)"
+              title="Optional: rebuild the Firestore Kaiser cache from Caspio (1–2 minutes). Search still works from the current list while syncing."
             >
               {isSyncingMembersCache ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -900,7 +929,7 @@ export default function KaiserIspCoverSheetToolPage() {
             </Button>
             {isSyncingMembersCache ? (
               <span className="text-xs text-amber-700">
-                Sync in progress (1–2 min). Search after it finishes.
+                Cache sync in progress (1–2 min). You can keep searching the list already loaded.
               </span>
             ) : lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">
@@ -909,8 +938,7 @@ export default function KaiserIspCoverSheetToolPage() {
               </span>
             ) : (
               <span className="text-xs text-muted-foreground">
-                Click Sync from Caspio (or Refresh from Caspio) when you need the latest member list — nothing loads
-                automatically.
+                Loading Kaiser members from cache…
               </span>
             )}
           </div>
