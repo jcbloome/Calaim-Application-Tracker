@@ -9,8 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Loader2, RefreshCw, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isPlaceholderRcfeName } from '@/lib/rcfe-utils';
 
 type PlanBucket = 'kaiser' | 'health_net' | 'other';
 type PlanScope = 'all' | 'kaiser' | 'health_net';
@@ -25,6 +26,16 @@ type SortKey =
   | 'kaiser_status'
   | 'rcfe'
   | 'status';
+
+type RcfeLookupSortKey =
+  | 'member'
+  | 'calaim_status'
+  | 'kaiser_status'
+  | 'h2022_requested'
+  | 'rcfe'
+  | 'h2022_start'
+  | 'h2022_end'
+  | 't2038_end';
 
 type MemberH2022Row = {
   clientId2: string;
@@ -93,12 +104,21 @@ const statusSortRank = (row: MemberH2022Row) => {
   return 2;
 };
 
+const hasRealRcfe = (row: MemberH2022Row) => {
+  const name = String(row.rcfeName || '').trim();
+  return Boolean(name) && !isPlaceholderRcfeName(name);
+};
+
+const isRcfeMissingH2022 = (row: MemberH2022Row) =>
+  row.plan === 'kaiser' && hasRealRcfe(row) && Boolean(row.missingH2022Dates);
+
 const computeSummary = (list: MemberH2022Row[]) => {
   const missingDates = list.filter((r) => r.missingH2022Dates).length;
   return {
     total: list.length,
     withDates: list.length - missingDates,
     missingDates,
+    rcfeMissingH2022: list.filter((r) => isRcfeMissingH2022(r)).length,
     endingSoonKaiser: list.filter(
       (r) => r.plan === 'kaiser' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
     ).length,
@@ -124,6 +144,7 @@ export default function H2022ClaimCheckerPage() {
     total: number;
     withDates: number;
     missingDates: number;
+    rcfeMissingH2022?: number;
     endingSoonKaiser: number;
     endingSoonHealthNet: number;
     ended: number;
@@ -133,12 +154,19 @@ export default function H2022ClaimCheckerPage() {
   const [pulledAt, setPulledAt] = useState<string | null>(null);
   const [pullPlanScope, setPullPlanScope] = useState<PlanScope>('all');
   const [planFilter, setPlanFilter] = useState<PlanScope>('all');
-  const [endFilter, setEndFilter] = useState<'all' | 'ending_soon' | 'ended' | 'missing'>('all');
+  const [endFilter, setEndFilter] = useState<
+    'all' | 'ending_soon' | 'ended' | 'missing' | 'rcfe_missing'
+  >('all');
   const [requestedFilter, setRequestedFilter] = useState<'all' | 'requested' | 'not_requested'>('all');
   const [onHoldFilter, setOnHoldFilter] = useState<'all' | 'on_hold' | 'not_on_hold'>('all');
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('h2022_end');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [rcfeLookupLoading, setRcfeLookupLoading] = useState(false);
+  const [rcfeLookupRows, setRcfeLookupRows] = useState<MemberH2022Row[]>([]);
+  const [rcfeLookupPulledAt, setRcfeLookupPulledAt] = useState<string | null>(null);
+  const [rcfeLookupSortBy, setRcfeLookupSortBy] = useState<RcfeLookupSortKey>('member');
+  const [rcfeLookupSortDirection, setRcfeLookupSortDirection] = useState<'asc' | 'desc'>('asc');
   const tableTopScrollRef = useRef<HTMLDivElement | null>(null);
   const tableBodyScrollRef = useRef<HTMLDivElement | null>(null);
   const tableElRef = useRef<HTMLTableElement | null>(null);
@@ -166,6 +194,45 @@ export default function H2022ClaimCheckerPage() {
     setSortDirection('asc');
   };
 
+  const toggleRcfeLookupSort = (key: RcfeLookupSortKey) => {
+    if (rcfeLookupSortBy === key) {
+      setRcfeLookupSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setRcfeLookupSortBy(key);
+    setRcfeLookupSortDirection('asc');
+  };
+
+  const displayedRcfeLookupRows = useMemo(() => {
+    const sorted = [...rcfeLookupRows].sort((a, b) => {
+      let cmp = 0;
+      if (rcfeLookupSortBy === 'member') {
+        cmp = a.memberLast.localeCompare(b.memberLast) || a.memberFirst.localeCompare(b.memberFirst);
+      } else if (rcfeLookupSortBy === 'calaim_status') {
+        cmp = String(a.calaimStatus || '').localeCompare(String(b.calaimStatus || ''));
+      } else if (rcfeLookupSortBy === 'kaiser_status') {
+        cmp = String(a.kaiserStatus || '').localeCompare(String(b.kaiserStatus || ''));
+      } else if (rcfeLookupSortBy === 'h2022_requested') {
+        cmp =
+          dateSortMs(a.kaiserH2022RequestedDate) - dateSortMs(b.kaiserH2022RequestedDate) ||
+          Number(Boolean(b.kaiserH2022Requested)) - Number(Boolean(a.kaiserH2022Requested));
+      } else if (rcfeLookupSortBy === 'rcfe') {
+        cmp = String(a.rcfeName || '').localeCompare(String(b.rcfeName || ''));
+      } else if (rcfeLookupSortBy === 'h2022_start') {
+        cmp = dateSortMs(a.h2022StartDate) - dateSortMs(b.h2022StartDate);
+      } else if (rcfeLookupSortBy === 'h2022_end') {
+        cmp = dateSortMs(a.h2022EndDate) - dateSortMs(b.h2022EndDate);
+      } else {
+        cmp = dateSortMs(a.t2038EndDate) - dateSortMs(b.t2038EndDate);
+      }
+      if (cmp === 0) {
+        cmp = a.memberLast.localeCompare(b.memberLast) || a.memberFirst.localeCompare(b.memberFirst);
+      }
+      return rcfeLookupSortDirection === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [rcfeLookupRows, rcfeLookupSortBy, rcfeLookupSortDirection]);
+
   const displayedRows = useMemo(() => {
     const q = memberSearchQuery.trim().toLowerCase();
     const qDigits = q.replace(/\D/g, '');
@@ -180,6 +247,9 @@ export default function H2022ClaimCheckerPage() {
       }
       if (endFilter === 'missing') {
         if (!row.missingH2022Dates) return false;
+      }
+      if (endFilter === 'rcfe_missing') {
+        if (!isRcfeMissingH2022(row)) return false;
       }
       const hasRequested = Boolean(row.kaiserH2022RequestedDate || row.kaiserH2022Requested);
       if (requestedFilter === 'requested' && !hasRequested) return false;
@@ -285,10 +355,41 @@ export default function H2022ClaimCheckerPage() {
     );
   };
 
+  const RcfeLookupSortableHead = ({
+    label,
+    sortKey,
+    className,
+  }: {
+    label: string;
+    sortKey: RcfeLookupSortKey;
+    className?: string;
+  }) => {
+    const active = rcfeLookupSortBy === sortKey;
+    const Icon = !active ? ArrowUpDown : rcfeLookupSortDirection === 'asc' ? ArrowUp : ArrowDown;
+    return (
+      <TableHead className={cn('whitespace-nowrap', className)}>
+        <button
+          type="button"
+          className={cn(
+            'inline-flex items-center gap-1 font-medium hover:text-foreground',
+            active ? 'text-foreground' : 'text-muted-foreground'
+          )}
+          onClick={() => toggleRcfeLookupSort(sortKey)}
+        >
+          <span>{label}</span>
+          <Icon className="h-3.5 w-3.5 shrink-0" />
+        </button>
+      </TableHead>
+    );
+  };
+
   const summaryCards = useMemo(() => {
+    const computed = computeSummary(rows);
     if (summary) {
       return {
+        ...computed,
         ...summary,
+        rcfeMissingH2022: summary.rcfeMissingH2022 ?? computed.rcfeMissingH2022,
         kaiserH2022Requested:
           summary.kaiserH2022Requested ??
           rows.filter((r) => r.plan === 'kaiser' && Boolean(r.kaiserH2022RequestedDate || r.kaiserH2022Requested))
@@ -297,7 +398,7 @@ export default function H2022ClaimCheckerPage() {
           summary.kaiserOnHold ?? rows.filter((r) => r.plan === 'kaiser' && isKaiserOnHoldRow(r)).length,
       };
     }
-    return computeSummary(rows);
+    return computed;
   }, [rows, summary]);
 
   if (adminLoading) {
@@ -399,6 +500,56 @@ export default function H2022ClaimCheckerPage() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const lookupRcfeMissingH2022 = async () => {
+    setRcfeLookupLoading(true);
+    try {
+      const idToken = await getIdTokenFresh();
+      if (!idToken) {
+        throw new Error('Please log in with an admin account before looking up RCFE members.');
+      }
+
+      const res = await fetch('/api/admin/h2022-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          action: 'pull_rcfe_missing_h2022',
+          planScope: 'kaiser',
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        pulledAt?: string;
+        summary?: { total?: number; rcfeMissingH2022?: number; kaiser?: number; healthNet?: number };
+        rows?: MemberH2022Row[];
+      };
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Lookup failed (HTTP ${res.status})`);
+      }
+
+      const nextRows = Array.isArray(data.rows) ? data.rows : [];
+      setRcfeLookupRows(nextRows);
+      setRcfeLookupPulledAt(data.pulledAt || new Date().toISOString());
+
+      toast({
+        title: 'Kaiser RCFE · no H2022 dates',
+        description: `Found ${data.summary?.total ?? nextRows.length} Kaiser member(s) with RCFE_Name but missing H2022 dates.`,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to look up RCFE members.';
+      toast({
+        title: 'Lookup failed',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setRcfeLookupLoading(false);
     }
   };
 
@@ -552,8 +703,136 @@ export default function H2022ClaimCheckerPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Lookup: Kaiser RCFE with no H2022 dates</CardTitle>
+          <CardDescription>
+            Kaiser-only. Finds members with a real <span className="font-mono">RCFE_Name</span> (not CalAIM Use)
+            but missing H2022 authorization start or end dates — any CalAIM status. Use when placement is filled
+            in Caspio but H2022 dates were never entered.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={rcfeLookupLoading}
+              onClick={() => void lookupRcfeMissingH2022()}
+            >
+              {rcfeLookupLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4 mr-2" />
+              )}
+              Look up Kaiser RCFE · no H2022 dates
+            </Button>
+          </div>
+          {rcfeLookupPulledAt ? (
+            <div className="text-xs text-muted-foreground">
+              Last lookup: {new Date(rcfeLookupPulledAt).toLocaleString()} · {rcfeLookupRows.length} Kaiser
+              member(s)
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              Runs a separate Kaiser Caspio query (does not replace the main H2022 Status pull above).
+            </div>
+          )}
+
+          {rcfeLookupRows.length > 0 ? (
+            <div className="space-y-2">
+              <div className="text-xs text-muted-foreground">
+                {displayedRcfeLookupRows.length} shown · click column headers to sort
+                {rcfeLookupSortBy
+                  ? ` · ${rcfeLookupSortBy.replace(/_/g, ' ')} ${rcfeLookupSortDirection}`
+                  : ''}
+              </div>
+              <div className="rounded-md border overflow-x-auto">
+                <table className="w-full min-w-[1100px] caption-bottom text-sm">
+                  <TableHeader>
+                    <TableRow>
+                      <RcfeLookupSortableHead label="Member" sortKey="member" />
+                      <RcfeLookupSortableHead label="CalAIM Status" sortKey="calaim_status" />
+                      <RcfeLookupSortableHead label="Kaiser Status" sortKey="kaiser_status" />
+                      <RcfeLookupSortableHead label="H2022 Requested" sortKey="h2022_requested" />
+                      <RcfeLookupSortableHead label="RCFE" sortKey="rcfe" />
+                      <RcfeLookupSortableHead label="H2022 Start" sortKey="h2022_start" />
+                      <RcfeLookupSortableHead label="H2022 End" sortKey="h2022_end" />
+                      <RcfeLookupSortableHead label="T2038 End" sortKey="t2038_end" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {displayedRcfeLookupRows.map((row) => {
+                      const rowKey =
+                        String(row.clientId2 || '').trim() || `${row.memberName}-rcfe`;
+                      const onHold = isKaiserOnHoldRow(row);
+                      return (
+                        <TableRow
+                          key={`rcfe-missing-${rowKey}`}
+                          className={cn(onHold && 'bg-violet-50/50')}
+                        >
+                          <TableCell className="align-top">
+                            <div className="text-sm font-medium whitespace-nowrap">{row.memberName}</div>
+                            <div className="text-xs text-muted-foreground whitespace-nowrap">
+                              ID2: {row.clientId2 || 'N/A'} · MCP/MRN: {row.mcpCin || row.mrn || 'N/A'}
+                            </div>
+                          </TableCell>
+                          <TableCell className="align-top whitespace-nowrap">
+                            {row.calaimStatus || '—'}
+                          </TableCell>
+                          <TableCell className="align-top whitespace-nowrap">
+                            {onHold ? (
+                              <Badge className="bg-violet-700">{row.kaiserStatus || 'On Hold'}</Badge>
+                            ) : (
+                              <span className="text-sm">{row.kaiserStatus || '—'}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="align-top whitespace-nowrap">
+                            {row.kaiserH2022RequestedDate || row.kaiserH2022Requested ? (
+                              <>
+                                <div className="text-sm font-mono tabular-nums text-sky-800">
+                                  {row.kaiserH2022RequestedDate
+                                    ? formatDate(row.kaiserH2022RequestedDate)
+                                    : 'Requested'}
+                                </div>
+                                <div className="text-[11px] text-sky-700">already requested</div>
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Not requested</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <div className="text-sm max-w-[220px] truncate" title={row.rcfeName || ''}>
+                              {row.rcfeName || 'N/A'}
+                            </div>
+                            <div className="text-xs text-muted-foreground">{row.county || '—'}</div>
+                          </TableCell>
+                          <TableCell className="align-top font-mono tabular-nums whitespace-nowrap">
+                            {formatDate(row.h2022StartDate)}
+                          </TableCell>
+                          <TableCell className="align-top font-mono tabular-nums whitespace-nowrap">
+                            {formatDate(row.h2022EndDate)}
+                          </TableCell>
+                          <TableCell className="align-top font-mono tabular-nums whitespace-nowrap">
+                            {formatDate(row.t2038EndDate)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </table>
+              </div>
+            </div>
+          ) : rcfeLookupPulledAt ? (
+            <div className="text-sm text-muted-foreground py-4 text-center border rounded-md">
+              No Kaiser members found with RCFE_Name and missing H2022 dates.
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
       {rows.length > 0 || summary ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9 gap-4">
           <Card
             className={`cursor-pointer transition-colors ${
               planFilter === 'all' &&
@@ -582,6 +861,23 @@ export default function H2022ClaimCheckerPage() {
             <CardHeader className="pb-2">
               <CardDescription>Missing dates</CardDescription>
               <CardTitle className="text-2xl">{summaryCards.missingDates}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card
+            className={`cursor-pointer transition-colors ${
+              endFilter === 'rcfe_missing' ? 'ring-2 ring-teal-600' : 'hover:bg-muted/40'
+            }`}
+            onClick={() => {
+              setEndFilter('rcfe_missing');
+              setRequestedFilter('all');
+              setOnHoldFilter('all');
+            }}
+          >
+            <CardHeader className="pb-2">
+              <CardDescription>Kaiser RCFE · no H2022</CardDescription>
+              <CardTitle className="text-2xl text-teal-700">
+                {summaryCards.rcfeMissingH2022 ?? 0}
+              </CardTitle>
             </CardHeader>
           </Card>
           <Card
@@ -692,13 +988,18 @@ export default function H2022ClaimCheckerPage() {
               <div className="text-xs text-muted-foreground">H2022 end status</div>
               <select
                 value={endFilter}
-                onChange={(e) => setEndFilter(e.target.value as 'all' | 'ending_soon' | 'ended' | 'missing')}
+                onChange={(e) =>
+                  setEndFilter(
+                    e.target.value as 'all' | 'ending_soon' | 'ended' | 'missing' | 'rcfe_missing'
+                  )
+                }
                 className="h-9 rounded-md border bg-background px-3 text-sm"
               >
                 <option value="all">All</option>
                 <option value="ending_soon">Ending soon</option>
                 <option value="ended">Already ended</option>
                 <option value="missing">Missing dates</option>
+                <option value="rcfe_missing">Kaiser RCFE · no H2022 dates</option>
               </select>
             </div>
             <div className="space-y-1">

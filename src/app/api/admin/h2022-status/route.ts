@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken, fetchCaspioRecords } from '@/lib/caspio-api-utils';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import { isPlaceholderRcfeName } from '@/lib/rcfe-utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -472,6 +473,18 @@ async function pullMemberFromCaspio(clientId2: string) {
   return rows[0] as Record<string, unknown>;
 }
 
+function hasRealRcfeName(rcfeName: unknown) {
+  const name = normalizeText(rcfeName);
+  return Boolean(name) && !isPlaceholderRcfeName(name);
+}
+
+function isRcfeMissingH2022Row(row: {
+  rcfeName?: string | null;
+  missingH2022Dates?: boolean;
+}) {
+  return hasRealRcfeName(row.rcfeName) && Boolean(row.missingH2022Dates);
+}
+
 function summarizeRows(
   rows: Array<{
     plan: PlanBucket;
@@ -480,6 +493,7 @@ function summarizeRows(
     h2022DaysUntilEnd: number | null;
     kaiserH2022Requested?: boolean;
     kaiserOnHold?: boolean;
+    rcfeName?: string | null;
   }>
 ) {
   const endingSoonKaiser = rows.filter(
@@ -490,18 +504,54 @@ function summarizeRows(
   ).length;
   const ended = rows.filter((r) => r.h2022EndWarning && (r.h2022DaysUntilEnd ?? 0) < 0).length;
   const missingDates = rows.filter((r) => r.missingH2022Dates).length;
+  const rcfeMissingH2022 = rows.filter((r) => isRcfeMissingH2022Row(r)).length;
   const kaiserH2022Requested = rows.filter((r) => r.plan === 'kaiser' && r.kaiserH2022Requested).length;
   const kaiserOnHold = rows.filter((r) => r.plan === 'kaiser' && r.kaiserOnHold).length;
   return {
     total: rows.length,
     withDates: rows.length - missingDates,
     missingDates,
+    rcfeMissingH2022,
     endingSoonKaiser,
     endingSoonHealthNet,
     ended,
     kaiserH2022Requested,
     kaiserOnHold,
   };
+}
+
+/** Kaiser-only: real RCFE_Name but no H2022 authorization dates (any CalAIM status). */
+async function pullRcfeMissingH2022FromCaspio() {
+  const credentials = getCaspioCredentialsFromEnv();
+  const token = await getCaspioToken(credentials);
+  const table = 'CalAIM_tbl_Members';
+  const where = "CalAIM_MCO='Kaiser' AND RCFE_Name<>''";
+  const allRows: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+
+  try {
+    const rows = await fetchCaspioRecords(credentials, token, table, where, 1000);
+    for (const row of rows || []) {
+      const key =
+        normalizeText((row as any)?.Client_ID2) ||
+        normalizeText((row as any)?.MCP_CIN) ||
+        normalizeText((row as any)?.MRN) ||
+        JSON.stringify(row);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      allRows.push(row as Record<string, unknown>);
+    }
+  } catch (error) {
+    console.warn(`[h2022-status] RCFE missing-H2022 pull failed for where=${where}:`, error);
+  }
+
+  return allRows
+    .map((row) => buildMemberRow(row))
+    .filter((row) => row.plan === 'kaiser' && isRcfeMissingH2022Row(row))
+    .sort(
+      (a, b) =>
+        a.memberLast.localeCompare(b.memberLast) || a.memberFirst.localeCompare(b.memberFirst)
+    );
 }
 
 function hasActiveT2038Auth(row: ReturnType<typeof buildMemberRow>, todayMs = startOfLocalDayMs()) {
@@ -609,6 +659,28 @@ export async function POST(request: NextRequest) {
           ? 'health_net'
           : (planScopeRaw as 'kaiser' | 'health_net')
         : 'all';
+
+    if (
+      action === 'pull_rcfe_missing_h2022' ||
+      action === 'lookup_rcfe_missing_h2022' ||
+      action === 'rcfe_missing_h2022'
+    ) {
+      const rows = await pullRcfeMissingH2022FromCaspio();
+      return NextResponse.json({
+        success: true,
+        action: 'pull_rcfe_missing_h2022',
+        planScope: 'kaiser',
+        source: 'caspio-live',
+        pulledAt: new Date().toISOString(),
+        summary: {
+          total: rows.length,
+          rcfeMissingH2022: rows.length,
+          kaiser: rows.length,
+          healthNet: 0,
+        },
+        rows,
+      });
+    }
 
     const rawMembers = await pullMembersFromCaspio(planScope);
     const rows = rawMembers
