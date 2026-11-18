@@ -59,6 +59,7 @@ import {
   matchIdentityToExistingApplications,
   partitionExistingApplicationMatches,
   resolveIlsMifDedupeKey,
+  undeclineIlsMifMemberService,
 } from '@/lib/ils-mif-consolidator-sync';
 import { MIF_SERVICE_DELIVERY_FORM_NAME, MIF_SERVICE_DELIVERY_LAYOUT_VERSION, uploadMifServiceDeliveryForm } from '@/lib/mif-service-delivery-form';
 import {
@@ -3581,25 +3582,35 @@ export default function CreateApplicationPage() {
 
       let declinedHit = false;
       let declinedMatchCounty = '';
+      const declinedMatchDocIds: string[] = [];
       try {
         const declinedSnap = await getDocs(collection(firestore, ILS_MIF_DECLINED_COLLECTION));
+        const identityMrn = String(identity.memberMrn || '').trim().toLowerCase();
+        const identityCin = String(identity.memberMediCalNum || '').trim().toLowerCase();
         declinedSnap.forEach((docSnap) => {
-          if (declinedHit) return;
           const data = docSnap.data() as any;
           const key =
             docSnap.id === dedupeKey
               ? dedupeKey
               : resolveIlsMifDedupeKey({
-                  clientId2: String(data.clientId2 || ''),
+                  clientId2: String(data.clientId2 || data.caspioMatchedClientId2 || ''),
                   memberMrn: String(data.memberMrn || ''),
                   memberMediCalNum: String(data.memberMediCalNum || ''),
                   memberFirstName: String(data.memberFirstName || ''),
                   memberLastName: String(data.memberLastName || ''),
                   memberDob: String(data.memberDob || ''),
                 });
-          if (!key || key !== dedupeKey) return;
+          const storedMrn = String(data.memberMrn || '').trim().toLowerCase();
+          const storedCin = String(data.memberMediCalNum || '').trim().toLowerCase();
+          const keyMatch = Boolean(dedupeKey && key && key === dedupeKey);
+          const mrnMatch = Boolean(identityMrn && storedMrn && identityMrn === storedMrn);
+          const cinMatch = Boolean(identityCin && storedCin && identityCin === storedCin);
+          if (!keyMatch && !mrnMatch && !cinMatch) return;
           declinedHit = true;
-          declinedMatchCounty = String(data.memberCounty || '').trim();
+          declinedMatchDocIds.push(docSnap.id);
+          if (!declinedMatchCounty) {
+            declinedMatchCounty = String(data.memberCounty || '').trim();
+          }
         });
       } catch (error) {
         console.warn('Declined-list check failed during skeleton create:', error);
@@ -3673,20 +3684,81 @@ export default function CreateApplicationPage() {
         console.warn('Live MIF master check failed during skeleton create:', liveMifError);
       }
 
-      if (declinedHit || alreadyInApp) {
-        const blockReason = alreadyInApp
-          ? `already has application ${samePersonMatches[0]?.applicationId || ''}`
-          : 'declined Northern CA';
+      if (declinedHit && !alreadyInApp) {
+        const memberLabel =
+          `${identity.memberFirstName || ''} ${identity.memberLastName || ''}`.trim() || 'this member';
+        const undeclineAndContinue = await appConfirm(
+          `${memberLabel} is on the Northern California declined list.\n\n` +
+            `Undecline this member and create the Kaiser skeleton?\n\n` +
+            `This removes them from the Declined list so Create Application can continue. ` +
+            `Any decline email already sent to ILS is not recalled.`
+        );
+        if (!undeclineAndContinue) {
+          try {
+            await addIlsMifAuditDoc(firestore, {
+              action: 'skeleton_create_blocked',
+              summary: `Blocked skeleton create for ${identity.memberLastName}, ${identity.memberFirstName} (declined Northern CA)`,
+              atIso: new Date().toISOString(),
+              atServer: serverTimestamp(),
+              actor: user?.email || user?.uid || '',
+              caspioHit,
+              declinedHit: true,
+              alreadyInApp: false,
+              memberMrn: identity.memberMrn,
+            });
+          } catch {
+            // ignore audit failure
+          }
+          toast({
+            variant: 'destructive',
+            title: 'Declined to serve (Northern CA)',
+            description:
+              'Skeleton create cancelled. Use Undecline when prompted, or undecline the member on ILS MIF Consolidator first.',
+          });
+          return null;
+        }
+
+        try {
+          const undeclineResult = await undeclineIlsMifMemberService(firestore, {
+            ...identity,
+            ilsMifDedupeKey: dedupeKey,
+            declinedDocIds: declinedMatchDocIds,
+            actorEmail: user?.email || '',
+            actorUid: user?.uid || '',
+          });
+          declinedHit = false;
+          toast({
+            title: 'Member undeclined',
+            description: `${memberLabel} was removed from the Northern CA declined list${
+              undeclineResult.deletedDeclinedDocs
+                ? ` (${undeclineResult.deletedDeclinedDocs} declined record(s) cleared)`
+                : ''
+            }. Creating skeleton…`,
+          });
+        } catch (undeclineError: any) {
+          toast({
+            variant: 'destructive',
+            title: 'Could not undecline member',
+            description: String(
+              undeclineError?.message ||
+                'Failed to remove this member from the Northern CA declined list. Try Undecline on ILS MIF Consolidator.'
+            ),
+          });
+          return null;
+        }
+      }
+
+      if (alreadyInApp) {
         try {
           await addIlsMifAuditDoc(firestore, {
             action: 'skeleton_create_blocked',
-            summary: `Blocked skeleton create for ${identity.memberLastName}, ${identity.memberFirstName} (${blockReason})`,
+            summary: `Blocked skeleton create for ${identity.memberLastName}, ${identity.memberFirstName} (already has application ${samePersonMatches[0]?.applicationId || ''})`,
             atIso: new Date().toISOString(),
             atServer: serverTimestamp(),
             actor: user?.email || user?.uid || '',
             caspioHit,
-            declinedHit,
-            alreadyInApp,
+            declinedHit: false,
+            alreadyInApp: true,
             existingApplicationIds: samePersonMatches.map((m) => m.applicationId),
             memberMrn: identity.memberMrn,
           });
@@ -3695,13 +3767,11 @@ export default function CreateApplicationPage() {
         }
         toast({
           variant: 'destructive',
-          title: alreadyInApp ? 'Already in Applications' : 'Declined to serve (Northern CA)',
-          description: alreadyInApp
-            ? `An application already exists for this MRN/CIN (${samePersonMatches
-                .slice(0, 3)
-                .map((m) => formatExistingApplicationMatchLabel(m))
-                .join('; ')}${samePersonMatches.length > 3 ? '…' : ''}). Open that app from the link in the duplicate warning, or delete it if it was a bad skeleton.`
-            : 'This member is on the Northern California declined list. Skeleton create is blocked.',
+          title: 'Already in Applications',
+          description: `An application already exists for this MRN/CIN (${samePersonMatches
+            .slice(0, 3)
+            .map((m) => formatExistingApplicationMatchLabel(m))
+            .join('; ')}${samePersonMatches.length > 3 ? '…' : ''}). Open that app from the link in the duplicate warning, or delete it if it was a bad skeleton.`,
         });
         return null;
       }

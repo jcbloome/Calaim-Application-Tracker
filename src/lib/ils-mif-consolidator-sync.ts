@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -780,6 +781,166 @@ export async function markIlsMifMemberServiceDeclined(
   }
 
   return { dedupeKey, declinedAtIso };
+}
+
+/** Candidate Firestore doc ids for a declined-member identity (dedupe key + aliases). */
+export function collectIlsMifDeclinedDocIds(
+  identity: IlsMifMemberIdentityInput & { id?: string; dedupeKey?: string; ilsMifDedupeKey?: string }
+): string[] {
+  const ids = new Set<string>();
+  const add = (value: unknown) => {
+    const raw = String(value || '').trim();
+    if (!raw) return;
+    ids.add(raw);
+    const sanitized = sanitizeIlsMifDocId(raw);
+    if (sanitized) ids.add(sanitized);
+  };
+  add(identity.id);
+  add(identity.dedupeKey);
+  add(identity.ilsMifDedupeKey);
+  add(
+    buildIlsMifDedupeKey({
+      clientId2: String(identity.clientId2 || '').trim(),
+      memberMrn: String(identity.memberMrn || '').trim(),
+      memberMediCalNum: String(identity.memberMediCalNum || '').trim(),
+      memberFirstName: String(identity.memberFirstName || '').trim(),
+      memberLastName: String(identity.memberLastName || '').trim(),
+      memberDob: String(identity.memberDob || '').trim(),
+    })
+  );
+  return Array.from(ids);
+}
+
+/**
+ * Remove a member from the Northern CA / service declined list so Create Application
+ * and consolidator "not in Caspio" can use them again. Does not recall any decline email.
+ */
+export async function undeclineIlsMifMemberService(
+  firestore: Firestore,
+  params: IlsMifMemberIdentityInput & {
+    ilsMifDedupeKey?: string;
+    declinedDocIds?: string[];
+    actorEmail?: string;
+    actorUid?: string;
+    consolidatorRunId?: string;
+  }
+): Promise<{ dedupeKey: string; deletedDeclinedDocs: number }> {
+  const identity = {
+    memberFirstName: String(params.memberFirstName || '').trim(),
+    memberLastName: String(params.memberLastName || '').trim(),
+    memberMrn: String(params.memberMrn || '').trim(),
+    memberMediCalNum: String(params.memberMediCalNum || '').trim(),
+    memberDob: String(params.memberDob || '').trim(),
+    clientId2: String(params.clientId2 || '').trim(),
+  };
+  const dedupeKey = resolveIlsMifDedupeKey(identity, params.ilsMifDedupeKey);
+  const candidateIds = new Set<string>([
+    ...collectIlsMifDeclinedDocIds({ ...identity, ilsMifDedupeKey: params.ilsMifDedupeKey || dedupeKey }),
+    ...(Array.isArray(params.declinedDocIds) ? params.declinedDocIds.map((id) => String(id || '').trim()) : []),
+  ]);
+  candidateIds.delete('');
+
+  // Also match any declined docs whose stored fields resolve to the same dedupe key / MRN / CIN.
+  const declinedSnap = await getDocs(collection(firestore, ILS_MIF_DECLINED_COLLECTION));
+  const matchedDocIds = new Set<string>();
+  declinedSnap.forEach((docSnap) => {
+    const data = (docSnap.data() || {}) as Record<string, unknown>;
+    const keyFromFields = resolveIlsMifDedupeKey({
+      memberFirstName: String(data.memberFirstName || ''),
+      memberLastName: String(data.memberLastName || ''),
+      memberMrn: String(data.memberMrn || ''),
+      memberMediCalNum: String(data.memberMediCalNum || ''),
+      memberDob: String(data.memberDob || ''),
+      clientId2: String(data.clientId2 || data.caspioMatchedClientId2 || ''),
+    });
+    const storedDedupe = String(data.dedupeKey || data.rowId || '').trim();
+    const storedMrn = String(data.memberMrn || '').trim().toLowerCase();
+    const storedCin = String(data.memberMediCalNum || '').trim().toLowerCase();
+    const identityMrn = identity.memberMrn.trim().toLowerCase();
+    const identityCin = identity.memberMediCalNum.trim().toLowerCase();
+    const idMatch = candidateIds.has(docSnap.id) || (storedDedupe && candidateIds.has(storedDedupe));
+    const keyMatch = Boolean(dedupeKey && (keyFromFields === dedupeKey || storedDedupe === dedupeKey));
+    const mrnMatch = Boolean(identityMrn && storedMrn && identityMrn === storedMrn);
+    const cinMatch = Boolean(identityCin && storedCin && identityCin === storedCin);
+    if (idMatch || keyMatch || mrnMatch || cinMatch) {
+      matchedDocIds.add(docSnap.id);
+      if (storedDedupe) matchedDocIds.add(sanitizeIlsMifDocId(storedDedupe));
+      if (keyFromFields) matchedDocIds.add(keyFromFields);
+    }
+  });
+  candidateIds.forEach((id) => matchedDocIds.add(id));
+  matchedDocIds.delete('');
+
+  const undeclinedAtIso = new Date().toISOString();
+  const undeclinedBy = String(params.actorEmail || params.actorUid || '').trim();
+  const clearDeclinedPayload = {
+    declined: false,
+    undeclinedAtIso,
+    undeclinedBy,
+    lastUpdatedAtIso: undeclinedAtIso,
+    lastUpdatedAtServer: serverTimestamp(),
+  };
+
+  let deletedDeclinedDocs = 0;
+  for (const id of matchedDocIds) {
+    try {
+      const declinedRef = doc(firestore, ILS_MIF_DECLINED_COLLECTION, id);
+      const declinedDoc = await getDoc(declinedRef);
+      if (declinedDoc.exists()) {
+        await deleteDoc(declinedRef);
+        deletedDeclinedDocs += 1;
+      }
+    } catch {
+      // best-effort per id
+    }
+    try {
+      const masterRef = doc(firestore, ILS_MIF_MASTER_COLLECTION, id);
+      const masterDoc = await getDoc(masterRef);
+      if (masterDoc.exists()) {
+        await setDoc(masterRef, clearDeclinedPayload, { merge: true });
+      }
+    } catch {
+      // master may not exist
+    }
+    const runId = String(params.consolidatorRunId || '').trim();
+    if (runId) {
+      try {
+        const runMemberRef = doc(
+          firestore,
+          ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+          runId,
+          ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+          id
+        );
+        const runMemberDoc = await getDoc(runMemberRef);
+        if (runMemberDoc.exists()) {
+          await setDoc(runMemberRef, clearDeclinedPayload, { merge: true });
+        }
+      } catch {
+        // run snapshot optional
+      }
+    }
+  }
+
+  try {
+    await addIlsMifAuditDoc(firestore, {
+      action: 'member_undecline',
+      summary: `Undeclined ${identity.memberLastName || '—'}, ${
+        identity.memberFirstName || '—'
+      } from Create Application (removed from Northern declined list)`,
+      atIso: undeclinedAtIso,
+      atServer: serverTimestamp(),
+      actor: undeclinedBy,
+      dedupeKey,
+      memberMrn: identity.memberMrn,
+      deletedDeclinedDocs,
+      source: 'create_application',
+    });
+  } catch {
+    // audit is best-effort
+  }
+
+  return { dedupeKey, deletedDeclinedDocs };
 }
 
 export async function excludeIlsMifMemberFromCreateApp(
