@@ -10,8 +10,8 @@ export async function mintStorageDownloadUrl(filePath: string): Promise<string> 
   const path = String(filePath || '').trim().replace(/^\/+/, '');
   if (!path || path.includes('..')) return '';
 
-  const { adminStorage } = await import('@/firebase-admin');
-  const bucket = adminStorage.bucket();
+  const { getAdminBucket } = await import('@/firebase-admin');
+  const bucket = getAdminBucket();
   const file = bucket.file(path);
   const [exists] = await file.exists();
   if (!exists) return '';

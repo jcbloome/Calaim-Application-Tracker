@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { adminDb, adminStorage } from '@/firebase-admin';
+import { adminDb, getAdminBucket } from '@/firebase-admin';
 import { appendPdfBytes, buildAlftFormPdfFromAnswers } from '@/lib/alft/build-alft-form-pdf';
 import { addAndMirror } from '@/lib/global-change-log-server';
 import { mapAlftDownloadLog } from '@/lib/global-change-log-mappers';
@@ -46,7 +46,7 @@ async function loadBytesFromStorage(path: string): Promise<Buffer | null> {
   const storagePath = clean(path);
   if (!storagePath) return null;
   try {
-    const file = adminStorage.bucket().file(storagePath);
+    const file = getAdminBucket().file(storagePath);
     const [exists] = await file.exists();
     if (!exists) return null;
     const [buf] = await file.download();
@@ -299,7 +299,7 @@ export async function POST(req: NextRequest) {
     }
 
     const archivePath = `alft-isp-downloads/${intakeId}/${Date.now()}-${downloadName.replace(/[^\w.-]+/g, '_')}.pdf`;
-    await adminStorage.bucket().file(archivePath).save(buffer, {
+    await getAdminBucket().file(archivePath).save(buffer, {
       contentType: 'application/pdf',
       resumable: false,
       metadata: {
@@ -418,7 +418,7 @@ export async function DELETE(req: NextRequest) {
     const path = clean(logData.archivedStoragePath || logData.packetPdfStoragePath);
     if (path) {
       try {
-        await adminStorage.bucket().file(path).delete({ ignoreNotFound: true });
+        await getAdminBucket().file(path).delete({ ignoreNotFound: true });
       } catch {
         // best-effort
       }

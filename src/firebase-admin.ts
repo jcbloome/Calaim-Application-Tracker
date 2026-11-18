@@ -9,6 +9,36 @@ const logWarn = (...args: unknown[]) => {
   if (!isProduction) console.warn(...args);
 };
 
+/** Strip gs:// and trailing slashes — Admin SDK rejects protocol-prefixed bucket names. */
+export function normalizeStorageBucketName(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .replace(/^gs:\/\//i, '')
+    .replace(/\/+$/, '');
+}
+
+const FALLBACK_STORAGE_BUCKET = 'studio-2881432245-f1d94.firebasestorage.app';
+
+function resolveDefaultStorageBucket(firebaseConfig: Record<string, unknown> = {}): string {
+  return (
+    normalizeStorageBucketName(firebaseConfig.storageBucket) ||
+    normalizeStorageBucketName(process.env.FIREBASE_STORAGE_BUCKET) ||
+    normalizeStorageBucketName(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET) ||
+    FALLBACK_STORAGE_BUCKET
+  );
+}
+
+function parseFirebaseConfigEnv(): Record<string, unknown> {
+  if (!process.env.FIREBASE_CONFIG) return {};
+  try {
+    return JSON.parse(process.env.FIREBASE_CONFIG) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+export const DEFAULT_STORAGE_BUCKET = resolveDefaultStorageBucket(parseFirebaseConfigEnv());
+
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
   try {
@@ -50,16 +80,19 @@ if (!admin.apps.length) {
       credential = admin.credential.applicationDefault();
     }
     
-    const firebaseConfig = process.env.FIREBASE_CONFIG ? JSON.parse(process.env.FIREBASE_CONFIG) : {};
-    const projectId = firebaseConfig.projectId || process.env.FIREBASE_PROJECT_ID || 'studio-2881432245-f1d94';
+    const firebaseConfig = parseFirebaseConfigEnv();
+    const projectId =
+      String(firebaseConfig.projectId || process.env.FIREBASE_PROJECT_ID || 'studio-2881432245-f1d94');
+    const storageBucket = resolveDefaultStorageBucket(firebaseConfig);
     
     logInfo('🔧 Project ID:', projectId);
+    logInfo('🔧 Storage bucket:', storageBucket);
     
     admin.initializeApp({
       credential: credential,
       projectId: projectId,
       databaseURL: firebaseConfig.databaseURL || process.env.FIREBASE_DATABASE_URL,
-      storageBucket: firebaseConfig.storageBucket || process.env.FIREBASE_STORAGE_BUCKET || 'studio-2881432245-f1d94.firebasestorage.app',
+      storageBucket,
     });
     
     logInfo('✅ Firebase Admin initialized successfully');
@@ -73,7 +106,7 @@ if (!admin.apps.length) {
       try {
         admin.initializeApp({
           projectId: 'studio-2881432245-f1d94',
-          storageBucket: 'studio-2881432245-f1d94.firebasestorage.app',
+          storageBucket: FALLBACK_STORAGE_BUCKET,
         });
         logInfo('✅ Firebase Admin initialized in development mode (limited functionality)');
       } catch (fallbackError) {
@@ -87,6 +120,19 @@ if (!admin.apps.length) {
 export const adminDb = admin.firestore();
 export const adminAuth = admin.auth();
 export const adminStorage = admin.storage();
+
+/**
+ * Always pass an explicit bucket name. Other modules sometimes call
+ * `admin.initializeApp()` with no storageBucket first; `bucket()` then throws
+ * "Bucket name not specified or invalid" (breaks ISP download archive).
+ */
+export function getAdminBucket(bucketName?: string) {
+  const name =
+    normalizeStorageBucketName(bucketName) ||
+    normalizeStorageBucketName(admin.app().options.storageBucket) ||
+    DEFAULT_STORAGE_BUCKET;
+  return adminStorage.bucket(name);
+}
 
 // Export admin for direct use if needed
 export default admin;
