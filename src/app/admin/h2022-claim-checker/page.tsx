@@ -11,7 +11,10 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/compon
 import { useToast } from '@/hooks/use-toast';
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Loader2, RefreshCw, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isKaiserInactiveStatus } from '@/lib/batch-eligibility';
 import { isPlaceholderRcfeName } from '@/lib/rcfe-utils';
+
+type KaiserStatusFilter = 'hide_nonactive' | 'all' | 'on_hold' | 'not_on_hold' | 'nonactive_only';
 
 type PlanBucket = 'kaiser' | 'health_net' | 'other';
 type PlanScope = 'all' | 'kaiser' | 'health_net';
@@ -158,7 +161,7 @@ export default function H2022ClaimCheckerPage() {
     'all' | 'ending_soon' | 'ended' | 'missing' | 'rcfe_missing'
   >('all');
   const [requestedFilter, setRequestedFilter] = useState<'all' | 'requested' | 'not_requested'>('all');
-  const [onHoldFilter, setOnHoldFilter] = useState<'all' | 'on_hold' | 'not_on_hold'>('all');
+  const [onHoldFilter, setOnHoldFilter] = useState<KaiserStatusFilter>('hide_nonactive');
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('h2022_end');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -167,6 +170,8 @@ export default function H2022ClaimCheckerPage() {
   const [rcfeLookupPulledAt, setRcfeLookupPulledAt] = useState<string | null>(null);
   const [rcfeLookupSortBy, setRcfeLookupSortBy] = useState<RcfeLookupSortKey>('member');
   const [rcfeLookupSortDirection, setRcfeLookupSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [rcfeLookupKaiserStatusFilter, setRcfeLookupKaiserStatusFilter] =
+    useState<KaiserStatusFilter>('hide_nonactive');
   const tableTopScrollRef = useRef<HTMLDivElement | null>(null);
   const tableBodyScrollRef = useRef<HTMLDivElement | null>(null);
   const tableElRef = useRef<HTMLTableElement | null>(null);
@@ -203,8 +208,21 @@ export default function H2022ClaimCheckerPage() {
     setRcfeLookupSortDirection('asc');
   };
 
+  const matchesKaiserStatusFilter = (row: MemberH2022Row, filter: KaiserStatusFilter) => {
+    const nonActive = isKaiserInactiveStatus(row.kaiserStatus);
+    const onHold = isKaiserOnHoldRow(row);
+    if (filter === 'hide_nonactive') return !nonActive;
+    if (filter === 'nonactive_only') return nonActive;
+    if (filter === 'on_hold') return onHold;
+    if (filter === 'not_on_hold') return !onHold;
+    return true;
+  };
+
   const displayedRcfeLookupRows = useMemo(() => {
-    const sorted = [...rcfeLookupRows].sort((a, b) => {
+    const filtered = rcfeLookupRows.filter((row) =>
+      matchesKaiserStatusFilter(row, rcfeLookupKaiserStatusFilter)
+    );
+    const sorted = [...filtered].sort((a, b) => {
       let cmp = 0;
       if (rcfeLookupSortBy === 'member') {
         cmp = a.memberLast.localeCompare(b.memberLast) || a.memberFirst.localeCompare(b.memberFirst);
@@ -231,7 +249,12 @@ export default function H2022ClaimCheckerPage() {
       return rcfeLookupSortDirection === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [rcfeLookupRows, rcfeLookupSortBy, rcfeLookupSortDirection]);
+  }, [rcfeLookupRows, rcfeLookupKaiserStatusFilter, rcfeLookupSortBy, rcfeLookupSortDirection]);
+
+  const rcfeLookupHiddenNonActiveCount = useMemo(() => {
+    if (rcfeLookupKaiserStatusFilter !== 'hide_nonactive') return 0;
+    return rcfeLookupRows.filter((row) => isKaiserInactiveStatus(row.kaiserStatus)).length;
+  }, [rcfeLookupRows, rcfeLookupKaiserStatusFilter]);
 
   const displayedRows = useMemo(() => {
     const q = memberSearchQuery.trim().toLowerCase();
@@ -254,9 +277,7 @@ export default function H2022ClaimCheckerPage() {
       const hasRequested = Boolean(row.kaiserH2022RequestedDate || row.kaiserH2022Requested);
       if (requestedFilter === 'requested' && !hasRequested) return false;
       if (requestedFilter === 'not_requested' && hasRequested) return false;
-      const onHold = isKaiserOnHoldRow(row);
-      if (onHoldFilter === 'on_hold' && !onHold) return false;
-      if (onHoldFilter === 'not_on_hold' && onHold) return false;
+      if (row.plan === 'kaiser' && !matchesKaiserStatusFilter(row, onHoldFilter)) return false;
       if (q) {
         const last = String(row.memberLast || '').toLowerCase();
         const first = String(row.memberFirst || '').toLowerCase();
@@ -483,7 +504,7 @@ export default function H2022ClaimCheckerPage() {
       setPlanFilter(pullPlanScope);
       setEndFilter('all');
       setRequestedFilter('all');
-      setOnHoldFilter('all');
+      setOnHoldFilter('hide_nonactive');
 
       const scopeLabel =
         pullPlanScope === 'kaiser' ? 'Kaiser' : pullPlanScope === 'health_net' ? 'Health Net' : 'Kaiser + Health Net';
@@ -536,10 +557,16 @@ export default function H2022ClaimCheckerPage() {
       const nextRows = Array.isArray(data.rows) ? data.rows : [];
       setRcfeLookupRows(nextRows);
       setRcfeLookupPulledAt(data.pulledAt || new Date().toISOString());
+      setRcfeLookupKaiserStatusFilter('hide_nonactive');
 
+      const nonActiveCount = nextRows.filter((row) => isKaiserInactiveStatus(row.kaiserStatus)).length;
       toast({
         title: 'Kaiser RCFE · no H2022 dates',
-        description: `Found ${data.summary?.total ?? nextRows.length} Kaiser member(s) with RCFE_Name but missing H2022 dates.`,
+        description: `Found ${data.summary?.total ?? nextRows.length} Kaiser member(s) with RCFE_Name but missing H2022 dates${
+          nonActiveCount
+            ? ` · ${nonActiveCount} Non-active hidden by default`
+            : ''
+        }.`,
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unable to look up RCFE members.';
@@ -727,19 +754,41 @@ export default function H2022ClaimCheckerPage() {
               )}
               Look up Kaiser RCFE · no H2022 dates
             </Button>
+            {rcfeLookupRows.length > 0 ? (
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground">Kaiser Status</div>
+                <select
+                  value={rcfeLookupKaiserStatusFilter}
+                  onChange={(e) =>
+                    setRcfeLookupKaiserStatusFilter(e.target.value as KaiserStatusFilter)
+                  }
+                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                >
+                  <option value="hide_nonactive">Hide Non-active (default)</option>
+                  <option value="all">All statuses</option>
+                  <option value="on_hold">On Hold</option>
+                  <option value="not_on_hold">Not On Hold</option>
+                  <option value="nonactive_only">Non-active only</option>
+                </select>
+              </div>
+            ) : null}
           </div>
           {rcfeLookupPulledAt ? (
             <div className="text-xs text-muted-foreground">
               Last lookup: {new Date(rcfeLookupPulledAt).toLocaleString()} · {rcfeLookupRows.length} Kaiser
               member(s)
+              {rcfeLookupHiddenNonActiveCount > 0
+                ? ` · ${rcfeLookupHiddenNonActiveCount} Non-active hidden`
+                : ''}
             </div>
           ) : (
             <div className="text-xs text-muted-foreground">
-              Runs a separate Kaiser Caspio query (does not replace the main H2022 Status pull above).
+              Runs a separate Kaiser Caspio query (does not replace the main H2022 Status pull above). Non-active
+              Kaiser_Status is hidden by default.
             </div>
           )}
 
-          {rcfeLookupRows.length > 0 ? (
+          {displayedRcfeLookupRows.length > 0 ? (
             <div className="space-y-2">
               <div className="text-xs text-muted-foreground">
                 {displayedRcfeLookupRows.length} shown · click column headers to sort
@@ -823,6 +872,10 @@ export default function H2022ClaimCheckerPage() {
                 </table>
               </div>
             </div>
+          ) : rcfeLookupRows.length > 0 ? (
+            <div className="text-sm text-muted-foreground py-4 text-center border rounded-md">
+              No members match the Kaiser Status filter. Try All statuses or Non-active only.
+            </div>
           ) : rcfeLookupPulledAt ? (
             <div className="text-sm text-muted-foreground py-4 text-center border rounded-md">
               No Kaiser members found with RCFE_Name and missing H2022 dates.
@@ -838,7 +891,7 @@ export default function H2022ClaimCheckerPage() {
               planFilter === 'all' &&
               endFilter === 'all' &&
               requestedFilter === 'all' &&
-              onHoldFilter === 'all'
+              onHoldFilter === 'hide_nonactive'
                 ? 'ring-2 ring-primary'
                 : 'hover:bg-muted/40'
             }`}
@@ -846,7 +899,7 @@ export default function H2022ClaimCheckerPage() {
               setPlanFilter('all');
               setEndFilter('all');
               setRequestedFilter('all');
-              setOnHoldFilter('all');
+              setOnHoldFilter('hide_nonactive');
             }}
           >
             <CardHeader className="pb-2">
@@ -1018,12 +1071,14 @@ export default function H2022ClaimCheckerPage() {
               <div className="text-xs text-muted-foreground">Kaiser Status</div>
               <select
                 value={onHoldFilter}
-                onChange={(e) => setOnHoldFilter(e.target.value as 'all' | 'on_hold' | 'not_on_hold')}
+                onChange={(e) => setOnHoldFilter(e.target.value as KaiserStatusFilter)}
                 className="h-9 rounded-md border bg-background px-3 text-sm"
               >
-                <option value="all">All</option>
+                <option value="hide_nonactive">Hide Non-active (default)</option>
+                <option value="all">All statuses</option>
                 <option value="on_hold">On Hold</option>
                 <option value="not_on_hold">Not On Hold</option>
+                <option value="nonactive_only">Non-active only</option>
               </select>
             </div>
             <div className="space-y-1">
