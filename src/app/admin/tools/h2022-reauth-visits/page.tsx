@@ -2,9 +2,10 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { Download, Loader2, Play, RefreshCw } from 'lucide-react';
+import { Download, Loader2, MessageSquare, Play, RefreshCw } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -26,6 +27,8 @@ import {
   type H2022ReauthVisitSummary,
   type ReauthAuthStatus,
 } from '@/lib/h2022-reauth-visits';
+import { MemberNotesModal } from '@/app/admin/kaiser-tracker/components/MemberNotesModal';
+import type { KaiserMember } from '@/app/admin/kaiser-tracker/components/shared';
 
 type FilterKey =
   | 'placed_all'
@@ -59,6 +62,40 @@ function formatDateCell(value: string) {
   return format(parsed, 'MMM d, yyyy');
 }
 
+function rowToKaiserMember(row: H2022ReauthVisitRow): KaiserMember {
+  return {
+    id: row.clientId2 || row.id,
+    memberFirstName: row.memberFirstName || '',
+    memberLastName: row.memberLastName || '',
+    memberMrn: row.mrn || row.mediCal || '',
+    memberCounty: row.county || '',
+    memberPhone: '',
+    memberEmail: '',
+    client_ID2: row.clientId2 || '',
+    pathway: '',
+    Kaiser_Status: '',
+    CalAIM_Status: row.calaimStatus || '',
+    Staff_Assigned: '',
+    Next_Step_Due_Date: '',
+    Kaiser_Next_Step_Date: '',
+    workflow_step: '',
+    workflow_notes: '',
+    last_updated: '',
+    created_at: '',
+  } as KaiserMember;
+}
+
+const EMPTY_NOTES_MODAL = {
+  isOpen: false,
+  member: null as KaiserMember | null,
+  notes: [] as any[],
+  isLoadingNotes: false,
+  lastSyncAt: '',
+  existingNotesCount: 0,
+  newNotesCount: 0,
+  didSync: false,
+};
+
 const EMPTY_SUMMARY: H2022ReauthVisitSummary = {
   withRcfe: 0,
   authorized: 0,
@@ -75,6 +112,7 @@ const EMPTY_SUMMARY: H2022ReauthVisitSummary = {
 export default function H2022ReauthVisitsPage() {
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const auth = useAuth();
+  const { toast } = useToast();
   const [rows, setRows] = useState<H2022ReauthVisitRow[]>([]);
   const [summary, setSummary] = useState<H2022ReauthVisitSummary>(EMPTY_SUMMARY);
   const [isLoading, setIsLoading] = useState(false);
@@ -85,6 +123,7 @@ export default function H2022ReauthVisitsPage() {
   const [filter, setFilter] = useState<FilterKey>('placed_all');
   const [authorizedOnly, setAuthorizedOnly] = useState(true);
   const [search, setSearch] = useState('');
+  const [memberNotesModal, setMemberNotesModal] = useState(EMPTY_NOTES_MODAL);
 
   const placedCount = useMemo(() => {
     if (!authorizedOnly) return summary.withRcfe;
@@ -180,6 +219,95 @@ export default function H2022ReauthVisitsPage() {
     a.download = `H2022-reauth-visits-Kaiser-${format(new Date(), 'yyyyMMdd')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const openMemberNotes = async (row: H2022ReauthVisitRow) => {
+    const clientId2 = String(row.clientId2 || '').trim();
+    if (!clientId2) {
+      toast({
+        title: 'No Client_ID2',
+        description: 'This row has no Client_ID2, so member notes cannot be opened.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const member = rowToKaiserMember(row);
+    setMemberNotesModal({
+      ...EMPTY_NOTES_MODAL,
+      isOpen: true,
+      member,
+      isLoadingNotes: true,
+    });
+    try {
+      const response = await fetch(
+        `/api/member-notes?clientId2=${encodeURIComponent(clientId2)}&skipSync=true`,
+        { cache: 'no-store' }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        throw new Error(String(data?.error || `Failed to load notes (HTTP ${response.status})`));
+      }
+      setMemberNotesModal((prev) => ({
+        ...prev,
+        notes: Array.isArray(data.notes) ? data.notes : [],
+        isLoadingNotes: false,
+        lastSyncAt: String(data?.syncLastAt || ''),
+        existingNotesCount: Number(data?.existingNotesCount || data?.notes?.length || 0),
+        newNotesCount: Number(data?.newNotesCount || 0),
+        didSync: false,
+      }));
+    } catch (err: any) {
+      toast({
+        title: 'Could not load notes',
+        description: String(err?.message || 'Failed to load member notes'),
+        variant: 'destructive',
+      });
+      setMemberNotesModal((prev) => ({
+        ...prev,
+        notes: [],
+        isLoadingNotes: false,
+      }));
+    }
+  };
+
+  const syncMemberNotes = async () => {
+    const member = memberNotesModal.member;
+    if (!member) return;
+    const clientId2 = String(member.client_ID2 || '').trim();
+    if (!clientId2) return;
+    setMemberNotesModal((prev) => ({ ...prev, isLoadingNotes: true }));
+    try {
+      const response = await fetch(
+        `/api/member-notes?clientId2=${encodeURIComponent(clientId2)}&forceSync=false&skipSync=false&repairIfEmpty=true`,
+        { cache: 'no-store' }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        throw new Error(String(data?.error || 'Failed to sync notes'));
+      }
+      setMemberNotesModal((prev) => ({
+        ...prev,
+        notes: Array.isArray(data.notes) ? data.notes : [],
+        isLoadingNotes: false,
+        lastSyncAt: String(data?.syncLastAt || ''),
+        existingNotesCount: Number(data?.existingNotesCount || 0),
+        newNotesCount: Number(data?.newNotesCount || 0),
+        didSync: true,
+      }));
+      toast({
+        title: 'Notes sync complete',
+        description: `${data?.existingNotesCount || 0} existing + ${data?.newNotesCount || 0} new notes for ${
+          member.memberFirstName
+        } ${member.memberLastName}`,
+      });
+    } catch (err: any) {
+      setMemberNotesModal((prev) => ({ ...prev, isLoadingNotes: false }));
+      toast({
+        title: 'Sync failed',
+        description: String(err?.message || 'Could not refresh member notes.'),
+        variant: 'destructive',
+      });
+    }
   };
 
   if (isAdminLoading) {
@@ -448,13 +576,21 @@ export default function H2022ReauthVisitsPage() {
                   <TableHead>T2038</TableHead>
                   <TableHead>H2022</TableHead>
                   <TableHead>Payment</TableHead>
+                  <TableHead className="w-[1%] whitespace-nowrap">Notes</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {visibleRows.map((row) => (
                   <TableRow key={row.id} className={cn(row.likelyReauthDone && 'bg-amber-50/40')}>
                     <TableCell className="align-top">
-                      <div className="font-medium">{row.memberName}</div>
+                      <button
+                        type="button"
+                        className="text-left font-medium text-sky-800 underline-offset-2 hover:underline"
+                        onClick={() => void openMemberNotes(row)}
+                        title="View member notes"
+                      >
+                        {row.memberName}
+                      </button>
                       <div className="text-xs text-muted-foreground">
                         {row.mrn ? `MRN ${row.mrn}` : row.mediCal ? `CIN ${row.mediCal}` : row.clientId2}
                         {row.calaimStatus ? ` · ${row.calaimStatus}` : ''}
@@ -495,6 +631,20 @@ export default function H2022ReauthVisitsPage() {
                         <Badge variant="outline">T2038 ended · no H2022 dates</Badge>
                       )}
                     </TableCell>
+                    <TableCell className="align-top">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 gap-1.5"
+                        disabled={!String(row.clientId2 || '').trim()}
+                        onClick={() => void openMemberNotes(row)}
+                        title="View member notes (same as Kaiser Tracker)"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Notes
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -502,6 +652,19 @@ export default function H2022ReauthVisitsPage() {
           )}
         </CardContent>
       </Card>
+
+      <MemberNotesModal
+        isOpen={memberNotesModal.isOpen}
+        onClose={() => setMemberNotesModal(EMPTY_NOTES_MODAL)}
+        member={memberNotesModal.member}
+        notes={memberNotesModal.notes}
+        isLoadingNotes={memberNotesModal.isLoadingNotes}
+        lastSyncAt={memberNotesModal.lastSyncAt}
+        existingNotesCount={memberNotesModal.existingNotesCount}
+        newNotesCount={memberNotesModal.newNotesCount}
+        didSync={memberNotesModal.didSync}
+        onSyncNotes={() => void syncMemberNotes()}
+      />
     </div>
   );
 }
