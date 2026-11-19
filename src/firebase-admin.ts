@@ -84,6 +84,8 @@ if (!admin.apps.length) {
     const projectId =
       String(firebaseConfig.projectId || process.env.FIREBASE_PROJECT_ID || 'studio-2881432245-f1d94');
     const storageBucket = resolveDefaultStorageBucket(firebaseConfig);
+    const databaseURL =
+      String(firebaseConfig.databaseURL || process.env.FIREBASE_DATABASE_URL || '').trim() || undefined;
     
     logInfo('🔧 Project ID:', projectId);
     logInfo('🔧 Storage bucket:', storageBucket);
@@ -91,7 +93,7 @@ if (!admin.apps.length) {
     admin.initializeApp({
       credential: credential,
       projectId: projectId,
-      databaseURL: firebaseConfig.databaseURL || process.env.FIREBASE_DATABASE_URL,
+      databaseURL,
       storageBucket,
     });
     
