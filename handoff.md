@@ -1,10 +1,16 @@
 # Handoff — CalAIM Application Tracker
 
-**Date:** 2026-10-13 (previous handoff 2026-10-12)  
+**Date:** 2026-11-19  
 **Branch:** `main` (synced with `origin/main` at handoff)  
-**Latest commits:** see “Changes 2026-10-13” below, then “Changes 2026-10-12”, “Changes 2026-10-11”, “Changes 2026-10-09”, “Changes 2026-10-08”, “Changes 2026-10-06”, “Changes 2026-10-02”  
+**HEAD:** `057abbb2` (handoff record for `179ba6d4`)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
+
+### New-chat priority (2026-11-19)
+1. **Confirm App Hosting rollout succeeds** for `179ba6d4` / `057abbb2` (previous rollouts were “Build failed” on `databaseURL` type error — fixed; local `npm run build` passed).
+2. **After web deploy live:** retest staff Kaiser cover sheet download (Paula Davis case) and See Files → CS Summary / Waivers download.
+3. **Optional:** `cd functions && npm run build && npm run deploy` for ERA parser bucket hardening (not required for cover sheet / See Files).
+4. Do **not** use SFTP To Go / AWS for this app — files are Firebase Storage; documented backups are Firestore → GCS.
 
 ---
 
