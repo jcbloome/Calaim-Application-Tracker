@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminStorage } from '@/firebase-admin';
+import { getAdminBucket } from '@/firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import {
   BATCH_ELIGIBILITY_RUNS_COLLECTION,
@@ -29,7 +29,7 @@ async function withCorrectedMcp(
   const file = run.files?.[0];
   if (!file?.storagePath) return run;
   try {
-    const [bytes] = await adminStorage.bucket().file(file.storagePath).download({ start: 0, end: 200_000 });
+    const [bytes] = await getAdminBucket().file(file.storagePath).download({ start: 0, end: 200_000 });
     const detected = inferBatchEligibilityPlanFromEdiText(bytes.toString('utf8'));
     if (!detected) return run;
     const summary = { ...(run.summary || {}), detectedPlan: detected, mcp: detected };
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
     }
 
     const docRef = adminCheck.adminDb.collection(BATCH_ELIGIBILITY_RUNS_COLLECTION).doc();
-    const bucket = adminStorage.bucket();
+    const bucket = getAdminBucket();
     const savedFiles: BatchEligibilityRun['files'] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];

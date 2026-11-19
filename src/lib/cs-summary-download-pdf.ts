@@ -7,13 +7,23 @@ export type CsSummaryPdfSection = {
   rows?: Array<{ label?: string; value?: string }>;
 };
 
+/** Helvetica/WinAnsi cannot encode bullets/smart punctuation — strip before drawText. */
+const pdfSafeText = (value: unknown) =>
+  String(value ?? '')
+    .replace(/\u2022/g, '-')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/[^\x20-\x7E\n\r\t]/g, '?')
+    .trim();
+
 const wrapTextToWidth = (
   text: string,
   maxWidth: number,
   font: WidthMeasuringFont,
   fontSize: number
 ): string[] => {
-  const normalized = String(text || '').trim();
+  const normalized = pdfSafeText(text);
   if (!normalized) return [''];
   const words = normalized.split(/\s+/);
   const lines: string[] = [];
@@ -45,7 +55,7 @@ export async function buildCsSummaryPdfFromRows(
   const marginX = 42;
   const lineHeight = 18;
 
-  page.drawText(title, { x: marginX, y, size: 16, font: boldFont });
+  page.drawText(pdfSafeText(title) || 'CS Member Summary', { x: marginX, y, size: 16, font: boldFont });
   y -= 28;
   page.drawText('Generated from application data for download package.', {
     x: marginX,
@@ -57,8 +67,8 @@ export async function buildCsSummaryPdfFromRows(
 
   const normalizedRows = rows
     .map((row) => ({
-      label: String(row?.label || '').trim(),
-      value: String(row?.value || '').trim(),
+      label: pdfSafeText(row?.label),
+      value: pdfSafeText(row?.value),
     }))
     .filter((row) => row.label && row.value);
 
@@ -102,22 +112,24 @@ export async function buildCsSummaryPdfFromSections(
       value: String(row?.value || '').trim(),
     }));
   const memberRows = getSectionRows('Member');
-  const memberName = memberRows.find((row) => row.label === 'Member Name')?.value || 'Unknown member';
-  const memberMrn = memberRows.find((row) => row.label === 'MRN')?.value || 'Unknown MRN';
+  const memberName =
+    pdfSafeText(memberRows.find((row) => row.label === 'Member Name')?.value) || 'Unknown member';
+  const memberMrn = pdfSafeText(memberRows.find((row) => row.label === 'MRN')?.value) || 'Unknown MRN';
+  const safeTitle = pdfSafeText(title) || 'CS Member Summary (Filled Printable)';
 
   let page = pdfDoc.addPage(pageSize);
   let y = topY;
 
   const drawPageHeader = (targetPage: (typeof page)) => {
-    targetPage.drawText(title, { x: marginX, y: 762, size: 11, font: boldFont });
-    targetPage.drawText(`Member: ${memberName}  •  MRN: ${memberMrn}`, {
+    targetPage.drawText(safeTitle, { x: marginX, y: 762, size: 11, font: boldFont });
+    targetPage.drawText(`Member: ${memberName}  |  MRN: ${memberMrn}`, {
       x: marginX,
       y: 748,
       size: 9,
       font,
       color: rgb(0.35, 0.35, 0.35),
     });
-    targetPage.drawText(`Generated: ${generatedAt}`, {
+    targetPage.drawText(`Generated: ${pdfSafeText(generatedAt)}`, {
       x: pageSize[0] - marginX - 180,
       y: 748,
       size: 9,
@@ -140,7 +152,7 @@ export async function buildCsSummaryPdfFromSections(
   };
 
   drawPageHeader(page);
-  page.drawText(title, { x: marginX, y, size: 16, font: boldFont });
+  page.drawText(safeTitle, { x: marginX, y, size: 16, font: boldFont });
   y -= 24;
   page.drawText('Generated from application data for download package.', {
     x: marginX,
@@ -152,12 +164,12 @@ export async function buildCsSummaryPdfFromSections(
   y -= 22;
 
   for (const section of sections) {
-    const sectionTitle = String(section?.title || '').trim();
+    const sectionTitle = pdfSafeText(section?.title);
     const rows = Array.isArray(section?.rows) ? section.rows : [];
     const normalizedRows = rows
       .map((row) => ({
-        label: String(row?.label || '').trim(),
-        value: String(row?.value || '').trim(),
+        label: pdfSafeText(row?.label),
+        value: pdfSafeText(row?.value),
       }))
       .filter((row) => row.label && row.value);
     if (!normalizedRows.length) continue;

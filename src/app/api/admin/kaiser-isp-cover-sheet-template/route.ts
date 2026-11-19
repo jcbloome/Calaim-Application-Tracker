@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
-import { adminStorage } from '@/firebase-admin';
+import { getAdminBucket } from '@/firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import {
   KAISER_COVER_TEMPLATE_SETTINGS_DOC,
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
     const uploadedAtIso = new Date().toISOString();
     const safeName = fileName.replace(/[^\w.\-()+ ]+/g, '_').slice(0, 160);
     const storagePath = `templates/kaiser-isp-cover-sheet/${Date.now()}-${safeName}`;
-    await adminStorage.bucket().file(storagePath).save(bytes, {
+    await getAdminBucket().file(storagePath).save(bytes, {
       resumable: false,
       contentType: 'application/pdf',
       metadata: {

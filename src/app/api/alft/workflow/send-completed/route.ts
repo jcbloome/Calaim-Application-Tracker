@@ -21,7 +21,6 @@ export async function POST(req: NextRequest) {
     const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;
     const adminDb = adminModule.adminDb;
-    const adminStorage = adminModule.adminStorage;
 
     const decoded = await admin.auth().verifyIdToken(idToken);
     const uid = clean(decoded?.uid, 128);
@@ -83,7 +82,8 @@ export async function POST(req: NextRequest) {
       const requestData = requestSnap.exists ? requestSnap.data() : null;
       const signaturePath = clean(requestData?.outputs?.signaturePagePdfStoragePath, 1000);
       const packetPath = clean(requestData?.outputs?.packetPdfStoragePath, 1000);
-      const bucket = adminStorage.bucket();
+      const { getAdminBucket } = adminModule;
+      const bucket = getAdminBucket();
       const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
       if (signaturePath) {
         try {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { adminStorage } from '@/firebase-admin';
+import { getAdminBucket } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const downloadName = sanitizeFileComponent(clean(logData.downloadName));
     const memberName = sanitizeFileComponent(clean(logData.memberName) || 'Member');
     const fileName = `${downloadName || `${memberName || 'Member'} - Kaiser Cover Sheet (Archived)`}.pdf`;
-    const storageFile = adminStorage.bucket().file(archivedStoragePath);
+    const storageFile = getAdminBucket().file(archivedStoragePath);
     const [exists] = await storageFile.exists();
     if (!exists) {
       return NextResponse.json(

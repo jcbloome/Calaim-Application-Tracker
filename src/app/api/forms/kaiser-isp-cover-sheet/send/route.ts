@@ -3,7 +3,7 @@ import { Resend } from 'resend';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { getKaiserRegionFromCounty } from '@/lib/kaiser-region';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
-import { adminStorage } from '@/firebase-admin';
+import { getAdminBucket } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
       const clientSegment = sanitizePathComponent(memberClientId || applicationId || 'standalone');
       const nameSegment = sanitizePathComponent(resolvedFileName) || 'kaiser-cover-sheet.pdf';
       pdfStoragePath = `kaiser-cover-sheets/${clientSegment}/${memberSegment}/${ts}-${nameSegment}`;
-      const bucket = adminStorage.bucket();
+      const bucket = getAdminBucket();
       await bucket.file(pdfStoragePath).save(pdfBuffer, {
         resumable: false,
         contentType: 'application/pdf',

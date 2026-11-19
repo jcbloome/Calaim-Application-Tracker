@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import admin, { adminDb, adminStorage } from '@/firebase-admin';
+import admin, { adminDb, getAdminBucket } from '@/firebase-admin';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
 import { addAndMirror } from '@/lib/global-change-log-server';
 import { mapEmailLog } from '@/lib/global-change-log-mappers';
@@ -378,7 +378,7 @@ export async function POST(request: NextRequest) {
       const memberSegment = sanitizePathComponent(memberName || 'member');
       const nameSegment = sanitizePathComponent(resolvedAttachmentName) || 'kaiser-referral.pdf';
       pdfStoragePath = `kaiser-referrals/${appSegment}/${memberSegment}/${ts}-${nameSegment}`;
-      const bucket = adminStorage.bucket();
+      const bucket = getAdminBucket();
       await bucket.file(pdfStoragePath).save(pdfBuffer, {
         resumable: false,
         contentType: 'application/pdf',

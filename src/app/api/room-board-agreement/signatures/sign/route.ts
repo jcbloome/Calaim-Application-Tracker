@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { adminAuth, adminDb, adminStorage, default as admin } from '@/firebase-admin';
+import { adminAuth, adminDb, getAdminBucket, default as admin } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
 
     const signatureBytes = parsePngDataUrl(signaturePngDataUrl);
     const storagePath = `room_board_agreements/${requestId}/${role}-signature-${Date.now()}.png`;
-    const bucket = adminStorage.bucket();
+    const bucket = getAdminBucket();
     const file = bucket.file(storagePath);
     await file.save(signatureBytes, {
       metadata: { contentType: 'image/png', cacheControl: 'private, max-age=0, no-cache' },

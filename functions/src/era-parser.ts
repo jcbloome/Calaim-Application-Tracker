@@ -709,7 +709,12 @@ export const parseEraPdfFromStorage = onCall(
       throw new HttpsError("invalid-argument", "fullPath must be under era_parser_uploads/.");
     }
 
-    const bucket = admin.storage().bucket();
+    // Always pass an explicit bucket — bare bucket() throws if Admin init omitted storageBucket.
+    const bucketName =
+      String(process.env.FIREBASE_STORAGE_BUCKET || process.env.GCLOUD_STORAGE_BUCKET || "")
+        .trim()
+        .replace(/^gs:\/\//i, "") || "studio-2881432245-f1d94.firebasestorage.app";
+    const bucket = admin.storage().bucket(bucketName);
     const file = bucket.file(fullPath);
     const [buf] = await file.download();
 

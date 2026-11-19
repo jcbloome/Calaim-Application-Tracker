@@ -654,8 +654,8 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
       let bytes: Buffer | null = null;
       if (formPath) {
         try {
-          const { getStorage } = await import('firebase-admin/storage');
-          const [fileBytes] = await getStorage().bucket().file(formPath).download();
+          const { getAdminBucket } = await import('@/firebase-admin');
+          const [fileBytes] = await getAdminBucket().file(formPath).download();
           if (fileBytes?.length) bytes = Buffer.from(fileBytes);
         } catch (storageError) {
           console.warn('Could not load Service Request Form from Storage path:', storageError);

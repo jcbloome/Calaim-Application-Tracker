@@ -1,8 +1,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { getStorage } from 'firebase-admin/storage';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { adminDb } from '@/firebase-admin';
+import { adminDb, getAdminBucket } from '@/firebase-admin';
 import {
   type CoverSheetPackageDocKey,
   COVER_SHEET_PACKAGE_ALWAYS_REQUIRED,
@@ -73,7 +72,7 @@ export async function POST(req: NextRequest) {
     const downloadToken = randomUUID();
     const contentType = clean(file.type, 120) || 'application/octet-stream';
     const bytes = Buffer.from(await file.arrayBuffer());
-    const bucket = getStorage().bucket();
+    const bucket = getAdminBucket();
     await bucket.file(storagePath).save(bytes, {
       resumable: false,
       contentType,

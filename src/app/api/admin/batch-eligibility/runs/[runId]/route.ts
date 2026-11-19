@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminStorage } from '@/firebase-admin';
+import { getAdminBucket } from '@/firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { BATCH_ELIGIBILITY_RUNS_COLLECTION, type BatchEligibilityRun } from '@/lib/batch-eligibility';
 
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ runI
 
     const file = run.files?.[Number(fileParam)];
     if (!file) return NextResponse.json({ success: false, error: 'File not found' }, { status: 404 });
-    const [bytes] = await adminStorage.bucket().file(file.storagePath).download();
+    const [bytes] = await getAdminBucket().file(file.storagePath).download();
     return new NextResponse(new Uint8Array(bytes), {
       headers: {
         'Content-Type': file.name.toLowerCase().endsWith('.csv') ? 'text/csv; charset=utf-8' : 'text/plain; charset=utf-8',

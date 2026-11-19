@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import { getStorage } from 'firebase-admin/storage';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { adminDb } from '@/firebase-admin';
+import { adminDb, getAdminBucket } from '@/firebase-admin';
 import {
   ALFT_COVER_SHEET_PACKAGE_SEND_LOGS_COLLECTION,
   ALFT_COVER_SHEET_PACKAGE_TO,
@@ -45,7 +44,7 @@ async function loadAttachmentBytes(file: CoverSheetPackageFile): Promise<Buffer 
   const path = clean(file.storagePath, 900);
   if (path) {
     try {
-      const [bytes] = await getStorage().bucket().file(path).download();
+      const [bytes] = await getAdminBucket().file(path).download();
       if (bytes?.length) return Buffer.from(bytes);
     } catch {
       // fall through to URL

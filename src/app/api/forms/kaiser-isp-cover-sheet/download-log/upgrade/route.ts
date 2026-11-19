@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { adminStorage } from '@/firebase-admin';
+import { getAdminBucket } from '@/firebase-admin';
 import { upgradeKaiserCoverSheetPdf } from '@/lib/kaiser-cover-sheet-upgrade';
 import { formatCoverSheetMoney, parseMoneyAmount } from '@/lib/kaiser-cover-sheet-tier-rates';
 
@@ -193,7 +193,7 @@ export async function POST(req: NextRequest) {
       stillZero?: boolean;
     }> = [];
 
-    const bucket = adminStorage.bucket();
+    const bucket = getAdminBucket();
     const upgradedAt = new Date().toISOString();
     const upgradedBy = clean(authCheck.name) || clean(authCheck.email).toLowerCase();
     const roomBoardCache = new Map<string, string>();

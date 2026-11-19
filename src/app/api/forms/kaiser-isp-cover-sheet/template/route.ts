@@ -13,7 +13,7 @@ import {
   rotateInPlace,
 } from 'pdf-lib';
 import path from 'path';
-import { adminDb, adminStorage } from '@/firebase-admin';
+import { adminDb, getAdminBucket } from '@/firebase-admin';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
 import {
   buildKaiserMaxExpenseCalculateScript,
@@ -160,7 +160,7 @@ async function archiveDownloadedPdf(params: {
   coverPageType: string;
   downloadLogId: string;
 }) {
-  const bucket = adminStorage.bucket();
+  const bucket = getAdminBucket();
   const now = new Date();
   const yyyy = String(now.getFullYear());
   const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -199,7 +199,7 @@ async function loadActiveUploadedTemplate() {
       .get();
     const storagePath = clean(String(settingsSnap.data()?.activeStoragePath || ''));
     if (!storagePath) return null;
-    const [bytes] = await adminStorage.bucket().file(storagePath).download();
+    const [bytes] = await getAdminBucket().file(storagePath).download();
     return bytes?.length ? { buffer: bytes, source: `uploaded:${storagePath}` } : null;
   } catch (error) {
     console.warn('[kaiser-isp-cover-sheet/template] active uploaded template unavailable; using fallback', error);
@@ -1363,7 +1363,7 @@ export async function GET(req: NextRequest) {
         try {
           let downloadURL = '';
           try {
-            const [signedUrl] = await adminStorage.bucket().file(archivedPath).getSignedUrl({
+            const [signedUrl] = await getAdminBucket().file(archivedPath).getSignedUrl({
               action: 'read',
               expires: Date.now() + 1000 * 60 * 60 * 24 * 30,
             });

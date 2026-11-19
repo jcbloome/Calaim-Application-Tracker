@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import admin, { adminStorage } from '@/firebase-admin';
+import admin, { getAdminBucket } from '@/firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { addAndMirror } from '@/lib/global-change-log-server';
 import { mapEmailLog } from '@/lib/global-change-log-mappers';
@@ -275,7 +275,7 @@ async function buildCandidates(adminDb: any) {
 
 async function listCoverSheetsToReview() {
   try {
-    const bucket = adminStorage.bucket();
+    const bucket = getAdminBucket();
     const [files] = await bucket.getFiles({ prefix: 'kaiser-cover-sheets/' });
     const inWindow = files.filter((file: any) => {
       const created = toMs(file?.metadata?.timeCreated);
@@ -346,7 +346,7 @@ export async function POST(request: NextRequest) {
 
   const adminDb = authz.adminDb;
   const resend = new Resend(resendKey);
-  const bucket = adminStorage.bucket();
+  const bucket = getAdminBucket();
   const staffEmail = clean(authz.email).toLowerCase();
   const staffName = clean(authz.name) || staffEmail || 'Connections staff';
   const toRecipients = [CORRECT_SOUTH_EMAIL];

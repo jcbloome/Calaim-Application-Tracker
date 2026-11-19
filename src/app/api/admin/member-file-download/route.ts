@@ -96,9 +96,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }
 
-    // Ensure Admin SDK (incl. storage bucket) is initialized before getStorage().
-    const { adminStorage } = await import('@/firebase-admin');
-
     const body = await request.json().catch(() => ({}));
     const entry = (body?.entry || {}) as DownloadEntry;
     const documentName = sanitizeName(String(entry?.documentName || '').trim(), 'file');
@@ -109,30 +106,25 @@ export async function POST(request: NextRequest) {
     const inlineRows = Array.isArray(entry?.inlineRows) ? entry.inlineRows : [];
     const inlineSections = Array.isArray(entry?.inlineSections) ? entry.inlineSections : [];
 
-    const defaultBucketName =
-      process.env.FIREBASE_STORAGE_BUCKET ||
-      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
-      'studio-2881432245-f1d94.firebasestorage.app';
-    const bucketCandidates = [
-      adminStorage.bucket(),
-      adminStorage.bucket(defaultBucketName),
-      adminStorage.bucket('studio-2881432245-f1d94.appspot.com'),
-    ];
-
     let fileBuffer: Buffer | null = null;
     let contentType = 'application/octet-stream';
 
+    // Generate inline PDFs first — do not touch Storage buckets (bucket() can throw
+    // when Admin was initialized without storageBucket, which broke CS Summary / Waivers).
     if (inlineMode === 'waivers-pdf' && inlineSections.length > 0) {
       fileBuffer = await buildWaiversFullTextPdf(waiversSignedInputFromSections(inlineSections));
       contentType = 'application/pdf';
     } else if (inlineMode === 'cs-summary-pdf' && inlineSections.length > 0) {
       fileBuffer = await buildCsSummaryPdfFromSections(
-        documentName || 'CS Member Summary',
+        documentName || 'CS Member Summary (Filled Printable)',
         inlineSections
       );
       contentType = 'application/pdf';
     } else if (inlineMode === 'cs-summary-pdf' && inlineRows.length > 0) {
-      fileBuffer = await buildCsSummaryPdfFromRows(documentName || 'CS Member Summary', inlineRows);
+      fileBuffer = await buildCsSummaryPdfFromRows(
+        documentName || 'CS Member Summary (Filled Printable)',
+        inlineRows
+      );
       contentType = 'application/pdf';
     }
 
@@ -140,18 +132,26 @@ export async function POST(request: NextRequest) {
       .map(normalizeStoragePath)
       .filter(Boolean);
 
-    for (const bucket of bucketCandidates) {
-      if (fileBuffer) break;
-      for (const normalized of candidatePaths) {
+    if (!fileBuffer && candidatePaths.length > 0) {
+      const { getAdminBucket } = await import('@/firebase-admin');
+      const bucketCandidates = [
+        getAdminBucket(),
+        getAdminBucket('studio-2881432245-f1d94.firebasestorage.app'),
+        getAdminBucket('studio-2881432245-f1d94.appspot.com'),
+      ];
+      for (const bucket of bucketCandidates) {
         if (fileBuffer) break;
-        try {
-          const [bytes] = await bucket.file(normalized).download();
-          fileBuffer = bytes;
-          const [meta] = await bucket.file(normalized).getMetadata().catch(() => [null as any]);
-          contentType = String(meta?.contentType || contentType);
-          break;
-        } catch {
-          // try next path / bucket
+        for (const normalized of candidatePaths) {
+          if (fileBuffer) break;
+          try {
+            const [bytes] = await bucket.file(normalized).download();
+            fileBuffer = bytes;
+            const [meta] = await bucket.file(normalized).getMetadata().catch(() => [null as any]);
+            contentType = String(meta?.contentType || contentType);
+            break;
+          } catch {
+            // try next path / bucket
+          }
         }
       }
     }

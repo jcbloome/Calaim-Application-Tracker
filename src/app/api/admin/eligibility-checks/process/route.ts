@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import * as admin from 'firebase-admin';
-import { getStorage } from 'firebase-admin/storage';
+import { getAdminBucket } from '@/firebase-admin';
 import { sendEligibilityCheckResultEmail } from '@/app/actions/send-email';
 
 // Initialize Firebase Admin if not already initialized
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     // Handle screenshot upload if provided
     if (screenshot) {
       try {
-        const bucket = getStorage().bucket();
+        const bucket = getAdminBucket();
         const fileName = `eligibility-screenshots/${checkId}-${Date.now()}-${screenshot.name}`;
         const file = bucket.file(fileName);
         

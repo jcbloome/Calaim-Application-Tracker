@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { adminDb, adminStorage } from '@/firebase-admin';
+import { adminDb, getAdminBucket } from '@/firebase-admin';
 import { addAndMirror } from '@/lib/global-change-log-server';
 import { mapCoverSheetLog } from '@/lib/global-change-log-mappers';
 
@@ -310,7 +310,7 @@ export async function DELETE(req: NextRequest) {
     const archivedStoragePath = clean(logData.archivedStoragePath);
     if (archivedStoragePath) {
       try {
-        await adminStorage.bucket().file(archivedStoragePath).delete({ ignoreNotFound: true });
+        await getAdminBucket().file(archivedStoragePath).delete({ ignoreNotFound: true });
       } catch {
         // best-effort file delete; keep metadata delete operation going
       }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import JSZip from 'jszip';
-import { getStorage } from 'firebase-admin/storage';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import { getAdminBucket } from '@/firebase-admin';
 import {
   buildCsSummaryPdfFromRows,
   buildCsSummaryPdfFromSections,
@@ -214,8 +214,6 @@ export async function POST(request: NextRequest) {
     const preparedEntries: Array<{ buffer: Buffer; baseName: string; documentName: string; mimeType: string }> =
       [];
 
-    const bucket = getStorage().bucket();
-
     for (const entry of entries) {
       const documentName = sanitizeName(String(entry?.documentName || '').trim() || 'file', 'file');
       const fileName = sanitizeName(String(entry?.fileName || '').trim() || documentName, documentName);
@@ -235,12 +233,15 @@ export async function POST(request: NextRequest) {
           mimeType = 'application/pdf';
         } else if (inlineMode === 'cs-summary-pdf' && inlineSections.length > 0) {
           buffer = await buildPdfFromSections(
-            documentName || 'CS Member Summary Printable',
+            documentName || 'CS Member Summary (Filled Printable)',
             inlineSections
           );
           mimeType = 'application/pdf';
         } else if (inlineMode === 'cs-summary-pdf' && inlineRows.length > 0) {
-          buffer = await buildPdfFromRows(documentName || 'CS Member Summary Printable', inlineRows);
+          buffer = await buildPdfFromRows(
+            documentName || 'CS Member Summary (Filled Printable)',
+            inlineRows
+          );
           mimeType = 'application/pdf';
         } else if (inlineContent) {
           buffer = Buffer.from(inlineContent, 'utf8');
@@ -249,16 +250,26 @@ export async function POST(request: NextRequest) {
 
         const candidates = [filePath, parseStoragePathFromDownloadUrl(downloadURL)].filter(Boolean);
 
-        for (const candidate of candidates) {
-          if (buffer) break;
-          try {
-            const [bytes] = await bucket.file(candidate).download();
-            buffer = bytes;
-            const [meta] = await bucket.file(candidate).getMetadata().catch(() => [null as any]);
-            mimeType = String(meta?.contentType || mimeType);
-            break;
-          } catch {
-            // continue
+        if (!buffer && candidates.length > 0) {
+          const bucketCandidates = [
+            getAdminBucket(),
+            getAdminBucket('studio-2881432245-f1d94.firebasestorage.app'),
+            getAdminBucket('studio-2881432245-f1d94.appspot.com'),
+          ];
+          for (const bucket of bucketCandidates) {
+            if (buffer) break;
+            for (const candidate of candidates) {
+              if (buffer) break;
+              try {
+                const [bytes] = await bucket.file(candidate).download();
+                buffer = bytes;
+                const [meta] = await bucket.file(candidate).getMetadata().catch(() => [null as any]);
+                mimeType = String(meta?.contentType || mimeType);
+                break;
+              } catch {
+                // continue
+              }
+            }
           }
         }
 

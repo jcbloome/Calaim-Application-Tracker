@@ -6556,7 +6556,11 @@ function ApplicationDetailPageContent() {
         document.body.removeChild(link);
         setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
       };
+      const inlineMode = String((entry as any).inlineMode || '').trim();
+      const isInlineGeneratedPdf =
+        inlineMode === 'cs-summary-pdf' || inlineMode === 'waivers-pdf';
       let downloaded = false;
+      let inlineApiError = '';
       try {
         const response = await fetch('/api/admin/member-file-download', {
           method: 'POST',
@@ -6573,9 +6577,11 @@ function ApplicationDetailPageContent() {
               downloadURL:
                 getEffectiveDownloadUrl(entry.downloadURL, entry.filePath) ||
                 String(entry.downloadURL || ''),
-              inlineMode: String((entry as any).inlineMode || ''),
+              inlineMode,
               inlineRows: Array.isArray((entry as any).inlineRows) ? (entry as any).inlineRows : [],
-              inlineSections: Array.isArray((entry as any).inlineSections) ? (entry as any).inlineSections : [],
+              inlineSections: Array.isArray((entry as any).inlineSections)
+                ? (entry as any).inlineSections
+                : [],
             },
           }),
         });
@@ -6593,10 +6599,21 @@ function ApplicationDetailPageContent() {
           downloaded = true;
         } else {
           const errorText = await response.text().catch(() => '');
-          console.warn('Server member-file-download failed; trying client fallback:', errorText);
+          try {
+            const payload = JSON.parse(errorText || '{}');
+            inlineApiError = String(payload?.error || errorText || `Download failed (${response.status})`);
+          } catch {
+            inlineApiError = String(errorText || `Download failed (${response.status})`);
+          }
+          console.warn('Server member-file-download failed; trying client fallback:', inlineApiError);
         }
-      } catch (apiError) {
+      } catch (apiError: any) {
+        inlineApiError = String(apiError?.message || apiError || 'Download request failed');
         console.warn('Server member-file-download error; trying client fallback:', apiError);
+      }
+      // Generated CS Summary / Waivers have no Storage URL — do not fall through to URL resolve.
+      if (!downloaded && isInlineGeneratedPdf) {
+        throw new Error(inlineApiError || 'Could not generate this printable PDF.');
       }
       if (!downloaded) {
         // Prefer Storage SDK blob for path-only pathway uploads (no public downloadURL).

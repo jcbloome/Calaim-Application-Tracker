@@ -32,8 +32,6 @@ export async function GET(req: NextRequest) {
     const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;
     const adminDb = adminModule.adminDb;
-    const adminStorage = adminModule.adminStorage;
-
     const decoded = await admin.auth().verifyIdToken(idToken);
     const uid = clean(decoded?.uid, 128);
     const email = clean(decoded?.email, 220).toLowerCase();
@@ -57,7 +55,7 @@ export async function GET(req: NextRequest) {
         : clean(data?.outputs?.packetPdfStoragePath, 900) || clean(data?.outputs?.signaturePagePdfStoragePath, 900);
     if (!path) return NextResponse.json({ success: false, error: 'File not ready yet' }, { status: 409 });
 
-    const bucket = adminStorage.bucket();
+    const bucket = adminModule.getAdminBucket();
     const file = bucket.file(path);
     const [buf] = await file.download();
     const bytes = Buffer.from(buf);

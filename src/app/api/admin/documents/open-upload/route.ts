@@ -76,16 +76,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid document path.' }, { status: 400 });
     }
 
-    const { adminStorage } = await import('@/firebase-admin');
-    const defaultBucketName =
-      process.env.FIREBASE_STORAGE_BUCKET ||
-      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
-      'studio-2881432245-f1d94.firebasestorage.app';
+    const { getAdminBucket } = await import('@/firebase-admin');
     const bucketCandidates = [
-      adminStorage.bucket(),
-      adminStorage.bucket(defaultBucketName),
-      adminStorage.bucket('studio-2881432245-f1d94.appspot.com'),
-      adminStorage.bucket('studio-2881432245-f1d94.firebasestorage.app'),
+      getAdminBucket(),
+      getAdminBucket('studio-2881432245-f1d94.firebasestorage.app'),
+      getAdminBucket('studio-2881432245-f1d94.appspot.com'),
     ];
 
     let contents: Buffer | null = null;

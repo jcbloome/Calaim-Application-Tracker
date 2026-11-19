@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import JSZip from 'jszip';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { adminStorage } from '@/firebase-admin';
+import { getAdminBucket } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
 
     const zip = new JSZip();
     const usedNames = new Set<string>();
-    const bucket = adminStorage.bucket();
+    const bucket = getAdminBucket();
     const included: string[] = [];
     const missing: string[] = [];
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { getStorage } from 'firebase-admin/storage';
+import { getAdminBucket } from '@/firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     const contentType = clean(file.type, 120) || 'application/octet-stream';
     const bytes = Buffer.from(await file.arrayBuffer());
 
-    const bucket = getStorage().bucket();
+    const bucket = getAdminBucket();
     const storageFile = bucket.file(storagePath);
     await storageFile.save(bytes, {
       resumable: false,

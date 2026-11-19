@@ -1,4 +1,4 @@
-import admin, { adminDb, adminStorage } from '@/firebase-admin';
+import admin, { adminDb, getAdminBucket } from '@/firebase-admin';
 
 const PDF_URL_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 
@@ -94,7 +94,7 @@ async function resolveDownloadUrl(filePath: string, providedUrl?: string) {
   const path = clean(filePath);
   if (!path) return '';
   try {
-    const [signedUrl] = await adminStorage.bucket().file(path).getSignedUrl({
+    const [signedUrl] = await getAdminBucket().file(path).getSignedUrl({
       action: 'read',
       expires: Date.now() + PDF_URL_TTL_MS,
     });

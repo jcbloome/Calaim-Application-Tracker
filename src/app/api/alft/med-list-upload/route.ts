@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { getStorage } from 'firebase-admin/storage';
+import { getAdminBucket } from '@/firebase-admin';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 export const runtime = 'nodejs';
@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
       clean(file.type, 120) || (/\.pdf$/i.test(originalName) ? 'application/pdf' : 'application/octet-stream');
     const bytes = Buffer.from(await file.arrayBuffer());
 
-    const bucket = getStorage().bucket();
+    const bucket = getAdminBucket();
     await bucket.file(storagePath).save(bytes, {
       resumable: false,
       contentType,

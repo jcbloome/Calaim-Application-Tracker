@@ -64,8 +64,9 @@ const toMs = (v: any) => {
   }
 };
 
-async function saveBytesToStorage(adminStorage: any, storagePath: string, bytes: Buffer, contentType: string) {
-  const bucket = adminStorage.bucket();
+async function saveBytesToStorage(_adminStorage: any, storagePath: string, bytes: Buffer, contentType: string) {
+  const { getAdminBucket } = await import('@/firebase-admin');
+  const bucket = getAdminBucket();
   const file = bucket.file(storagePath);
   await file.save(bytes, {
     metadata: { contentType },
@@ -75,9 +76,10 @@ async function saveBytesToStorage(adminStorage: any, storagePath: string, bytes:
   return storagePath;
 }
 
-async function readBytesFromStorage(adminStorage: any, storagePath: string): Promise<Buffer | null> {
+async function readBytesFromStorage(_adminStorage: any, storagePath: string): Promise<Buffer | null> {
   try {
-    const bucket = adminStorage.bucket();
+    const { getAdminBucket } = await import('@/firebase-admin');
+    const bucket = getAdminBucket();
     const file = bucket.file(storagePath);
     const [buf] = await file.download();
     return Buffer.from(buf);
