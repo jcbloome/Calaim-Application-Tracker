@@ -7,14 +7,76 @@ const s = (value: unknown) => String(value ?? '').trim();
 const fullName = (first: unknown, last: unknown) => `${s(first)} ${s(last)}`.trim();
 const joinAddress = (parts: Array<unknown>) => parts.map(s).filter(Boolean).join(', ');
 
+const yesNo = (value: unknown) => {
+  if (value === true) return 'Yes';
+  if (value === false) return 'No';
+  const normalized = s(value).toLowerCase();
+  if (normalized === 'yes' || normalized === 'true' || normalized === '1') return 'Yes';
+  if (normalized === 'no' || normalized === 'false' || normalized === '0') return 'No';
+  return '';
+};
+
+const hasPrefRcfeLabel = (value: unknown) => {
+  const answered = yesNo(value);
+  if (answered) return answered;
+  return s(value) || 'Not answered';
+};
+
+/** Always-visible RCFE detail value for the filled printable. */
+const rcfeDetailValue = (params: {
+  hasPref: string;
+  value: unknown;
+  noneSelectedLabel?: string;
+}) => {
+  const filled = s(params.value);
+  if (filled) return filled;
+  if (params.hasPref === 'No') return params.noneSelectedLabel || 'None selected';
+  if (params.hasPref === 'Not answered') return 'Not provided';
+  return '—';
+};
+
 /** Build labeled CS Summary PDF sections from application / form field values. */
-export function buildCsSummaryPdfSectionsFromApplication(application: Record<string, any> | null | undefined): CsSummaryPdfSectionInput[] {
+export function buildCsSummaryPdfSectionsFromApplication(
+  application: Record<string, any> | null | undefined
+): CsSummaryPdfSectionInput[] {
   const app = application || {};
   const incomeSource = Array.isArray(app.incomeSource)
     ? (app.incomeSource as string[]).map(s).filter(Boolean).join(', ')
     : s(app.incomeSource);
 
-  const sections: Array<{ title: string; rows: Array<[string, string]> }> = [
+  const hasPrefRCFE = hasPrefRcfeLabel(app.hasPrefRCFE);
+  const rcfeName = rcfeDetailValue({
+    hasPref: hasPrefRCFE,
+    value: app.rcfeName,
+    noneSelectedLabel: 'None selected',
+  });
+  const rcfeAddress = rcfeDetailValue({
+    hasPref: hasPrefRCFE,
+    value: app.rcfeAddress,
+  });
+  const rcfePreferredCities = rcfeDetailValue({
+    hasPref: hasPrefRCFE,
+    value: app.rcfePreferredCities,
+  });
+  const rcfeAdmin = rcfeDetailValue({
+    hasPref: hasPrefRCFE,
+    value: fullName(app.rcfeAdminFirstName, app.rcfeAdminLastName),
+  });
+  const rcfeAdminPhone = rcfeDetailValue({
+    hasPref: hasPrefRCFE,
+    value: app.rcfeAdminPhone,
+  });
+  const rcfeAdminEmail = rcfeDetailValue({
+    hasPref: hasPrefRCFE,
+    value: app.rcfeAdminEmail,
+  });
+
+  const sections: Array<{
+    title: string;
+    rows: Array<[string, string]>;
+    /** Keep every row even when blank/placeholder (used for RCFE). */
+    keepEmptyRows?: boolean;
+  }> = [
     {
       title: 'Member',
       rows: [
@@ -97,30 +159,38 @@ export function buildCsSummaryPdfSectionsFromApplication(application: Record<str
       ],
     },
     {
-      title: 'ISP and RCFE',
+      title: 'ISP Contact',
       rows: [
         ['ISP Contact', fullName(app.ispFirstName, app.ispLastName)],
         ['ISP Phone', s(app.ispPhone)],
         ['ISP Email', s(app.ispEmail)],
         ['ISP Relationship', s(app.ispRelationship)],
+        ['ISP Address', joinAddress([app.ispAddress, app.ispCity, app.ispState, app.ispZip])],
+        ['ISP Contact Is Member', yesNo(app.ispContactIsMember) || 'No'],
+        ['ISP Contact Is Primary Contact', yesNo(app.ispContactSameAsPrimary) || 'No'],
         [
-          'ISP Address',
-          joinAddress([app.ispAddress, app.ispCity, app.ispState, app.ispZip]),
+          'Secondary ISP Contact Is Primary Contact',
+          yesNo(app.ispSecondaryContactSameAsPrimary) || 'No',
         ],
-        ['ISP Contact Is Member', app.ispContactIsMember ? 'Yes' : ''],
-        ['ISP Contact Is Primary Contact', app.ispContactSameAsPrimary ? 'Yes' : ''],
-        ['Secondary ISP Contact Is Primary Contact', app.ispSecondaryContactSameAsPrimary ? 'Yes' : ''],
         ['Secondary ISP Contact', fullName(app.ispSecondaryFirstName, app.ispSecondaryLastName)],
         ['Secondary ISP Phone', s(app.ispSecondaryPhone)],
         ['Secondary ISP Email', s(app.ispSecondaryEmail)],
         ['Secondary ISP Relationship', s(app.ispSecondaryRelationship)],
         ['On ALW Waitlist', s(app.onALWWaitlist)],
-        ['Preferred RCFE', s(app.rcfeName)],
-        ['Preferred RCFE Cities', s(app.rcfePreferredCities)],
-        ['RCFE Admin', fullName(app.rcfeAdminFirstName, app.rcfeAdminLastName)],
-        ['RCFE Admin Phone', s(app.rcfeAdminPhone)],
-        ['RCFE Admin Email', s(app.rcfeAdminEmail)],
         ['SNF Diversion Notes', s(app.snfDiversionReason)],
+      ],
+    },
+    {
+      title: 'RCFE',
+      keepEmptyRows: true,
+      rows: [
+        ['Has Preferred RCFE', hasPrefRCFE],
+        ['Preferred RCFE', rcfeName],
+        ['RCFE Address', rcfeAddress],
+        ['Preferred RCFE Cities', rcfePreferredCities],
+        ['RCFE Admin', rcfeAdmin],
+        ['RCFE Admin Phone', rcfeAdminPhone],
+        ['RCFE Admin Email', rcfeAdminEmail],
       ],
     },
     {
@@ -157,7 +227,7 @@ export function buildCsSummaryPdfSectionsFromApplication(application: Record<str
       title: section.title,
       rows: section.rows
         .map(([label, value]) => ({ label, value: s(value) }))
-        .filter((row) => row.value.length > 0),
+        .filter((row) => section.keepEmptyRows || row.value.length > 0),
     }))
     .filter((section) => section.rows.length > 0);
 }

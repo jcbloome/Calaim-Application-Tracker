@@ -91,7 +91,8 @@ export async function buildCsSummaryPdfFromSections(
   const topY = 718;
   const bottomY = 54;
   const labelX = marginX;
-  const valueX = 210;
+  const valueX = 230;
+  const labelWidth = valueX - labelX - 8;
   const valueWidth = pageSize[0] - marginX - valueX;
   const generatedAt = new Date().toLocaleString();
 
@@ -175,10 +176,13 @@ export async function buildCsSummaryPdfFromSections(
     }
 
     for (const row of normalizedRows) {
+      const labelLines = wrapTextToWidth(`${row.label}:`, labelWidth, boldFont, 10);
       const valueLines = wrapTextToWidth(row.value, valueWidth, font, 10);
-      const rowHeight = Math.max(16, valueLines.length * 12 + 4);
+      const rowHeight = Math.max(16, Math.max(labelLines.length, valueLines.length) * 12 + 4);
       ensureSpace(rowHeight);
-      page.drawText(`${row.label}:`, { x: labelX, y, size: 10, font: boldFont });
+      labelLines.forEach((line, index) => {
+        page.drawText(line, { x: labelX, y: y - index * 12, size: 10, font: boldFont });
+      });
       valueLines.forEach((line, index) => {
         page.drawText(line, { x: valueX, y: y - index * 12, size: 10, font });
       });

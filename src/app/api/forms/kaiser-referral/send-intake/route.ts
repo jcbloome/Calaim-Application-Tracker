@@ -651,10 +651,8 @@ export async function POST(request: NextRequest) {
             `Member: ${memberName}${memberMrn ? ` (MRN ${memberMrn})` : ''}.`,
             `Sent by: ${resolvedSubmitterName || resolvedSubmitterEmail}.`,
             `To: ${toRecipients.join(', ')}.`,
-            `Kaiser provider portal: ${providerPortal.label} (${providerPortal.url}).`,
           ].join(' '),
           assignedStaffName: resolvedSubmitterName || undefined,
-          sourceTag: 'kaiser-referral-generated',
         });
       } catch (noteError) {
         console.warn('[kaiser-referral/send-intake] failed to append Caspio member note', noteError);

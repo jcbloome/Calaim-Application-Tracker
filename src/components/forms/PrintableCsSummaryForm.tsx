@@ -763,45 +763,73 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           options={['Yes', 'No']}
           width="full"
         />
-        
+
         <PrintableField
           label="RCFE Name"
-          value={data.rcfeName}
+          value={
+            data.hasPrefRCFE === 'No'
+              ? data.rcfeName || 'None selected'
+              : data.rcfeName
+          }
           width="full"
         />
         
         <PrintableField
           label="RCFE Address"
-          value={data.rcfeAddress}
+          value={
+            data.hasPrefRCFE === 'No'
+              ? data.rcfeAddress || 'None selected'
+              : data.rcfeAddress
+          }
           width="full"
         />
 
         <PrintableField
           label="Preferred RCFE Cities"
-          value={data.rcfePreferredCities}
+          value={
+            data.hasPrefRCFE === 'No'
+              ? data.rcfePreferredCities || 'None selected'
+              : data.rcfePreferredCities
+          }
           width="full"
         />
         
         <PrintableField
           label="RCFE Administrator First Name"
-          value={data.rcfeAdminFirstName}
+          value={
+            data.hasPrefRCFE === 'No'
+              ? data.rcfeAdminFirstName || 'None selected'
+              : data.rcfeAdminFirstName
+          }
           width="half"
         />
         <PrintableField
           label="RCFE Administrator Last Name"
-          value={data.rcfeAdminLastName}
+          value={
+            data.hasPrefRCFE === 'No'
+              ? data.rcfeAdminLastName || 'None selected'
+              : data.rcfeAdminLastName
+          }
           width="half"
         />
         
         <PrintableField
           label="Administrator Phone"
-          value={data.rcfeAdminPhone}
+          value={
+            data.hasPrefRCFE === 'No'
+              ? data.rcfeAdminPhone || 'None selected'
+              : data.rcfeAdminPhone
+          }
           width="half"
         />
         
         <PrintableField
           label="Administrator Email"
-          value={data.rcfeAdminEmail}
+          value={
+            data.hasPrefRCFE === 'No'
+              ? data.rcfeAdminEmail || 'None selected'
+              : data.rcfeAdminEmail
+          }
           width="half"
         />
       </PrintableFormSection>

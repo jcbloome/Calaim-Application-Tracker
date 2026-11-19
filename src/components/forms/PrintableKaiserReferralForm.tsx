@@ -233,6 +233,29 @@ const DEFAULT_REFERRER_NPI = '1508537325';
 const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 92262';
 /** Always use Jason's email on Kaiser referral forms (replaces former deydry@ default). */
 const DEFAULT_REFERRER_EMAIL = 'jason@carehomefinders.com';
+
+const LEGACY_KAISER_REFERRAL_EMAIL_DESCRIPTION =
+  'Please review the attached referral form for authorization request processing.';
+
+const kaiserReferralEmailDescriptionForUsage = (usage: 'yes' | 'no' | '') => {
+  if (usage === 'yes') {
+    return 'Please review the attached referral form. This request is for re-authorization.';
+  }
+  if (usage === 'no') {
+    return 'Please review the attached referral form. This request is for initial authorization.';
+  }
+  return LEGACY_KAISER_REFERRAL_EMAIL_DESCRIPTION;
+};
+
+const isAutoKaiserReferralEmailDescription = (value: string) => {
+  const next = String(value || '').trim();
+  return (
+    !next ||
+    next === LEGACY_KAISER_REFERRAL_EMAIL_DESCRIPTION ||
+    next === kaiserReferralEmailDescriptionForUsage('yes') ||
+    next === kaiserReferralEmailDescriptionForUsage('no')
+  );
+};
 const DEFAULT_REFERRER_PHONE = '800-330-5993';
 const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
@@ -504,8 +527,8 @@ export function PrintableKaiserReferralForm({
   const [overrideReason, setOverrideReason] = React.useState('');
   const [isPdfConfirmedForSend, setIsPdfConfirmedForSend] = React.useState(false);
   const [step5AcknowledgedAtIso, setStep5AcknowledgedAtIso] = React.useState(String(initialStep5AcknowledgedAtIso || '').trim());
-  const [emailDescription, setEmailDescription] = React.useState(
-    'Please review the attached referral form for authorization request processing.'
+  const [emailDescription, setEmailDescription] = React.useState(() =>
+    kaiserReferralEmailDescriptionForUsage(requiredSection1AlfUsage)
   );
   const [addressRegionManuallyVerified, setAddressRegionManuallyVerified] = React.useState(false);
   const [kaiserRoutingConfirmed, setKaiserRoutingConfirmed] = React.useState(false);
@@ -560,7 +583,10 @@ export function PrintableKaiserReferralForm({
   }, [currentLivingLocation]);
   const resolvedMemberName = memberName || 'Member';
   const resolvedMrn = formValues.memberMrn || 'N/A';
-  const subjectLine = `Authorization Request for ${resolvedMemberName} and MRN: ${resolvedMrn}`;
+  const isReauthorizationRequest = requiredSection1AlfUsage === 'yes';
+  const subjectLine = isReauthorizationRequest
+    ? `Re-authorization Request for ${resolvedMemberName} and MRN: ${resolvedMrn}`
+    : `Initial Authorization Request for ${resolvedMemberName} and MRN: ${resolvedMrn}`;
   const hasRequiredLocation = Boolean(currentLivingLocation);
   const hasRequiredSection1Usage = requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no';
   const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && !isSendingToKaiser;
@@ -688,6 +714,14 @@ export function PrintableKaiserReferralForm({
       ...prev,
       alfTransitions: true,
     }));
+  }, [requiredSection1AlfUsage]);
+
+  React.useEffect(() => {
+    if (!(requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no')) return;
+    const nextDescription = kaiserReferralEmailDescriptionForUsage(requiredSection1AlfUsage);
+    setEmailDescription((prev) =>
+      isAutoKaiserReferralEmailDescription(prev) ? nextDescription : prev
+    );
   }, [requiredSection1AlfUsage]);
 
   React.useEffect(() => {
@@ -877,7 +911,14 @@ export function PrintableKaiserReferralForm({
             : prev.respiteComments,
       }));
       if (Object.prototype.hasOwnProperty.call(draft, 'emailDescription')) {
-        setEmailDescription(lineValue((draft as any).emailDescription));
+        const draftDescription = lineValue((draft as any).emailDescription);
+        setEmailDescription(
+          isAutoKaiserReferralEmailDescription(draftDescription)
+            ? kaiserReferralEmailDescriptionForUsage(requiredSection1AlfUsage)
+            : draftDescription
+        );
+      } else if (requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no') {
+        setEmailDescription(kaiserReferralEmailDescriptionForUsage(requiredSection1AlfUsage));
       }
       if (Object.prototype.hasOwnProperty.call(draft, 'isStep3Confirmed')) {
         setIsStep3Confirmed(Boolean((draft as any).isStep3Confirmed));

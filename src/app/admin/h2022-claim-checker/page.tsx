@@ -84,6 +84,23 @@ const isKaiserOnHoldRow = (row: MemberH2022Row) => {
   return raw.includes('on hold');
 };
 
+const normalizeKaiserStatusToken = (status: unknown) =>
+  String(status || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+
+/** T2038 Received, doc collection (and casing/punctuation variants). */
+const isT2038ReceivedDocCollectionStatus = (status: unknown) => {
+  const raw = normalizeKaiserStatusToken(status);
+  return raw.includes('t2038') && raw.includes('received') && raw.includes('doc collection');
+};
+
+/** Default RCFE lookup suppression: Non-active + T2038 Received, doc collection. */
+const isRcfeLookupDefaultSuppressedStatus = (status: unknown) =>
+  isKaiserInactiveStatus(status) || isT2038ReceivedDocCollectionStatus(status);
+
 const formatDate = (value: string | null | undefined) => {
   if (!value) return 'N/A';
   const d = new Date(`${value}T00:00:00`);
@@ -170,8 +187,9 @@ export default function H2022ClaimCheckerPage() {
   const [rcfeLookupPulledAt, setRcfeLookupPulledAt] = useState<string | null>(null);
   const [rcfeLookupSortBy, setRcfeLookupSortBy] = useState<RcfeLookupSortKey>('member');
   const [rcfeLookupSortDirection, setRcfeLookupSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [rcfeLookupKaiserStatusFilter, setRcfeLookupKaiserStatusFilter] =
-    useState<KaiserStatusFilter>('hide_nonactive');
+  /** `default` = hide Non-active + T2038 Received doc collection; `all` = every status; else exact Kaiser_Status. */
+  const [rcfeLookupKaiserStatusFilter, setRcfeLookupKaiserStatusFilter] = useState<string>('default');
+  const [rcfeRefreshingClientId, setRcfeRefreshingClientId] = useState<string | null>(null);
   const tableTopScrollRef = useRef<HTMLDivElement | null>(null);
   const tableBodyScrollRef = useRef<HTMLDivElement | null>(null);
   const tableElRef = useRef<HTMLTableElement | null>(null);
@@ -218,9 +236,31 @@ export default function H2022ClaimCheckerPage() {
     return true;
   };
 
+  const matchesRcfeLookupKaiserStatusFilter = (row: MemberH2022Row, filter: string) => {
+    const status = String(row.kaiserStatus || '').trim();
+    if (filter === 'default') return !isRcfeLookupDefaultSuppressedStatus(status);
+    if (filter === 'all') return true;
+    if (filter === '__blank__') return !status;
+    return normalizeKaiserStatusToken(status) === normalizeKaiserStatusToken(filter);
+  };
+
+  const rcfeLookupKaiserStatusOptions = useMemo(() => {
+    const counts = new Map<string, { label: string; count: number }>();
+    for (const row of rcfeLookupRows) {
+      const label = String(row.kaiserStatus || '').trim() || '(blank)';
+      const key = label === '(blank)' ? '__blank__' : label;
+      const existing = counts.get(key);
+      if (existing) existing.count += 1;
+      else counts.set(key, { label, count: 1 });
+    }
+    return Array.from(counts.entries())
+      .map(([value, meta]) => ({ value, label: meta.label, count: meta.count }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [rcfeLookupRows]);
+
   const displayedRcfeLookupRows = useMemo(() => {
     const filtered = rcfeLookupRows.filter((row) =>
-      matchesKaiserStatusFilter(row, rcfeLookupKaiserStatusFilter)
+      matchesRcfeLookupKaiserStatusFilter(row, rcfeLookupKaiserStatusFilter)
     );
     const sorted = [...filtered].sort((a, b) => {
       let cmp = 0;
@@ -251,9 +291,9 @@ export default function H2022ClaimCheckerPage() {
     return sorted;
   }, [rcfeLookupRows, rcfeLookupKaiserStatusFilter, rcfeLookupSortBy, rcfeLookupSortDirection]);
 
-  const rcfeLookupHiddenNonActiveCount = useMemo(() => {
-    if (rcfeLookupKaiserStatusFilter !== 'hide_nonactive') return 0;
-    return rcfeLookupRows.filter((row) => isKaiserInactiveStatus(row.kaiserStatus)).length;
+  const rcfeLookupSuppressedCount = useMemo(() => {
+    if (rcfeLookupKaiserStatusFilter !== 'default') return 0;
+    return rcfeLookupRows.filter((row) => isRcfeLookupDefaultSuppressedStatus(row.kaiserStatus)).length;
   }, [rcfeLookupRows, rcfeLookupKaiserStatusFilter]);
 
   const displayedRows = useMemo(() => {
@@ -524,6 +564,85 @@ export default function H2022ClaimCheckerPage() {
     }
   };
 
+  const refreshRcfeLookupMemberFromCaspio = async (row: MemberH2022Row) => {
+    const clientId2 = String(row.clientId2 || '').trim();
+    if (!clientId2) {
+      toast({
+        title: 'Cannot refresh',
+        description: 'This row has no Client_ID2.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setRcfeRefreshingClientId(clientId2);
+    try {
+      const idToken = await getIdTokenFresh();
+      if (!idToken) {
+        throw new Error('Please log in again before refreshing from Caspio.');
+      }
+
+      const res = await fetch('/api/admin/h2022-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          action: 'pull_member',
+          clientId2,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        row?: MemberH2022Row;
+      };
+      if (!res.ok || !data?.success || !data.row) {
+        throw new Error(data?.error || `Member refresh failed (HTTP ${res.status})`);
+      }
+
+      const nextRow = data.row;
+      const stillMissingH2022 = Boolean(nextRow.missingH2022Dates);
+      const stillHasRcfe =
+        Boolean(String(nextRow.rcfeName || '').trim()) && !isPlaceholderRcfeName(nextRow.rcfeName);
+      const keepOnLookup = nextRow.plan === 'kaiser' && stillHasRcfe && stillMissingH2022;
+
+      setRcfeLookupRows((prev) => {
+        if (!keepOnLookup) {
+          return prev.filter((r) => String(r.clientId2 || '').trim() !== clientId2);
+        }
+        let replaced = false;
+        const mapped = prev.map((r) => {
+          if (String(r.clientId2 || '').trim() !== clientId2) return r;
+          replaced = true;
+          return nextRow;
+        });
+        return replaced ? mapped : [...mapped, nextRow];
+      });
+
+      toast({
+        title: keepOnLookup ? 'Updated from Caspio' : 'Cleared from this lookup',
+        description: keepOnLookup
+          ? `${nextRow.memberName || clientId2}: Kaiser ${nextRow.kaiserStatus || '—'} · CalAIM ${
+              nextRow.calaimStatus || '—'
+            } · H2022 ${formatDate(nextRow.h2022StartDate)} → ${formatDate(nextRow.h2022EndDate)}.`
+          : `${nextRow.memberName || clientId2} no longer matches RCFE + missing H2022 dates (Kaiser ${
+              nextRow.kaiserStatus || '—'
+            }, H2022 ${formatDate(nextRow.h2022StartDate)} → ${formatDate(nextRow.h2022EndDate)}) and was removed from this list.`,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to refresh member from Caspio.';
+      toast({
+        title: 'Refresh failed',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setRcfeRefreshingClientId(null);
+    }
+  };
+
   const lookupRcfeMissingH2022 = async () => {
     setRcfeLookupLoading(true);
     try {
@@ -557,14 +676,16 @@ export default function H2022ClaimCheckerPage() {
       const nextRows = Array.isArray(data.rows) ? data.rows : [];
       setRcfeLookupRows(nextRows);
       setRcfeLookupPulledAt(data.pulledAt || new Date().toISOString());
-      setRcfeLookupKaiserStatusFilter('hide_nonactive');
+      setRcfeLookupKaiserStatusFilter('default');
 
-      const nonActiveCount = nextRows.filter((row) => isKaiserInactiveStatus(row.kaiserStatus)).length;
+      const suppressedCount = nextRows.filter((row) =>
+        isRcfeLookupDefaultSuppressedStatus(row.kaiserStatus)
+      ).length;
       toast({
         title: 'Kaiser RCFE · no H2022 dates',
         description: `Found ${data.summary?.total ?? nextRows.length} Kaiser member(s) with RCFE_Name but missing H2022 dates${
-          nonActiveCount
-            ? ` · ${nonActiveCount} Non-active hidden by default`
+          suppressedCount
+            ? ` · ${suppressedCount} Non-active / T2038 Received doc collection hidden by default`
             : ''
         }.`,
       });
@@ -735,8 +856,10 @@ export default function H2022ClaimCheckerPage() {
           <CardTitle>Lookup: Kaiser RCFE with no H2022 dates</CardTitle>
           <CardDescription>
             Kaiser-only. Finds members with a real <span className="font-mono">RCFE_Name</span> (not CalAIM Use)
-            but missing H2022 authorization start or end dates — any CalAIM status. Use when placement is filled
-            in Caspio but H2022 dates were never entered.
+            but missing H2022 authorization start or end dates — any CalAIM status. Default Kaiser Status filter
+            hides <span className="font-medium text-foreground">Non-active</span> and{' '}
+            <span className="font-medium text-foreground">T2038 Received, doc collection</span>. Use the dropdown
+            for any specific Kaiser_Status, or refresh a row to pull latest Caspio data.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -759,16 +882,18 @@ export default function H2022ClaimCheckerPage() {
                 <div className="text-xs text-muted-foreground">Kaiser Status</div>
                 <select
                   value={rcfeLookupKaiserStatusFilter}
-                  onChange={(e) =>
-                    setRcfeLookupKaiserStatusFilter(e.target.value as KaiserStatusFilter)
-                  }
-                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                  onChange={(e) => setRcfeLookupKaiserStatusFilter(e.target.value)}
+                  className="h-9 min-w-[280px] rounded-md border bg-background px-3 text-sm"
                 >
-                  <option value="hide_nonactive">Hide Non-active (default)</option>
-                  <option value="all">All statuses</option>
-                  <option value="on_hold">On Hold</option>
-                  <option value="not_on_hold">Not On Hold</option>
-                  <option value="nonactive_only">Non-active only</option>
+                  <option value="default">
+                    Default (hide Non-active + T2038 Received, doc collection)
+                  </option>
+                  <option value="all">All Kaiser statuses</option>
+                  {rcfeLookupKaiserStatusOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label} ({opt.count})
+                    </option>
+                  ))}
                 </select>
               </div>
             ) : null}
@@ -777,14 +902,15 @@ export default function H2022ClaimCheckerPage() {
             <div className="text-xs text-muted-foreground">
               Last lookup: {new Date(rcfeLookupPulledAt).toLocaleString()} · {rcfeLookupRows.length} Kaiser
               member(s)
-              {rcfeLookupHiddenNonActiveCount > 0
-                ? ` · ${rcfeLookupHiddenNonActiveCount} Non-active hidden`
+              {rcfeLookupSuppressedCount > 0
+                ? ` · ${rcfeLookupSuppressedCount} Non-active / T2038 Received doc collection hidden`
                 : ''}
             </div>
           ) : (
             <div className="text-xs text-muted-foreground">
               Runs a separate Kaiser Caspio query (does not replace the main H2022 Status pull above). Non-active
-              Kaiser_Status is hidden by default.
+              and T2038 Received, doc collection are hidden by default; pick any Kaiser_Status from the filter
+              after lookup.
             </div>
           )}
 
@@ -797,17 +923,19 @@ export default function H2022ClaimCheckerPage() {
                   : ''}
               </div>
               <div className="rounded-md border overflow-x-auto">
-                <table className="w-full min-w-[1100px] caption-bottom text-sm">
+                <table className="w-full min-w-[980px] caption-bottom text-sm">
                   <TableHeader>
                     <TableRow>
-                      <RcfeLookupSortableHead label="Member" sortKey="member" />
+                      <RcfeLookupSortableHead label="Member / RCFE" sortKey="member" />
                       <RcfeLookupSortableHead label="CalAIM Status" sortKey="calaim_status" />
                       <RcfeLookupSortableHead label="Kaiser Status" sortKey="kaiser_status" />
                       <RcfeLookupSortableHead label="H2022 Requested" sortKey="h2022_requested" />
-                      <RcfeLookupSortableHead label="RCFE" sortKey="rcfe" />
                       <RcfeLookupSortableHead label="H2022 Start" sortKey="h2022_start" />
                       <RcfeLookupSortableHead label="H2022 End" sortKey="h2022_end" />
                       <RcfeLookupSortableHead label="T2038 End" sortKey="t2038_end" />
+                      <TableHead className="w-10 px-1" title="Refresh member from Caspio">
+                        <span className="sr-only">Refresh</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -815,6 +943,8 @@ export default function H2022ClaimCheckerPage() {
                       const rowKey =
                         String(row.clientId2 || '').trim() || `${row.memberName}-rcfe`;
                       const onHold = isKaiserOnHoldRow(row);
+                      const clientId2 = String(row.clientId2 || '').trim();
+                      const isRefreshing = rcfeRefreshingClientId === clientId2;
                       return (
                         <TableRow
                           key={`rcfe-missing-${rowKey}`}
@@ -824,6 +954,15 @@ export default function H2022ClaimCheckerPage() {
                             <div className="text-sm font-medium whitespace-nowrap">{row.memberName}</div>
                             <div className="text-xs text-muted-foreground whitespace-nowrap">
                               ID2: {row.clientId2 || 'N/A'} · MCP/MRN: {row.mcpCin || row.mrn || 'N/A'}
+                            </div>
+                            <div
+                              className="mt-0.5 text-xs text-sky-700 max-w-[260px] truncate"
+                              title={row.rcfeName || ''}
+                            >
+                              <span className="font-medium text-sky-800">{row.rcfeName || 'RCFE N/A'}</span>
+                              {row.county ? (
+                                <span className="text-muted-foreground">{` · ${row.county}`}</span>
+                              ) : null}
                             </div>
                           </TableCell>
                           <TableCell className="align-top whitespace-nowrap">
@@ -850,12 +989,6 @@ export default function H2022ClaimCheckerPage() {
                               <span className="text-xs text-muted-foreground">Not requested</span>
                             )}
                           </TableCell>
-                          <TableCell className="align-top">
-                            <div className="text-sm max-w-[220px] truncate" title={row.rcfeName || ''}>
-                              {row.rcfeName || 'N/A'}
-                            </div>
-                            <div className="text-xs text-muted-foreground">{row.county || '—'}</div>
-                          </TableCell>
                           <TableCell className="align-top font-mono tabular-nums whitespace-nowrap">
                             {formatDate(row.h2022StartDate)}
                           </TableCell>
@@ -864,6 +997,28 @@ export default function H2022ClaimCheckerPage() {
                           </TableCell>
                           <TableCell className="align-top font-mono tabular-nums whitespace-nowrap">
                             {formatDate(row.t2038EndDate)}
+                          </TableCell>
+                          <TableCell className="align-top px-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-slate-600 hover:text-sky-700"
+                              disabled={
+                                !clientId2 ||
+                                Boolean(rcfeRefreshingClientId) ||
+                                rcfeLookupLoading
+                              }
+                              title="Refresh this member only from Caspio"
+                              aria-label="Refresh from Caspio"
+                              onClick={() => void refreshRcfeLookupMemberFromCaspio(row)}
+                            >
+                              {isRefreshing ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-4 w-4" />
+                              )}
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );
