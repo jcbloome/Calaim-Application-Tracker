@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `3955d5f6` (Kaiser T2038 Claim Audit — Caspio refresh on demand only)  
+**HEAD:** `1b70bc37` (T2038 claim audit — Firestore load, Notes, blue statuses, Health Net skip)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
