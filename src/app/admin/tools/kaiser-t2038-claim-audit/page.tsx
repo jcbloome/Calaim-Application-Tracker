@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -19,7 +19,9 @@ import {
   type KaiserT2038ClaimAuditRunMode,
   type MonthDisposition,
 } from '@/lib/kaiser-t2038-claim-audit';
-import { AlertTriangle, ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Database, Loader2, MessageSquare, RefreshCw } from 'lucide-react';
+import { MemberNotesModal } from '@/app/admin/kaiser-tracker/components/MemberNotesModal';
+import type { KaiserMember } from '@/app/admin/kaiser-tracker/components/shared';
 import { KaiserMrnMcoMismatchCard } from './KaiserMrnMcoMismatchCard';
 
 type CoverageFilter = 'all' | 'incomplete' | 'gaps_only' | 'no_claims_yet' | 'complete';
@@ -69,8 +71,15 @@ const lastClaimDateFor = (row: KaiserT2038ClaimAuditRow) => {
   return best?.display || '';
 };
 
-const statusLine = (calaimStatus: string, kaiserStatus: string) =>
-  `CalAIM ${calaimStatus || '—'} · Kaiser ${kaiserStatus || '—'}`;
+const STATUS_BLUE = 'bg-blue-50 text-blue-800 border-blue-300';
+
+const statusLine = (calaimStatus: string, kaiserStatus: string) => (
+  <>
+    CalAIM <span className="font-medium text-blue-700">{calaimStatus || '—'}</span>
+    {' · '}
+    Kaiser <span className="font-medium text-blue-700">{kaiserStatus || '—'}</span>
+  </>
+);
 
 const windowBadge = (row: KaiserT2038ClaimAuditRow) => {
   if (row.window === 'missing_dates') return { label: 'Missing auth dates', className: 'bg-slate-100 text-slate-800' };
@@ -80,24 +89,50 @@ const windowBadge = (row: KaiserT2038ClaimAuditRow) => {
   return { label: 'Open auth', className: 'bg-emerald-100 text-emerald-900' };
 };
 
-/** Distinct badge for CalAIM_Status so H2022 vs Authorized is obvious in the member list. */
+/** CalAIM_Status / Kaiser_Status badges — blue so they stand out from auth/gap chips. */
 const calaimStatusBadge = (calaimStatus: string) => {
   const label = clean(calaimStatus) || '—';
-  const n = normalizeStatus(label);
-  if (n === 'h2022') {
-    return { label: 'H2022', className: 'bg-indigo-50 text-indigo-950 border-indigo-300' };
-  }
-  if (n === 'authorized') {
-    return { label: 'Authorized', className: 'bg-teal-50 text-teal-950 border-teal-300' };
-  }
-  if (n.includes('authorization ended')) {
-    return { label, className: 'bg-rose-50 text-rose-950 border-rose-200' };
-  }
-  if (n === 'authorized on hold') {
-    return { label, className: 'bg-amber-50 text-amber-950 border-amber-200' };
-  }
-  return { label, className: 'bg-slate-50 text-slate-800 border-slate-200' };
+  return { label, className: STATUS_BLUE };
 };
+
+const kaiserStatusBadge = (kaiserStatus: string) => {
+  const label = clean(kaiserStatus) || '—';
+  return { label: `Kaiser ${label}`, className: STATUS_BLUE };
+};
+
+const EMPTY_NOTES_MODAL = {
+  isOpen: false,
+  member: null as KaiserMember | null,
+  notes: [] as any[],
+  isLoadingNotes: false,
+  lastSyncAt: '',
+  existingNotesCount: 0,
+  newNotesCount: 0,
+  didSync: false,
+};
+
+function rowToKaiserMember(row: KaiserT2038ClaimAuditRow): KaiserMember {
+  return {
+    id: row.clientId2 || row.id,
+    memberFirstName: row.memberFirstName || '',
+    memberLastName: row.memberLastName || '',
+    memberMrn: row.mrn || '',
+    memberCounty: '',
+    memberPhone: '',
+    memberEmail: '',
+    client_ID2: row.clientId2 || '',
+    pathway: '',
+    Kaiser_Status: row.kaiserStatus || '',
+    CalAIM_Status: row.calaimStatus || '',
+    Staff_Assigned: '',
+    Next_Step_Due_Date: '',
+    Kaiser_Next_Step_Date: '',
+    workflow_step: '',
+    workflow_notes: '',
+    last_updated: '',
+    created_at: '',
+  } as KaiserMember;
+}
 
 export default function KaiserT2038ClaimAuditPage() {
   const auth = useAuth();
@@ -107,6 +142,7 @@ export default function KaiserT2038ClaimAuditPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [fetchedAt, setFetchedAt] = useState('');
   const [snapshotAt, setSnapshotAt] = useState('');
+  const [firestoreStoredAt, setFirestoreStoredAt] = useState('');
   const [lastCaspioRefreshAt, setLastCaspioRefreshAt] = useState('');
   const [runMode, setRunMode] = useState<KaiserT2038ClaimAuditRunMode | ''>('');
   const [runId, setRunId] = useState('');
@@ -142,14 +178,16 @@ export default function KaiserT2038ClaimAuditPage() {
   const [summaryNoClaimsOpen, setSummaryNoClaimsOpen] = useState(false);
   const [summaryExAuthOpen, setSummaryExAuthOpen] = useState(false);
   const [savingKey, setSavingKey] = useState('');
+  const [memberNotesModal, setMemberNotesModal] = useState(EMPTY_NOTES_MODAL);
 
   const applyAuditResponse = useCallback((body: Record<string, unknown>) => {
     setRows(Array.isArray(body.rows) ? (body.rows as KaiserT2038ClaimAuditRow[]) : []);
     setSummary((body.summary as Summary) || null);
     setFetchedAt(String(body.fetchedAt || ''));
-    setSnapshotAt(String(body.snapshotAt || body.fetchedAt || ''));
-    const caspioAt = String(body.lastCaspioRefreshAt || '');
-    if (caspioAt) setLastCaspioRefreshAt(caspioAt);
+    const stored = String(body.firestoreStoredAt || body.snapshotAt || body.fetchedAt || '');
+    setSnapshotAt(String(body.snapshotAt || stored));
+    setFirestoreStoredAt(stored);
+    setLastCaspioRefreshAt(String(body.lastCaspioRefreshAt || ''));
     setRunMode((String(body.mode || '') as KaiserT2038ClaimAuditRunMode) || '');
     setRunId(String(body.runId || ''));
     setHasSavedRun(Boolean(body.hasSavedRun));
@@ -263,6 +301,108 @@ export default function KaiserT2038ClaimAuditPage() {
     },
     [auth, applyAuditResponse, toast]
   );
+
+  // Instant paint from Firestore; Caspio only when staff refresh globally or per-member.
+  useEffect(() => {
+    if (!isAdminLoading && isAdmin) void load('saved', { silent: true });
+  }, [isAdmin, isAdminLoading, load]);
+
+  const openMemberNotes = useCallback(
+    async (row: KaiserT2038ClaimAuditRow) => {
+      const clientId2 = String(row.clientId2 || '').trim();
+      if (!clientId2) {
+        toast({
+          title: 'No Client_ID2',
+          description: 'This row has no Client_ID2, so member notes cannot be opened.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      setMemberNotesModal({
+        ...EMPTY_NOTES_MODAL,
+        isOpen: true,
+        member: rowToKaiserMember(row),
+        isLoadingNotes: true,
+      });
+      try {
+        const response = await fetch(
+          `/api/member-notes?clientId2=${encodeURIComponent(clientId2)}&skipSync=true`,
+          { cache: 'no-store' }
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success) {
+          throw new Error(String(data?.error || `Failed to load notes (HTTP ${response.status})`));
+        }
+        setMemberNotesModal((prev) => ({
+          ...prev,
+          notes: Array.isArray(data.notes) ? data.notes : [],
+          isLoadingNotes: false,
+          lastSyncAt: String(data?.syncLastAt || ''),
+          existingNotesCount: Number(data?.existingNotesCount || data?.notes?.length || 0),
+          newNotesCount: Number(data?.newNotesCount || 0),
+          didSync: false,
+        }));
+      } catch (err: unknown) {
+        toast({
+          title: 'Could not load notes',
+          description: String((err as { message?: string })?.message || 'Failed to load member notes'),
+          variant: 'destructive',
+        });
+        setMemberNotesModal((prev) => ({
+          ...prev,
+          notes: [],
+          isLoadingNotes: false,
+        }));
+      }
+    },
+    [toast]
+  );
+
+  const syncMemberNotes = useCallback(async () => {
+    const member = memberNotesModal.member;
+    if (!member) return;
+    const clientId2 = String(member.client_ID2 || '').trim();
+    if (!clientId2) return;
+    setMemberNotesModal((prev) => ({ ...prev, isLoadingNotes: true }));
+    try {
+      const response = await fetch(
+        `/api/member-notes?clientId2=${encodeURIComponent(clientId2)}&forceSync=false&skipSync=false&repairIfEmpty=true`,
+        { cache: 'no-store' }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        throw new Error(String(data?.error || 'Failed to sync notes'));
+      }
+      setMemberNotesModal((prev) => ({
+        ...prev,
+        notes: Array.isArray(data.notes) ? data.notes : [],
+        isLoadingNotes: false,
+        lastSyncAt: String(data?.syncLastAt || ''),
+        existingNotesCount: Number(data?.existingNotesCount || 0),
+        newNotesCount: Number(data?.newNotesCount || 0),
+        didSync: true,
+      }));
+      toast({
+        title: 'Notes sync complete',
+        description: `${data?.existingNotesCount || 0} existing + ${data?.newNotesCount || 0} new notes for ${
+          member.memberFirstName
+        } ${member.memberLastName}`,
+      });
+    } catch (err: unknown) {
+      setMemberNotesModal((prev) => ({ ...prev, isLoadingNotes: false }));
+      toast({
+        title: 'Sync failed',
+        description: String((err as { message?: string })?.message || 'Could not refresh member notes.'),
+        variant: 'destructive',
+      });
+    }
+  }, [memberNotesModal.member, toast]);
+
+  const formatStamp = (iso: string) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+  };
 
   const statusOptions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -541,25 +681,35 @@ export default function KaiserT2038ClaimAuditPage() {
             gaps from <span className="font-medium">2025</span> or <span className="font-medium">older than 6 months</span>{' '}
             are ignored.
           </p>
-          {fetchedAt || snapshotAt ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Snapshot:{' '}
-              {snapshotAt || fetchedAt
-                ? new Date(snapshotAt || fetchedAt).toLocaleString()
-                : '—'}
-              {lastCaspioRefreshAt
-                ? ` · Last Caspio refresh: ${new Date(lastCaspioRefreshAt).toLocaleString()}`
-                : null}
-              {runMode ? ` · ${runMode}` : ''}
-              {runId ? ` · ${runId.slice(0, 8)}…` : ''} · claims {claimStats.total}
-              {claimStats.newClaims ? ` (+${claimStats.newClaims} new)` : ''}
-              {claimStats.targeted ? ` · targeted ${claimStats.targeted}` : ''} · {claimStats.clients}{' '}
-              Client_ID2 keys
+          <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+            <p>
+              <span className="font-medium text-foreground/80">Last Firestore stored:</span>{' '}
+              {formatStamp(firestoreStoredAt || snapshotAt || fetchedAt)}
+              {runMode === 'saved' ? ' · loaded from snapshot' : null}
+              {runMode && runMode !== 'saved' ? ` · last run ${runMode}` : null}
+              {runId ? ` · ${runId.slice(0, 8)}…` : ''}
+            </p>
+            <p>
+              <span className="font-medium text-foreground/80">Last Caspio refresh:</span>{' '}
+              {formatStamp(lastCaspioRefreshAt)}
+              {claimStats.total
+                ? ` · ${claimStats.total} claims · ${claimStats.clients} Client_ID2 keys`
+                : ''}
+              {claimStats.newClaims ? ` · +${claimStats.newClaims} new` : ''}
+              {claimStats.targeted ? ` · targeted ${claimStats.targeted}` : ''}
               {memberStats ? ` · members cursor ${memberStats.cursor ?? 'n/a'} / cache ${memberStats.cache}` : ''}
             </p>
-          ) : null}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => void load('saved')} disabled={isLoading || isAdminLoading || !isAdmin}>
+            {isLoading && loadingMode === 'saved' ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Database className="mr-2 h-4 w-4" />
+            )}
+            Load saved
+          </Button>
           <Button
             onClick={() => void load('incremental')}
             disabled={isLoading || isAdminLoading || !isAdmin}
@@ -589,14 +739,14 @@ export default function KaiserT2038ClaimAuditPage() {
         </Alert>
       ) : null}
 
-      {!isLoading && !error && rows.length === 0 ? (
+      {!hasSavedRun && !isLoading && !error ? (
         <Alert>
-          <AlertTitle>No audit loaded</AlertTitle>
+          <AlertTitle>No saved audit yet</AlertTitle>
           <AlertDescription>
-            This page does not auto-load a saved snapshot (it can be stale). Click{' '}
-            <span className="font-medium">Refresh from Caspio</span> for a live pull, or{' '}
-            <span className="font-medium">Full rebuild</span> to reseed from Caspio. Per-member{' '}
-            <span className="font-medium">Refresh claims</span> is available after a run is loaded.
+            Run <span className="font-medium">Full rebuild</span> or{' '}
+            <span className="font-medium">Refresh from Caspio</span> once to store the audit in Firestore. After that,
+            the page loads the saved snapshot on open; use global refresh or per-member{' '}
+            <span className="font-medium">Refresh claims</span> as you submit claims in Caspio.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -851,10 +1001,10 @@ export default function KaiserT2038ClaimAuditPage() {
                         }}
                       >
                         <span className="min-w-0 truncate font-medium">{member.name}</span>
-                        <Badge variant="outline" className="bg-white text-rose-950 border-rose-300 font-normal">
+                        <Badge variant="outline" className={`${STATUS_BLUE} font-normal`}>
                           {member.calaimStatus || 'No CalAIM_Status'}
                         </Badge>
-                        <Badge variant="outline" className="bg-white font-normal">
+                        <Badge variant="outline" className={`${STATUS_BLUE} font-normal`}>
                           Kaiser {member.kaiserStatus || '—'}
                         </Badge>
                         <span className="text-muted-foreground">
@@ -988,81 +1138,97 @@ export default function KaiserT2038ClaimAuditPage() {
           {filteredRows.map((row) => {
             const badge = windowBadge(row);
             const calaimBadge = calaimStatusBadge(row.calaimStatus);
+            const kaiserBadge = kaiserStatusBadge(row.kaiserStatus);
             const expanded = expandedId === row.id;
             const gapMonths = (row.months || []).filter((month) => month.status === 'missing');
             const gapMonthLabels = gapMonths.map((month) => month.label || month.monthKey);
             const isCompactQueueRow = row.noClaimsYet || gapMonthLabels.length > 0;
             return (
               <div key={row.id} className="rounded border">
-                <button
-                  type="button"
-                  className={`flex w-full items-center gap-3 px-3 text-left hover:bg-muted/40 ${
-                    isCompactQueueRow && !expanded ? 'py-2' : 'items-start py-3'
+                <div
+                  className={`flex w-full items-stretch gap-1 px-1 ${
+                    isCompactQueueRow && !expanded ? 'py-1' : 'py-1.5'
                   }`}
-                  onClick={() => setExpandedId(expanded ? '' : row.id)}
                 >
-                  <span className="shrink-0 text-muted-foreground">
-                    {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  </span>
-                  <div className={`min-w-0 flex-1 ${isCompactQueueRow && !expanded ? '' : 'space-y-1'}`}>
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="truncate font-medium">{row.memberName || row.clientId2}</span>
-                      <Badge variant="outline" className={badge.className}>
-                        {badge.label}
-                      </Badge>
-                      <Badge variant="outline" className={calaimBadge.className} title="CalAIM_Status">
-                        {calaimBadge.label}
-                      </Badge>
-                      {row.noClaimsYet ? (
-                        <Badge variant="outline" className="bg-sky-50 text-sky-950 border-sky-300">
-                          No claims yet
+                  <button
+                    type="button"
+                    className={`flex min-w-0 flex-1 items-center gap-3 rounded px-2 text-left hover:bg-muted/40 ${
+                      isCompactQueueRow && !expanded ? 'py-1.5' : 'items-start py-2'
+                    }`}
+                    onClick={() => setExpandedId(expanded ? '' : row.id)}
+                  >
+                    <span className="shrink-0 text-muted-foreground">
+                      {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </span>
+                    <div className={`min-w-0 flex-1 ${isCompactQueueRow && !expanded ? '' : 'space-y-1'}`}>
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="truncate font-medium">{row.memberName || row.clientId2}</span>
+                        <Badge variant="outline" className={badge.className}>
+                          {badge.label}
                         </Badge>
-                      ) : row.openMissingMonthCount > 0 ? (
-                        <Badge variant="outline" className="bg-amber-50 text-amber-950 border-amber-300">
-                          {row.openMissingMonthCount} gap month{row.openMissingMonthCount === 1 ? '' : 's'}
+                        <Badge variant="outline" className={calaimBadge.className} title="CalAIM_Status">
+                          {calaimBadge.label}
                         </Badge>
-                      ) : row.claimsComplete ? (
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-900 border-emerald-300">
-                          Claims complete
-                        </Badge>
-                      ) : null}
-                      {isCompactQueueRow && !expanded ? (
+                        {row.kaiserStatus ? (
+                          <Badge variant="outline" className={kaiserBadge.className} title="Kaiser_Status">
+                            {kaiserBadge.label}
+                          </Badge>
+                        ) : null}
+                        {row.noClaimsYet ? (
+                          <Badge variant="outline" className="bg-sky-50 text-sky-950 border-sky-300">
+                            No claims yet
+                          </Badge>
+                        ) : row.openMissingMonthCount > 0 ? (
+                          <Badge variant="outline" className="bg-amber-50 text-amber-950 border-amber-300">
+                            {row.openMissingMonthCount} gap month{row.openMissingMonthCount === 1 ? '' : 's'}
+                          </Badge>
+                        ) : row.claimsComplete ? (
+                          <Badge variant="outline" className="bg-emerald-50 text-emerald-900 border-emerald-300">
+                            Claims complete
+                          </Badge>
+                        ) : null}
+                        {isCompactQueueRow && !expanded ? (
+                          <>
+                            <span className="hidden text-xs text-muted-foreground md:inline">
+                              {row.clientId2 || '—'}
+                            </span>
+                            <span className="min-w-0 truncate text-xs text-muted-foreground">
+                              Auth {row.authorizationStart || '—'} → {row.authorizationEnd || '—'}
+                            </span>
+                            <span className="min-w-0 truncate text-xs text-muted-foreground">
+                              {row.noClaimsYet
+                                ? 'First claim —'
+                                : `First claim ${row.firstClaimDate || '—'}`}
+                            </span>
+                            {row.noClaimsYet ? (
+                              <span className="truncate text-xs text-sky-900/80">
+                                {row.unsubmittedClaimCount
+                                  ? `No clearinghouse claims · ${row.unsubmittedClaimCount} Caspio-only (blank Claim_Status)`
+                                  : 'No claims on file'}
+                              </span>
+                            ) : gapMonthLabels.length > 0 ? (
+                              <span className="min-w-0 truncate text-xs text-amber-900">
+                                Gaps {gapMonthLabels.join(' · ')}
+                              </span>
+                            ) : null}
+                          </>
+                        ) : null}
+                      </div>
+                      {(!isCompactQueueRow || expanded) && (
                         <>
-                          <span className="hidden text-xs text-muted-foreground md:inline">
-                            {row.clientId2 || '—'}
-                          </span>
-                          <span className="min-w-0 truncate text-xs text-muted-foreground">
-                            Auth {row.authorizationStart || '—'} → {row.authorizationEnd || '—'}
-                          </span>
-                          <span className="min-w-0 truncate text-xs text-muted-foreground">
-                            {row.noClaimsYet
-                              ? 'First claim —'
-                              : `First claim ${row.firstClaimDate || '—'}`}
-                          </span>
-                          {row.noClaimsYet ? (
-                            <span className="truncate text-xs text-sky-900/80">
-                              {row.unsubmittedClaimCount
-                                ? `No clearinghouse claims · ${row.unsubmittedClaimCount} Caspio-only (blank Claim_Status)`
-                                : 'No claims on file'}
-                            </span>
-                          ) : gapMonthLabels.length > 0 ? (
-                            <span className="min-w-0 truncate text-xs text-amber-900">
-                              Gaps {gapMonthLabels.join(' · ')}
-                            </span>
-                          ) : null}
-                        </>
-                      ) : null}
-                    </div>
-                    {(!isCompactQueueRow || expanded) && (
-                      <>
-                        <div className="text-xs text-muted-foreground">
-                          Client_ID2 {row.clientId2 || '—'}
-                          {row.mrn ? ` · MRN ${row.mrn}` : ''} · Auth {row.authorizationStart || '—'} →{' '}
-                          {row.authorizationEnd || '—'}
-                          {row.authorizationNumber ? ` · #${row.authorizationNumber}` : ''} · CalAIM_Status{' '}
-                          {row.calaimStatus || '—'}
-                          {row.kaiserStatus ? ` · Kaiser ${row.kaiserStatus}` : ''}
-                        </div>
+                          <div className="text-xs text-muted-foreground">
+                            Client_ID2 {row.clientId2 || '—'}
+                            {row.mrn ? ` · MRN ${row.mrn}` : ''} · Auth {row.authorizationStart || '—'} →{' '}
+                            {row.authorizationEnd || '—'}
+                            {row.authorizationNumber ? ` · #${row.authorizationNumber}` : ''} · CalAIM_Status{' '}
+                            <span className="font-medium text-blue-700">{row.calaimStatus || '—'}</span>
+                            {row.kaiserStatus ? (
+                              <>
+                                {' · Kaiser_Status '}
+                                <span className="font-medium text-blue-700">{row.kaiserStatus}</span>
+                              </>
+                            ) : null}
+                          </div>
                         <div className="text-xs">
                           {row.noClaimsYet
                             ? row.unsubmittedClaimCount
@@ -1090,10 +1256,28 @@ export default function KaiserT2038ClaimAuditPage() {
                             ))}
                           </div>
                         ) : null}
-                      </>
-                    )}
+                        </>
+                      )}
+                    </div>
+                  </button>
+                  <div className="flex shrink-0 flex-col justify-center gap-1 py-1 pr-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      disabled={!String(row.clientId2 || '').trim()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void openMemberNotes(row);
+                      }}
+                      title="View member notes (same as Kaiser Tracker)"
+                    >
+                      <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                      Notes
+                    </Button>
                   </div>
-                </button>
+                </div>
 
                 {expanded ? (
                   <div className="space-y-4 border-t bg-slate-50/60 px-3 py-3">
@@ -1103,23 +1287,33 @@ export default function KaiserT2038ClaimAuditPage() {
                           ? 'No claim months yet'
                           : 'Months — check No claim or Claimable'}
                       </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={isLoading || refreshingMemberId === row.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void refreshMemberClaims(row);
-                        }}
-                      >
-                        {refreshingMemberId === row.id ? (
-                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                        )}
-                        Refresh claims
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={!String(row.clientId2 || '').trim()}
+                          onClick={() => void openMemberNotes(row)}
+                          title="View member notes (same as Kaiser Tracker)"
+                        >
+                          <MessageSquare className="mr-2 h-3.5 w-3.5" />
+                          Notes
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={isLoading || refreshingMemberId === row.id}
+                          onClick={() => void refreshMemberClaims(row)}
+                        >
+                          {refreshingMemberId === row.id ? (
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                          )}
+                          Refresh claims
+                        </Button>
+                      </div>
                     </div>
                     <div>
                       {row.noClaimsYet ? (
@@ -1249,6 +1443,19 @@ export default function KaiserT2038ClaimAuditPage() {
           })}
         </CardContent>
       </Card>
+
+      <MemberNotesModal
+        isOpen={memberNotesModal.isOpen}
+        onClose={() => setMemberNotesModal(EMPTY_NOTES_MODAL)}
+        member={memberNotesModal.member}
+        notes={memberNotesModal.notes}
+        isLoadingNotes={memberNotesModal.isLoadingNotes}
+        lastSyncAt={memberNotesModal.lastSyncAt}
+        existingNotesCount={memberNotesModal.existingNotesCount}
+        newNotesCount={memberNotesModal.newNotesCount}
+        didSync={memberNotesModal.didSync}
+        onSyncNotes={() => void syncMemberNotes()}
+      />
     </div>
   );
 }

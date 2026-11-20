@@ -1,6 +1,7 @@
 import {
   classifyT2038Window,
   formatUsDate,
+  isHealthNetPlan,
   isKaiserPlan,
   parseDateOnly,
   startOfToday,
@@ -794,6 +795,10 @@ export type KaiserT2038ClaimAuditRunMeta = {
   createdByEmail: string;
   createdByName: string;
   fetchedAt: string;
+  /** When this run was last written to Firestore. */
+  firestoreStoredAt?: string;
+  /** Last time claims/members were pulled live from Caspio (global or per-member). */
+  lastCaspioRefreshAt?: string;
   maxClaimPk: string;
   claimCount: number;
   newClaimCount: number;
@@ -865,7 +870,10 @@ export function isIgnoredCalaimStatusForMrnMcoMismatch(value: unknown): boolean 
 
 /**
  * Members with a Kaiser-looking MRN (or populated Kaiser_MRN) whose CalAIM_MCO does not say Kaiser.
- * Excludes CalAIM_Status Closed, Member Died, and Non_Active / Inactive.
+ * Excludes:
+ * - CalAIM_Status Closed / Member Died / Non_Active
+ * - CalAIM_MCO Health Net (zero-padded Medi-Cal CINs are normal there — not a Kaiser MRN mismatch)
+ * Does not treat MCP_CIN alone as a Kaiser MRN (Medi-Cal numbers often start with 0).
  */
 export function findKaiserMrnNonKaiserMcoMembers(
   rawMembers: Array<Record<string, unknown>> | null | undefined
@@ -879,15 +887,17 @@ export function findKaiserMrnNonKaiserMcoMembers(
 
     const calaimMco = pickFirst(raw.CalAIM_MCO, raw.memberHealthPlan, raw.MCP, raw.Plan);
     if (isKaiserPlan(calaimMco)) continue;
+    // Health Net members routinely have zero-padded MCP_CIN — not a Kaiser MRN on wrong MCO.
+    if (isHealthNetPlan(calaimMco)) continue;
 
     const kaiserMrn = pickFirst(raw.Kaiser_MRN);
     const memberMrn = pickFirst(raw.Member_MRN, raw.MRN, raw.memberMrn);
     const mcpCin = pickFirst(raw.MCP_CIN, raw.MediCal_Number);
+    // Only Kaiser_MRN / Member_MRN / MRN — never MCP_CIN (Medi-Cal for every plan).
     const candidates: Array<{ field: string; value: string }> = [
       { field: 'Kaiser_MRN', value: kaiserMrn },
       { field: 'Member_MRN', value: pickFirst(raw.Member_MRN) },
       { field: 'MRN', value: pickFirst(raw.MRN, raw.memberMrn) },
-      { field: 'MCP_CIN', value: mcpCin },
     ].filter((c) => Boolean(c.value));
 
     // Strong signal: Kaiser_MRN populated on a non-Kaiser MCO row.

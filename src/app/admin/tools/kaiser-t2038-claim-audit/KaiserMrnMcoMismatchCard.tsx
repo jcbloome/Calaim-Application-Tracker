@@ -99,11 +99,13 @@ export function KaiserMrnMcoMismatchCard({ enabled = true }: Props) {
               </Badge>
             </CardTitle>
             <CardDescription>
-              Separate check (not part of the T2038 claim gap list): members whose MRN looks Kaiser — usually starts
-              with <span className="font-medium">0</span> or <span className="font-medium">1</span>, or who have{' '}
-              <code className="text-[11px]">Kaiser_MRN</code> filled — but <code className="text-[11px]">CalAIM_MCO</code>{' '}
-              does not say Kaiser. Skips <span className="font-medium">Closed</span>,{' '}
-              <span className="font-medium">Member Died</span>, and <span className="font-medium">Non_Active</span>.
+              Separate check (not part of the T2038 claim gap list): members with{' '}
+              <code className="text-[11px]">Kaiser_MRN</code> filled (or Member_MRN / MRN that looks Kaiser — usually
+              starts with <span className="font-medium">0</span> or <span className="font-medium">1</span>) whose{' '}
+              <code className="text-[11px]">CalAIM_MCO</code> is not Kaiser. Skips{' '}
+              <span className="font-medium">Health Net</span>, <span className="font-medium">Closed</span>,{' '}
+              <span className="font-medium">Member Died</span>, and <span className="font-medium">Non_Active</span>. Does
+              not use <code className="text-[11px]">MCP_CIN</code> alone (Medi-Cal IDs often start with 0).
             </CardDescription>
             {fetchedAt ? (
               <p className="text-[11px] text-muted-foreground">

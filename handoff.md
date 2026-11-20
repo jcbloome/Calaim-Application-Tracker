@@ -7,7 +7,7 @@
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
 ### New-chat priority (2026-11-20)
-1. **Deploy** App Hosting for `3955d5f6`; staff open T2038 claim audit and use **Refresh from Caspio** (no auto-load). Confirm Kathleen / Daniel / Mooney / Alderette after refresh.
+1. **Deploy** latest T2038 claim audit (Firestore snapshot on open + **Refresh from Caspio** / per-member refresh; Health Net skipped on MRN mismatch card).
 2. **Staff retest on production** (login required): Kaiser cover sheet download (Paula Davis) + See Files → CS Summary / Waivers.
 3. **Done (staff):** Caspio push mappings locked as **Draft3** (placement agency fields). Spot-check one CS Summary push.
 4. **Optional:** `cd functions && npm run build && npm run deploy` for ERA parser bucket hardening.
@@ -17,8 +17,14 @@
 
 ## Changes 2026-11-20
 
-- **Kaiser T2038 Claim Audit — no auto-load; Caspio only on demand:** Page open does **not** load a saved snapshot (stale risk). Empty until staff click **Refresh from Caspio** (incremental, seeds from Caspio if no inventory) or **Full rebuild**. Removed **Load saved**. Per-member **Refresh claims** still available after a run.
-  - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `handoff.md`.
+- **Kaiser T2038 Claim Audit — member Notes + blue statuses:** Each member row has **Notes** (same `MemberNotesModal` / Caspio sync as Kaiser Tracker). **CalAIM_Status** and **Kaiser_Status** render in blue badges/text.
+  - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
+
+- **Kaiser T2038 Claim Audit — Firestore snapshot + manual Caspio refresh:** Page opens from **saved Firestore** again. Global **Refresh from Caspio** / **Full rebuild** and per-member **Refresh claims** (as claims are submitted in Caspio). Header shows **Last Firestore stored** and **Last Caspio refresh** (persisted on state as `firestoreStoredAt` / `lastCaspioRefreshAt`).
+  - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `src/lib/kaiser-t2038-claim-audit.ts`, `handoff.md`.
+
+- **Kaiser MRN · non-Kaiser MCO — skip Health Net / MCP_CIN:** Jean Gillis (`Health Net`, CIN `000014664919`) was a false positive — Medi-Cal CINs often start with 0. Scan now **excludes Health Net** and does **not** treat `MCP_CIN` alone as a Kaiser MRN (only `Kaiser_MRN` / `Member_MRN` / `MRN`).
+  - Files: `src/lib/kaiser-t2038-claim-audit.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/KaiserMrnMcoMismatchCard.tsx`, `handoff.md`.
 
 - **Kaiser T2038 Claim Audit — show CalAIM_Status on member rows:** Members list now shows a **CalAIM_Status** badge (distinct **H2022** vs **Authorized** colors) on every row, plus `CalAIM_Status` labeled in the detail line.
   - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.

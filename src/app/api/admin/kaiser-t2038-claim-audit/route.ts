@@ -548,12 +548,15 @@ async function saveAuditRun(opts: {
   const { adminDb, mode, rows, claims, stats, authz, fetchedAt } = opts;
   const summary = summarizeKaiserT2038ClaimAudit(rows);
   const runRef = adminDb.collection(KAISER_T2038_CLAIM_AUDIT_RUNS_COLLECTION).doc();
+  const hitCaspio = mode === 'full' || mode === 'incremental' || mode === 'refresh_member';
   const meta: KaiserT2038ClaimAuditRunMeta = {
     mode,
     createdAtIso: fetchedAt,
     createdByEmail: String(authz.email || ''),
     createdByName: String(authz.name || ''),
     fetchedAt,
+    firestoreStoredAt: fetchedAt,
+    ...(hitCaspio ? { lastCaspioRefreshAt: fetchedAt } : {}),
     maxClaimPk: maxClaimPkFromRecords(claims),
     claimCount: claims.length,
     newClaimCount: stats.newClaimCount,
@@ -577,12 +580,16 @@ async function saveAuditRun(opts: {
     await batch.commit();
   }
 
+  const statePatch: Record<string, unknown> = {
+    ...meta,
+    runId: runRef.id,
+    updatedAt: fetchedAt,
+    firestoreStoredAt: fetchedAt,
+  };
+  if (hitCaspio) statePatch.lastCaspioRefreshAt = fetchedAt;
+
   await adminDb.collection(KAISER_T2038_CLAIM_AUDIT_STATE_COLLECTION).doc(KAISER_T2038_CLAIM_AUDIT_STATE_DOC_ID).set(
-    {
-      ...meta,
-      runId: runRef.id,
-      updatedAt: fetchedAt,
-    },
+    statePatch,
     { merge: true }
   );
 
@@ -704,11 +711,18 @@ export async function GET(request: NextRequest) {
           message: saved.error,
           fetchedAt: '',
           snapshotAt: '',
+          firestoreStoredAt: '',
           lastCaspioRefreshAt: '',
         });
       }
       const rows = applyActionableGapMonthPolicy(saved.rows || []);
-      const snapshotAt = saved.meta?.fetchedAt || saved.meta?.createdAtIso || '';
+      const stateData = (saved.meta || {}) as KaiserT2038ClaimAuditRunMeta & {
+        firestoreStoredAt?: string;
+        lastCaspioRefreshAt?: string;
+      };
+      const firestoreStoredAt =
+        String(stateData.firestoreStoredAt || stateData.fetchedAt || stateData.createdAtIso || '').trim();
+      const lastCaspioRefreshAt = String(stateData.lastCaspioRefreshAt || '').trim();
       return NextResponse.json({
         success: true,
         mode: 'saved',
@@ -723,9 +737,10 @@ export async function GET(request: NextRequest) {
         claimRowsNew: 0,
         claimClientsIndexed: saved.meta?.claimClientsIndexed || 0,
         maxClaimPk: saved.meta?.maxClaimPk || '',
-        fetchedAt: snapshotAt,
-        snapshotAt,
-        lastCaspioRefreshAt: '',
+        fetchedAt: firestoreStoredAt,
+        snapshotAt: firestoreStoredAt,
+        firestoreStoredAt,
+        lastCaspioRefreshAt,
       });
     }
 
@@ -823,6 +838,7 @@ export async function GET(request: NextRequest) {
         maxClaimPk: saved.meta.maxClaimPk,
         fetchedAt,
         snapshotAt: fetchedAt,
+        firestoreStoredAt: fetchedAt,
         lastCaspioRefreshAt: fetchedAt,
       });
     }
@@ -1016,6 +1032,7 @@ export async function GET(request: NextRequest) {
       maxClaimPk: saved.meta.maxClaimPk,
       fetchedAt,
       snapshotAt: fetchedAt,
+      firestoreStoredAt: fetchedAt,
       lastCaspioRefreshAt: fetchedAt,
     });
   } catch (error: unknown) {
