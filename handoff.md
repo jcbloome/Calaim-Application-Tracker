@@ -1,19 +1,42 @@
 # Handoff — CalAIM Application Tracker
 
-**Date:** 2026-11-19  
+**Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `d22196b9` (CS Summary placement agency fields; Caspio Draft3 locked)  
+**HEAD:** (uncommitted) Kaiser T2038 Claim Audit — fresh claims on demand  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
-### New-chat priority (2026-11-19)
-1. **Done:** App Hosting rollout succeeded for `179ba6d4` / `057abbb2` / `c41d6133` (GitHub check “App Hosting - Rollout … Build succeeded”; live site HTTP 200).
-2. **Staff retest on production** (login required): Kaiser cover sheet download (Paula Davis) + See Files → CS Summary / Waivers. Local Paula Davis cover-sheet download path exercised after deploy.
-3. **Done (staff):** Caspio push mappings locked as **Draft3** (includes placement agency: `placementAgency`→`Placement_Agency`, contact/phone/email → `Placement_Agency_*`). Spot-check one CS Summary push that those four fields land in Caspio.
+### New-chat priority (2026-11-20)
+1. **Commit + deploy** Kaiser T2038 Claim Audit freshness (below) when ready; staff open `/admin/tools/kaiser-t2038-claim-audit` and confirm Kathleen Dangleis (`11255` / `000004044618`) and Daniel Shannon (`9970` / `000025994001`) leave **No claims yet** after auto Refresh from Caspio.
+2. **Staff retest on production** (login required): Kaiser cover sheet download (Paula Davis) + See Files → CS Summary / Waivers.
+3. **Done (staff):** Caspio push mappings locked as **Draft3** (placement agency fields). Spot-check one CS Summary push.
 4. **Optional:** `cd functions && npm run build && npm run deploy` for ERA parser bucket hardening.
 5. Do **not** use SFTP To Go / AWS for this app — files are Firebase Storage; documented backups are Firestore → GCS.
 
 ---
+
+## Changes 2026-11-20
+
+- **Kaiser T2038 Claim Audit — show CalAIM_Status on member rows:** Members list now shows a **CalAIM_Status** badge (distinct **H2022** vs **Authorized** colors) on every row, plus `CalAIM_Status` labeled in the detail line.
+  - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
+
+- **Kaiser T2038 Claim Audit — Mooney / Alderette claim attach (systemic):** Same false “No claims yet” for Stephen Mooney (`9418`, member MRN `110018730553` vs claim CIN `110018738553`) and Alderette (`8957`, `…149993` vs `…139993`). Hardened matching: trust real Client_ID2; **1-digit MRN/CIN near-match**; **name** (`Client_Last`+`Client_First`) index; Caspio live pull tries `Client_ID2`/`client_ID2`, MCP_CIN, then name. Per-member Refresh passes first/last.
+  - Files: `src/lib/kaiser-t2038-claim-audit.ts`, `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
+
+- **Kaiser T2038 Claim Audit — Buchanan false “No claims yet”:** Auth-period DOS filter treated Jan–Nov 2026 Payment Received rows as outside a new **12/01/2026** T2038 auth, so Michael Buchanan (`9519` / `000015745059`) looked empty. Fix: **any** clearinghouse-submitted claim on the member clears `noClaimsYet`; gap grid still prefers claims on/after current auth start; if billed before but auth **not started**, show history first-claim date with no gap grid (not “no claims yet”).
+  - Files: `src/lib/kaiser-t2038-claim-audit.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
+
+- **Kaiser T2038 Claim Audit — Kaiser MRN on non-Kaiser MCO card:** Separate page component (not part of the claim-gap list) flags members whose MRN looks Kaiser (usually starts with **0** or **1**, or populated `Kaiser_MRN`) but `CalAIM_MCO` does not say Kaiser. **Excludes** CalAIM_Status **Closed**, **Member Died**, **Non_Active** / Inactive. Auto-scan uses member cache; **Refresh from Caspio** (`forceCaspio=true`) re-pulls live.
+  - Files: `src/lib/kaiser-t2038-claim-audit.ts` (`looksLikeKaiserMrn`, `findKaiserMrnNonKaiserMcoMembers`, `isIgnoredCalaimStatusForMrnMcoMismatch`), `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/KaiserMrnMcoMismatchCard.tsx`, `page.tsx`, `handoff.md`.
+
+- **Kaiser T2038 Claim Audit — unsubmitted vs no claims (Authorized / H2022):** Clarified two queues. **Unsubmitted** = `Claim_Status` blank (entered in Caspio only, not sent to clearinghouse). **No claims yet** = zero clearinghouse-submitted rows **during the T2038 auth period** for CalAIM_Status **Authorized** or **H2022** (blank-status rows do not clear the flag; they increment `unsubmittedClaimCount`). H2022 members now enter the audit; default status filter is **Authorized + H2022**. Submitted/unsubmitted claim matching is scoped to DOS inside auth start→end when dates exist.
+  - Files: `src/lib/kaiser-t2038-claim-audit.ts` (`isClaimAuditActiveCalaimStatus`, auth-period claim filter), `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
+
+- **Kaiser T2038 Claim Audit — fresh claims on demand (false “No claims yet”):** Page used to paint a **stale Firestore snapshot** (`mode=saved`) and never hit Caspio on open. **Update new claims** (`incremental`) only pulled `PK_ID` after the saved max PK, so older **Payment Received / Claim Submitted** rows never arrived. Targeted live pulls for open-auth `noClaimsYet` members were **skipped when there were more than ~40** such members and inventory was large — Kathleen / Daniel stayed wrong after Update.
+  - **API:** Always batch live Caspio pulls for all open-auth (and expired) `noClaimsYet` members on incremental / non-force full rebuild — Client_ID2 first, then **MCP_CIN / MRN** if empty; concurrency ~8, up to 500 members (no hard skip at 40). New `mode=refresh_member&clientId2=&mrn=` merges one member into inventory and rebuilds the saved run.
+  - **UI:** Instant saved paint, then **auto-runs incremental** once; primary button renamed **Refresh from Caspio**; expanded rows get **Refresh claims**; status line shows **Snapshot** vs **Last Caspio refresh**.
+  - **Verify (lib):** Synthetic Kathleen + Daniel claim rows (`Claim Submitted` / `Payment Received`, including placeholder Client_ID2 `10000` matched by CIN) → `noClaimsYet: false`.
+  - Files: `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `src/lib/kaiser-t2038-claim-audit.ts` (`KaiserT2038ClaimAuditRunMode` += `refresh_member`), `handoff.md`.
 
 ## Changes 2026-11-19
 

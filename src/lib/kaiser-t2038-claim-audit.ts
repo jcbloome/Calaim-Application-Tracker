@@ -30,6 +30,8 @@ const normalize = (value: unknown) =>
 export const T2038_CLAIM_DOS_FIELDS = [
   'Date_of_Service',
   'Date_Of_Service',
+  // Caspio T2038 table uses a zero in "Of" (Date_0f_Service) — keep both spellings.
+  'Date_0f_Service',
   'Claim_Date',
   'ClaimDate',
   'Service_Date',
@@ -43,6 +45,51 @@ export const T2038_CLAIM_DOS_FIELDS = [
   'Days_of_Service_First3',
   'Days_of_Service_First4',
 ] as const;
+
+/** Caspio claim-entry placeholders — not a real member Client_ID2; require MRN/CIN to attach. */
+export function isPlaceholderClientId2(value: unknown): boolean {
+  const key = normalizeClientId2Key(value) || clean(value);
+  if (!key) return false;
+  return key === '10000' || key === '0' || key === '1';
+}
+
+/** True when two normalized MRN/CIN keys differ by at most one character (same length). */
+export function mrnKeysNearMatch(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  if (a === b) return true;
+  let diffs = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) {
+      diffs += 1;
+      if (diffs > 1) return false;
+    }
+  }
+  return diffs === 1;
+}
+
+function claimNameKey(first: string, last: string): string {
+  const f = normalize(first);
+  const l = normalize(last);
+  if (!f || !l) return '';
+  return `${l}|${f}`;
+}
+
+function claimMrnKey(raw: Record<string, unknown> | undefined): string {
+  if (!raw) return '';
+  return normalizeMrnKey(pickFirst(raw.MCP_CIN, raw.Kaiser_MRN, raw.Member_MRN, raw.MRN));
+}
+
+function dedupeSubmittedClaims(claims: SubmittedClaimRow[]): SubmittedClaimRow[] {
+  const byKey = new Map<string, SubmittedClaimRow>();
+  for (const claim of claims) {
+    const pk = clean(claim.raw?.PK_ID);
+    const key =
+      pk ||
+      `${claim.clientId2}|${claim.dateOfServiceIso}|${normalize(claim.clientLast)}|${normalize(claim.clientFirst)}|${claim.submitted ? '1' : '0'}`;
+    if (!byKey.has(key)) byKey.set(key, claim);
+  }
+  return Array.from(byKey.values());
+}
 
 /** Normalize Client_ID2 so "10914", 10914, and "10914.0" share one map key. */
 export function normalizeClientId2Key(value: unknown): string {
@@ -252,8 +299,9 @@ export function collectServiceDatesFromClaimRow(row: Record<string, unknown>): D
 }
 
 /**
- * Staff enter rows in CalAIM_Claim_Submit_T2038 before they are sent; Claim_Status stays blank
- * until submission ("Claim Submitted", "Payment Received", …). Blank = entered, not submitted.
+ * Clearinghouse submission gate on CalAIM_Claim_Submit_T2038:
+ * - Blank Claim_Status = entered in Caspio only (not sent to clearinghouse) → unsubmitted
+ * - Non-blank ("Claim Submitted", "Payment Received", …) → submitted
  *
  * Compact Firestore storage used to omit empty Claim_Status, so a missing key on a stored row
  * means it was blank when saved — treat as not submitted (not as submitted).
@@ -263,46 +311,64 @@ export function isClaimRowSubmitted(raw: Record<string, unknown>): boolean {
   return clean(raw.Claim_Status) !== '';
 }
 
+/** CalAIM_Status values that should surface “no claims during auth” (Authorized or on H2022). */
+export function isClaimAuditActiveCalaimStatus(value: unknown): boolean {
+  const n = normalize(value);
+  return n === 'authorized' || n === 'h2022';
+}
+
 export function indexClaimsByClientId2(
   records: Array<Record<string, unknown>> | null | undefined
 ): Map<string, SubmittedClaimRow[]> {
   const byClient = new Map<string, SubmittedClaimRow[]>();
   for (const raw of Array.isArray(records) ? records : []) {
     const clientId2Raw = pickFirst(raw.Client_ID2, raw.client_ID2, raw.clientId2, raw.ClientId2);
-    const clientId2 = normalizeClientId2Key(clientId2Raw) || clean(clientId2Raw);
-    if (!clientId2) continue;
     const clientFirst = pickFirst(raw.Client_First, raw.Senior_First);
     const clientLast = pickFirst(raw.Client_Last, raw.Senior_Last);
+    const mrnKey = claimMrnKey(raw);
+    const nameKey = claimNameKey(clientFirst, clientLast);
+    // Prefer real Client_ID2; otherwise still index under MRN/name so rows are not dropped.
+    const clientId2 =
+      normalizeClientId2Key(clientId2Raw) ||
+      clean(clientId2Raw) ||
+      (mrnKey ? `mrn:${mrnKey}` : '') ||
+      (nameKey ? `name:${nameKey}` : '');
+    if (!clientId2) continue;
     const dates = collectServiceDatesFromClaimRow(raw);
     const submitted = isClaimRowSubmitted(raw);
-    const list = byClient.get(clientId2) || [];
-    if (dates.length === 0) {
-      // Still record that a claim row exists for this member (avoids false "no claims yet").
-      list.push({
-        clientId2,
-        clientFirst,
-        clientLast,
-        dateOfService: '',
-        dateOfServiceIso: '',
-        monthKey: '',
-        submitted,
-        raw,
-      });
-    } else {
-      for (const date of dates) {
+    const pushForKey = (mapKey: string) => {
+      const list = byClient.get(mapKey) || [];
+      if (dates.length === 0) {
+        // Still record that a claim row exists for this member (avoids false "no claims yet").
         list.push({
-          clientId2,
+          clientId2: normalizeClientId2Key(clientId2Raw) || clean(clientId2Raw) || mapKey,
           clientFirst,
           clientLast,
-          dateOfService: formatUsDate(date),
-          dateOfServiceIso: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-          monthKey: monthKeyFromDate(date),
+          dateOfService: '',
+          dateOfServiceIso: '',
+          monthKey: '',
           submitted,
           raw,
         });
+      } else {
+        for (const date of dates) {
+          list.push({
+            clientId2: normalizeClientId2Key(clientId2Raw) || clean(clientId2Raw) || mapKey,
+            clientFirst,
+            clientLast,
+            dateOfService: formatUsDate(date),
+            dateOfServiceIso: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+            monthKey: monthKeyFromDate(date),
+            submitted,
+            raw,
+          });
+        }
       }
-    }
-    byClient.set(clientId2, list);
+      byClient.set(mapKey, list);
+    };
+    pushForKey(clientId2);
+    // Dual-index by name so Client_ID2 / CIN typos still attach (Mooney / Alderette).
+    if (nameKey && !clientId2.startsWith('name:')) pushForKey(`name:${nameKey}`);
   }
   for (const [clientId2, list] of byClient.entries()) {
     list.sort((a, b) => {
@@ -319,10 +385,24 @@ export function indexClaimsByClientId2(
 function isRelevantKaiserStatus(status: string) {
   const n = normalize(status);
   if (!n) return false;
-  if (n === 'authorized') return true;
+  if (isClaimAuditActiveCalaimStatus(n)) return true;
   if (n.includes('authorization ended')) return true;
   if (n === 'authorized on hold') return true;
   return false;
+}
+
+/** True when claim DOS is on/after auth start and on/before auth end (missing bounds = open). */
+function claimDosInAuthPeriod(
+  claim: SubmittedClaimRow,
+  authStart: Date | null,
+  authEnd: Date | null
+): boolean {
+  if (!authStart && !authEnd) return true;
+  const dos = parseClaimServiceDate(claim.dateOfServiceIso || claim.dateOfService);
+  if (!dos) return true;
+  if (authStart && dos.getTime() < authStart.getTime()) return false;
+  if (authEnd && dos.getTime() > authEnd.getTime()) return false;
+  return true;
 }
 
 /**
@@ -402,9 +482,13 @@ export function mapKaiserMemberForClaimAudit(
 
 /**
  * Gap window:
- * - If claims exist: from the first submitted claim month through auth end (or today while auth open).
- *   Months before the first claim are ignored (ILS may not have released auth on Caspio start).
- * - If auth exists but no claims yet: flag as noClaimsYet (new auth awaiting first submission).
+ * - Unsubmitted = Claim_Status blank (Caspio only, not sent to clearinghouse).
+ * - No claims yet = zero clearinghouse-submitted claim rows on the member (any DOS) for
+ *   CalAIM_Status Authorized / H2022 (or T2038 auth on file). Prior-auth claims still count —
+ *   do not require DOS inside the current auth dates (new/future auth would false-flag billers).
+ * - Gap months: from the first submitted claim on/after auth start (else first claim) through
+ *   auth end / today. If the member has history but the new auth has not started yet, show no
+ *   gap grid (not "no claims yet").
  */
 export function buildKaiserT2038ClaimAuditRows(opts: {
   rawMembers: Array<Record<string, unknown>>;
@@ -416,15 +500,39 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
   const rows: KaiserT2038ClaimAuditRow[] = [];
   const seen = new Set<string>();
   const claimsByMrn = new Map<string, SubmittedClaimRow[]>();
+  const claimsByName = new Map<string, SubmittedClaimRow[]>();
   for (const list of opts.claimsByClient.values()) {
     for (const claim of list) {
       const mrnKey = claimMrnKey(claim.raw);
-      if (!mrnKey) continue;
-      const bucket = claimsByMrn.get(mrnKey) || [];
-      bucket.push(claim);
-      claimsByMrn.set(mrnKey, bucket);
+      if (mrnKey) {
+        const bucket = claimsByMrn.get(mrnKey) || [];
+        bucket.push(claim);
+        claimsByMrn.set(mrnKey, bucket);
+      }
+      const nameKey = claimNameKey(claim.clientFirst, claim.clientLast);
+      if (nameKey) {
+        const bucket = claimsByName.get(nameKey) || [];
+        bucket.push(claim);
+        claimsByName.set(nameKey, bucket);
+      }
     }
   }
+
+  const nearMrnClaims = (memberKeys: Set<string>): SubmittedClaimRow[] => {
+    const out: SubmittedClaimRow[] = [];
+    const seenClaim = new Set<SubmittedClaimRow>();
+    for (const memberKey of memberKeys) {
+      for (const [claimKey, list] of claimsByMrn.entries()) {
+        if (!mrnKeysNearMatch(memberKey, claimKey)) continue;
+        for (const claim of list) {
+          if (seenClaim.has(claim)) continue;
+          seenClaim.add(claim);
+          out.push(claim);
+        }
+      }
+    }
+    return out;
+  };
 
   opts.rawMembers.forEach((raw, index) => {
     const base = mapKaiserMemberForClaimAudit(raw || {}, index, today);
@@ -450,22 +558,36 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
       ? opts.claimsByClient.get(clientKey) || opts.claimsByClient.get(base.clientId2) || []
       : [];
     // Claim rows sometimes carry a placeholder Client_ID2 (e.g. 10000); MCP_CIN/MRN is the reliable link.
+    // For a real Client_ID2, trust the ID even when member MRN and claim MCP_CIN disagree by a digit
+    // (Alderette 8957 / Mooney 9418 — member MRN off by one from claim MCP_CIN).
     const memberMrnKeys = new Set(
       [base.mrn, raw?.MCP_CIN, raw?.Kaiser_MRN, raw?.Member_MRN, raw?.MRN]
         .map(normalizeMrnKey)
         .filter(Boolean)
     );
-    const matchedClaims = memberMrnKeys.size
-      ? Array.from(
-          new Set([
-            ...byClientId.filter((claim) => {
-              const claimKey = claimMrnKey(claim.raw);
-              return !claimKey || memberMrnKeys.has(claimKey);
-            }),
-            ...Array.from(memberMrnKeys).flatMap((k) => claimsByMrn.get(k) || []),
-          ])
-        )
+    const memberNameKey = claimNameKey(base.memberFirstName, base.memberLastName);
+    const fromMrnExact = Array.from(memberMrnKeys).flatMap((k) => claimsByMrn.get(k) || []);
+    const fromMrnNear = fromMrnExact.length ? [] : nearMrnClaims(memberMrnKeys);
+    const fromName = memberNameKey ? claimsByName.get(memberNameKey) || [] : [];
+    const fromClientId = isPlaceholderClientId2(clientKey)
+      ? byClientId.filter((claim) => {
+          const claimKey = claimMrnKey(claim.raw);
+          return (
+            !claimKey ||
+            memberMrnKeys.has(claimKey) ||
+            Array.from(memberMrnKeys).some((k) => mrnKeysNearMatch(k, claimKey))
+          );
+        })
       : byClientId;
+    const matchedClaims = dedupeSubmittedClaims([
+      ...fromClientId,
+      ...fromMrnExact,
+      ...fromMrnNear,
+      ...fromName,
+    ]);
+    // Submitted = non-blank Claim_Status (sent / paid). Unsubmitted = blank (Caspio only).
+    // Any DOS counts for "has this member ever been billed" / noClaimsYet (Buchanan pattern:
+    // new Dec auth must not hide Jan–Nov Payment Received rows).
     const submittedClaims = matchedClaims.filter((claim) => claim.submitted !== false);
     const unsubmittedClaims = matchedClaims.filter((claim) => claim.submitted === false);
     const unsubmittedByMonth = new Map<string, string[]>();
@@ -475,30 +597,42 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
       if (!list.includes(claim.dateOfService)) list.push(claim.dateOfService);
       unsubmittedByMonth.set(claim.monthKey, list);
     }
-    const datedClaims = submittedClaims
+    const datedClaimsAll = submittedClaims
       .filter((claim) => Boolean(claim.monthKey && claim.dateOfService))
       .sort((a, b) => String(a.dateOfServiceIso).localeCompare(String(b.dateOfServiceIso)));
+    // Gap grid prefers claims on/after current auth start; fall back to full history for first-claim label.
+    const datedClaimsInAuth = datedClaimsAll.filter((claim) =>
+      claimDosInAuthPeriod(claim, authStart, null)
+    );
+    const datedClaims = datedClaimsInAuth.length ? datedClaimsInAuth : [];
     const claimsByMonth = new Map<string, string[]>();
-    for (const claim of datedClaims) {
+    for (const claim of datedClaimsAll) {
       const list = claimsByMonth.get(claim.monthKey) || [];
       if (claim.dateOfService && !list.includes(claim.dateOfService)) list.push(claim.dateOfService);
       claimsByMonth.set(claim.monthKey, list);
     }
 
-    const firstClaim = datedClaims[0] || null;
-    const firstClaimDate = firstClaim?.dateOfService || '';
-    const firstClaimMonthKey = firstClaim?.monthKey || '';
-    // "No claims yet": zero claim rows and either T2038 auth on file or CalAIM_Status Authorized
-    // (new members often have Authorized status before auth dates are entered).
+    const firstClaimEver = datedClaimsAll[0] || null;
+    const firstClaimInAuth = datedClaims[0] || null;
+    const firstClaimDate = firstClaimEver?.dateOfService || '';
+    const firstClaimMonthKey = firstClaimEver?.monthKey || '';
+    // "No claims yet": zero clearinghouse-submitted rows on the member (any DOS).
+    // Blank Claim_Status does not clear this — counted in unsubmittedClaimCount instead.
     const noClaimsYet =
       submittedClaims.length === 0 &&
-      Boolean(authStart || authEnd || base.authorizationNumber || normalize(base.calaimStatus) === 'authorized');
+      Boolean(
+        authStart ||
+          authEnd ||
+          base.authorizationNumber ||
+          isClaimAuditActiveCalaimStatus(base.calaimStatus)
+      );
 
     let expectedMonths: string[] = [];
     let gapStartMonthKey = '';
-    if (firstClaim) {
+    const authNotStarted = Boolean(authStart && authStart.getTime() > today.getTime());
+    if (firstClaimInAuth) {
       const firstClaimDateObj = parseClaimServiceDate(
-        firstClaim.dateOfServiceIso || firstClaim.dateOfService
+        firstClaimInAuth.dateOfServiceIso || firstClaimInAuth.dateOfService
       );
       const gapStart = firstClaimDateObj || authStart;
       if (gapStart) {
@@ -508,14 +642,17 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
         );
         gapStartMonthKey = expectedMonths[0] || '';
       }
+    } else if (submittedClaims.length > 0 && authNotStarted) {
+      // Billed before; new auth has not started — do not invent gaps or "no claims yet".
+      expectedMonths = [];
     } else if (submittedClaims.length > 0 && authStart) {
-      // Claim rows exist but DOS could not be parsed — still audit from auth start.
+      // History exists but only before this auth start, and auth has started — audit from auth start.
       expectedMonths = filterActionableClaimAuditMonths(
         listMonthKeysInclusive(authStart, rangeEnd),
         today
       );
       gapStartMonthKey = expectedMonths[0] || '';
-    } else if (!noClaimsYet && authStart) {
+    } else if (!noClaimsYet && authStart && !authNotStarted) {
       expectedMonths = filterActionableClaimAuditMonths(
         listMonthKeysInclusive(authStart, rangeEnd),
         today
@@ -648,7 +785,7 @@ export const KAISER_T2038_CLAIM_AUDIT_RUNS_COLLECTION = 'kaiser_t2038_claim_audi
 export const KAISER_T2038_CLAIM_AUDIT_STATE_COLLECTION = 'kaiser_t2038_claim_audit_state';
 export const KAISER_T2038_CLAIM_AUDIT_STATE_DOC_ID = 'latest';
 
-export type KaiserT2038ClaimAuditRunMode = 'full' | 'incremental' | 'saved';
+export type KaiserT2038ClaimAuditRunMode = 'full' | 'incremental' | 'saved' | 'refresh_member';
 
 export type KaiserT2038ClaimAuditRunMeta = {
   id?: string;
@@ -686,9 +823,114 @@ export function normalizeMrnKey(value: unknown): string {
     .replace(/^0+(?=\d)/, '');
 }
 
-function claimMrnKey(raw: Record<string, unknown> | undefined): string {
-  if (!raw) return '';
-  return normalizeMrnKey(pickFirst(raw.MCP_CIN, raw.Kaiser_MRN, raw.Member_MRN, raw.MRN));
+/**
+ * Kaiser MRNs are typically long numeric IDs that start with 0 or 1 (often zero-padded to 12).
+ * Used to spot members whose CalAIM_MCO is not Kaiser but who still carry a Kaiser-looking MRN.
+ */
+export function looksLikeKaiserMrn(value: unknown): boolean {
+  const raw = clean(value);
+  if (!raw) return false;
+  if (!/^[01]/.test(raw)) return false;
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 8 || digits.length > 14) return false;
+  const compact = raw.replace(/[\s-]/g, '');
+  // Mostly numeric (allow rare trailing letter noise)
+  return digits.length >= Math.ceil(compact.length * 0.85);
+}
+
+export type KaiserMrnNonKaiserMcoRow = {
+  id: string;
+  clientId2: string;
+  memberName: string;
+  memberFirstName: string;
+  memberLastName: string;
+  calaimMco: string;
+  calaimStatus: string;
+  mrn: string;
+  mrnField: string;
+  kaiserMrn: string;
+  memberMrn: string;
+  mcpCin: string;
+};
+
+/** Skip inactive / closed members on the Kaiser-MRN × non-Kaiser-MCO scan. */
+export function isIgnoredCalaimStatusForMrnMcoMismatch(value: unknown): boolean {
+  const n = normalize(value);
+  if (!n) return false;
+  if (n === 'closed') return true;
+  if (n === 'member died' || n === 'memberdied') return true;
+  if (n === 'non active' || n === 'nonactive' || n === 'inactive') return true;
+  return false;
+}
+
+/**
+ * Members with a Kaiser-looking MRN (or populated Kaiser_MRN) whose CalAIM_MCO does not say Kaiser.
+ * Excludes CalAIM_Status Closed, Member Died, and Non_Active / Inactive.
+ */
+export function findKaiserMrnNonKaiserMcoMembers(
+  rawMembers: Array<Record<string, unknown>> | null | undefined
+): KaiserMrnNonKaiserMcoRow[] {
+  const out: KaiserMrnNonKaiserMcoRow[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of Array.isArray(rawMembers) ? rawMembers : []) {
+    const calaimStatus = pickFirst(raw.CalAIM_Status, raw.memberStatus, raw.calaimStatus);
+    if (isIgnoredCalaimStatusForMrnMcoMismatch(calaimStatus)) continue;
+
+    const calaimMco = pickFirst(raw.CalAIM_MCO, raw.memberHealthPlan, raw.MCP, raw.Plan);
+    if (isKaiserPlan(calaimMco)) continue;
+
+    const kaiserMrn = pickFirst(raw.Kaiser_MRN);
+    const memberMrn = pickFirst(raw.Member_MRN, raw.MRN, raw.memberMrn);
+    const mcpCin = pickFirst(raw.MCP_CIN, raw.MediCal_Number);
+    const candidates: Array<{ field: string; value: string }> = [
+      { field: 'Kaiser_MRN', value: kaiserMrn },
+      { field: 'Member_MRN', value: pickFirst(raw.Member_MRN) },
+      { field: 'MRN', value: pickFirst(raw.MRN, raw.memberMrn) },
+      { field: 'MCP_CIN', value: mcpCin },
+    ].filter((c) => Boolean(c.value));
+
+    // Strong signal: Kaiser_MRN populated on a non-Kaiser MCO row.
+    const match =
+      candidates.find((c) => c.field === 'Kaiser_MRN' && Boolean(c.value)) ||
+      candidates.find((c) => looksLikeKaiserMrn(c.value));
+    if (!match) continue;
+
+    const clientId2 =
+      normalizeClientId2Key(pickFirst(raw.client_ID2, raw.Client_ID2, raw.clientId2)) ||
+      clean(pickFirst(raw.client_ID2, raw.Client_ID2, raw.clientId2));
+    const memberFirstName = pickFirst(raw.Senior_First, raw.memberFirstName);
+    const memberLastName = pickFirst(raw.Senior_Last, raw.memberLastName);
+    const memberName =
+      [memberLastName, memberFirstName].filter(Boolean).join(', ') ||
+      clientId2 ||
+      match.value;
+    const dedupe = `${clientId2}|${normalizeMrnKey(match.value)}|${normalize(calaimMco)}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+
+    out.push({
+      id: pickFirst(clientId2, normalizeMrnKey(match.value), memberName) || `mco-${out.length}`,
+      clientId2,
+      memberName,
+      memberFirstName,
+      memberLastName,
+      calaimMco: calaimMco || '(blank)',
+      calaimStatus,
+      mrn: match.value,
+      mrnField: match.field,
+      kaiserMrn,
+      memberMrn,
+      mcpCin,
+    });
+  }
+
+  out.sort((a, b) => {
+    const nameCmp = a.memberName.localeCompare(b.memberName, undefined, { sensitivity: 'base' });
+    if (nameCmp) return nameCmp;
+    return a.clientId2.localeCompare(b.clientId2);
+  });
+  return out;
 }
 
 /**

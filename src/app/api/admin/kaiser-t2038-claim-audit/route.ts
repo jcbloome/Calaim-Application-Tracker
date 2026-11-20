@@ -18,6 +18,8 @@ import {
   KAISER_T2038_CLAIM_AUDIT_STATE_COLLECTION,
   KAISER_T2038_CLAIM_AUDIT_STATE_DOC_ID,
   maxClaimPkFromRecords,
+  normalizeMrnKey,
+  findKaiserMrnNonKaiserMcoMembers,
   DEFAULT_CLAIMABLE_REASON,
   DEFAULT_JUSTIFY_REASON,
   summarizeKaiserT2038ClaimAudit,
@@ -280,20 +282,16 @@ async function fetchSubmittedT2038Claims(
   return Array.from(byKey.values());
 }
 
-async function fetchClaimsForOneClient(
+async function fetchClaimsByWhere(
   credentials: ReturnType<typeof getCaspioCredentialsFromEnv>,
   token: string,
-  clientId: string
+  identityWhere: string
 ): Promise<Array<Record<string, unknown>>> {
-  const escaped = clientId.replace(/'/g, "''");
   const out: Array<Record<string, unknown>> = [];
   let useKaiserWhere = true;
   for (let pageNumber = 1; pageNumber <= 3; pageNumber += 1) {
     const params = new URLSearchParams();
-    params.set(
-      'q.where',
-      combineWhere(`Client_ID2='${escaped}'`, useKaiserWhere ? KAISER_MCP_WHERE : '')
-    );
+    params.set('q.where', combineWhere(identityWhere, useKaiserWhere ? KAISER_MCP_WHERE : ''));
     params.set('q.pageSize', '1000');
     params.set('q.pageNumber', String(pageNumber));
     const page = await caspioClaimPage(credentials, token, params);
@@ -312,25 +310,107 @@ async function fetchClaimsForOneClient(
   return out;
 }
 
-/** Parallel Client_ID2 lookups — capped so full rebuild cannot stall on hundreds of sequential Caspio calls. */
-async function fetchClaimsForClientIds(
+/** Live Caspio pull for one member — Client_ID2 / client_ID2, then MCP_CIN / MRN, then name. */
+async function fetchClaimsForOneMember(
   credentials: ReturnType<typeof getCaspioCredentialsFromEnv>,
-  clientIds: string[],
-  opts?: { limit?: number; concurrency?: number }
+  token: string,
+  opts: { clientId2?: string; mrn?: string; memberFirstName?: string; memberLastName?: string }
 ): Promise<Array<Record<string, unknown>>> {
-  if (!clientIds.length) return [];
+  const clientId = String(opts.clientId2 || '').trim();
+  const mrnRaw = String(opts.mrn || '').trim();
+  const mrnKey = normalizeMrnKey(mrnRaw);
+  const first = String(opts.memberFirstName || '').trim();
+  const last = String(opts.memberLastName || '').trim();
+  const byKey = new Map<string, Record<string, unknown>>();
+  const add = (rows: Array<Record<string, unknown>>) => {
+    for (const row of rows) byKey.set(claimRecordKey(row), row);
+  };
+
+  if (clientId) {
+    const escaped = clientId.replace(/'/g, "''");
+    // Caspio tables have used both Client_ID2 and client_ID2.
+    for (const field of ['Client_ID2', 'client_ID2'] as const) {
+      add(await fetchClaimsByWhere(credentials, token, `${field}='${escaped}'`));
+      if (byKey.size > 0) break;
+    }
+    // Numeric Client_ID2 variants (Caspio sometimes stores without quotes / as number).
+    if (/^\d+$/.test(clientId) && byKey.size === 0) {
+      for (const field of ['Client_ID2', 'client_ID2'] as const) {
+        add(await fetchClaimsByWhere(credentials, token, `${field}=${clientId}`));
+        if (byKey.size > 0) break;
+      }
+    }
+  }
+
+  if (byKey.size === 0 && (mrnRaw || mrnKey)) {
+    const candidates = Array.from(
+      new Set(
+        [mrnRaw, mrnKey, mrnKey ? mrnKey.padStart(12, '0') : '']
+          .map((v) => String(v || '').trim())
+          .filter(Boolean)
+      )
+    );
+    for (const cin of candidates) {
+      const escaped = cin.replace(/'/g, "''");
+      add(await fetchClaimsByWhere(credentials, token, `MCP_CIN='${escaped}'`));
+      if (byKey.size > 0) break;
+    }
+  }
+
+  // Name fallback when Client_ID2 / MRN on the member don't match claim rows (typos).
+  if (byKey.size === 0 && first && last) {
+    const ef = first.replace(/'/g, "''");
+    const el = last.replace(/'/g, "''");
+    add(
+      await fetchClaimsByWhere(
+        credentials,
+        token,
+        `Client_Last='${el}' AND Client_First='${ef}'`
+      )
+    );
+  }
+
+  return Array.from(byKey.values());
+}
+
+type TargetedMemberRef = {
+  clientId2?: string;
+  mrn?: string;
+  memberFirstName?: string;
+  memberLastName?: string;
+};
+
+/**
+ * Parallel live Caspio lookups for no-claims members.
+ * Processes the full list in concurrency batches (no hard skip when count > 40).
+ */
+async function fetchClaimsForMembers(
+  credentials: ReturnType<typeof getCaspioCredentialsFromEnv>,
+  members: TargetedMemberRef[],
+  opts?: { concurrency?: number; maxMembers?: number }
+): Promise<Array<Record<string, unknown>>> {
+  if (!members.length) return [];
   const token = await getCaspioToken(credentials);
-  const limit = Math.max(1, Math.min(opts?.limit ?? 40, 80));
   const concurrency = Math.max(1, Math.min(opts?.concurrency ?? 8, 12));
-  const unique = Array.from(
-    new Set(clientIds.map((id) => String(id || '').trim()).filter(Boolean))
-  ).slice(0, limit);
+  const maxMembers = Math.max(1, opts?.maxMembers ?? 500);
+  const seen = new Set<string>();
+  const unique: TargetedMemberRef[] = [];
+  for (const member of members) {
+    const clientId2 = String(member.clientId2 || '').trim();
+    const mrn = String(member.mrn || '').trim();
+    const key = `${clientId2}|${normalizeMrnKey(mrn) || mrn}`;
+    if (!clientId2 && !mrn) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push({ clientId2: clientId2 || undefined, mrn: mrn || undefined });
+    if (unique.length >= maxMembers) break;
+  }
 
   const out: Array<Record<string, unknown>> = [];
   for (let i = 0; i < unique.length; i += concurrency) {
     const chunk = unique.slice(i, i + concurrency);
     const pages = await Promise.all(
-      chunk.map((clientId) => fetchClaimsForOneClient(credentials, token, clientId))
+      chunk.map((member) => fetchClaimsForOneMember(credentials, token, member))
     );
     for (const rows of pages) out.push(...rows);
   }
@@ -543,9 +623,20 @@ async function loadLatestSavedRun(adminDb: any): Promise<{
   };
 }
 
-function parseMode(request: NextRequest): KaiserT2038ClaimAuditRunMode | 'list_runs' {
+function parseMode(
+  request: NextRequest
+): KaiserT2038ClaimAuditRunMode | 'list_runs' | 'mco_mrn_mismatch' {
   const raw = String(request.nextUrl.searchParams.get('mode') || '').trim().toLowerCase();
-  if (raw === 'full' || raw === 'incremental' || raw === 'saved' || raw === 'list_runs') return raw;
+  if (
+    raw === 'full' ||
+    raw === 'incremental' ||
+    raw === 'saved' ||
+    raw === 'list_runs' ||
+    raw === 'refresh_member' ||
+    raw === 'mco_mrn_mismatch'
+  ) {
+    return raw;
+  }
   // Legacy: refresh=true → full; otherwise prefer saved snapshot.
   if (String(request.nextUrl.searchParams.get('refresh') || '').trim() === 'true') return 'full';
   return 'saved';
@@ -574,6 +665,33 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, runs });
     }
 
+    // Separate scan: Kaiser-looking MRN (starts with 0/1, or Kaiser_MRN set) but CalAIM_MCO ≠ Kaiser.
+    // Skips Closed / Member Died / Non_Active. ?refresh=true|forceCaspio=true bypasses member cache.
+    if (mode === 'mco_mrn_mismatch') {
+      const credentials = getCaspioCredentialsFromEnv();
+      const forceCaspio =
+        String(request.nextUrl.searchParams.get('forceCaspio') || '').trim() === 'true' ||
+        String(request.nextUrl.searchParams.get('refresh') || '').trim() === 'true';
+      const membersResult = await fetchAllCalAIMMembers(credentials, {
+        includeRawData: true,
+        forceRefresh: forceCaspio,
+        cacheTtlMs: forceCaspio ? 0 : 30 * 60 * 1000,
+      });
+      const rawMembers = (
+        Array.isArray(membersResult.rawMembers) ? membersResult.rawMembers : membersResult.members || []
+      ) as Array<Record<string, unknown>>;
+      const mismatches = findKaiserMrnNonKaiserMcoMembers(rawMembers);
+      return NextResponse.json({
+        success: true,
+        mode: 'mco_mrn_mismatch',
+        forceCaspio,
+        membersScanned: rawMembers.length,
+        mismatchCount: mismatches.length,
+        mismatches,
+        fetchedAt: new Date().toISOString(),
+      });
+    }
+
     if (mode === 'saved') {
       const saved = await loadLatestSavedRun(adminDb);
       if (!saved.ok) {
@@ -585,9 +703,12 @@ export async function GET(request: NextRequest) {
           rows: [],
           message: saved.error,
           fetchedAt: '',
+          snapshotAt: '',
+          lastCaspioRefreshAt: '',
         });
       }
       const rows = applyActionableGapMonthPolicy(saved.rows || []);
+      const snapshotAt = saved.meta?.fetchedAt || saved.meta?.createdAtIso || '';
       return NextResponse.json({
         success: true,
         mode: 'saved',
@@ -602,16 +723,109 @@ export async function GET(request: NextRequest) {
         claimRowsNew: 0,
         claimClientsIndexed: saved.meta?.claimClientsIndexed || 0,
         maxClaimPk: saved.meta?.maxClaimPk || '',
-        fetchedAt: saved.meta?.fetchedAt || saved.meta?.createdAtIso || '',
+        fetchedAt: snapshotAt,
+        snapshotAt,
+        lastCaspioRefreshAt: '',
       });
     }
 
     const credentials = getCaspioCredentialsFromEnv();
     const fetchedAt = new Date().toISOString();
     const isIncremental = mode === 'incremental';
+    const isRefreshMember = mode === 'refresh_member';
     // Rare escape hatch: ?mode=full&forceCaspio=true rescrapes the whole claims table.
     const forceCaspio =
       String(request.nextUrl.searchParams.get('forceCaspio') || '').trim() === 'true';
+
+    // Per-member live Caspio pull — merge into inventory and rebuild the saved run.
+    if (isRefreshMember) {
+      const clientId2 = String(request.nextUrl.searchParams.get('clientId2') || '').trim();
+      const mrn = String(request.nextUrl.searchParams.get('mrn') || '').trim();
+      const memberFirstName = String(request.nextUrl.searchParams.get('first') || '').trim();
+      const memberLastName = String(request.nextUrl.searchParams.get('last') || '').trim();
+      if (!clientId2 && !mrn && !(memberFirstName && memberLastName)) {
+        return NextResponse.json(
+          { success: false, error: 'clientId2, mrn, or first+last is required for refresh_member.' },
+          { status: 400 }
+        );
+      }
+
+      const [baseInventory, justificationsByKey, membersResult] = await Promise.all([
+        loadStoredClaims(adminDb),
+        loadJustifications(adminDb),
+        fetchAllCalAIMMembers(credentials, {
+          includeRawData: true,
+          forceRefresh: false,
+          cacheTtlMs: 30 * 60 * 1000,
+        }),
+      ]);
+      const token = await getCaspioToken(credentials);
+      const targeted = await fetchClaimsForOneMember(credentials, token, {
+        clientId2,
+        mrn,
+        memberFirstName,
+        memberLastName,
+      });
+      console.log(
+        `[kaiser-t2038-claim-audit] refresh_member clientId2=${clientId2 || '—'} mrn=${mrn || '—'} name=${memberLastName},${memberFirstName} → ${targeted.length} row(s)`
+      );
+      const claims = mergeClaimRecords(targeted, filterKaiserClaims(baseInventory));
+      if (targeted.length) await upsertStoredClaims(adminDb, targeted, fetchedAt);
+
+      const cachedMembers = (
+        Array.isArray(membersResult.rawMembers) ? membersResult.rawMembers : membersResult.members || []
+      ) as Array<Record<string, unknown>>;
+      const claimsByClient = indexClaimsByClientId2(claims);
+      let rows = buildKaiserT2038ClaimAuditRows({
+        rawMembers: cachedMembers,
+        claimsByClient,
+        justificationsByKey,
+      });
+      rows = applyActionableGapMonthPolicy(rows);
+
+      const saved = await saveAuditRun({
+        adminDb,
+        mode: 'refresh_member',
+        rows,
+        claims,
+        stats: {
+          claimRowsLive: targeted.length,
+          claimRowsCached: baseInventory.length,
+          claimRowsTargeted: targeted.length,
+          claimClientsIndexed: claimsByClient.size,
+          newClaimCount: targeted.length,
+        },
+        authz,
+        fetchedAt,
+      });
+
+      const refreshedRow =
+        rows.find(
+          (row) =>
+            (clientId2 && row.clientId2 === clientId2) ||
+            (mrn && normalizeMrnKey(row.mrn) === normalizeMrnKey(mrn))
+        ) || null;
+
+      return NextResponse.json({
+        success: true,
+        mode: 'refresh_member',
+        hasSavedRun: true,
+        runId: saved.runId,
+        summary: saved.meta.summary,
+        rows,
+        refreshedRow,
+        claimRowsFetched: claims.length,
+        claimRowsLive: targeted.length,
+        claimRowsCached: baseInventory.length,
+        claimRowsTargeted: targeted.length,
+        claimRowsNew: targeted.length,
+        claimClientsIndexed: claimsByClient.size,
+        maxClaimPk: saved.meta.maxClaimPk,
+        fetchedAt,
+        snapshotAt: fetchedAt,
+        lastCaspioRefreshAt: fetchedAt,
+      });
+    }
 
     const stateSnap = await adminDb
       .collection(KAISER_T2038_CLAIM_AUDIT_STATE_COLLECTION)
@@ -714,26 +928,39 @@ export async function GET(request: NextRequest) {
       justificationsByKey,
     });
 
-    // Targeted Client_ID2 lookups only for open-auth "no claims" — capped + parallel.
-    // (Previously this did up to 400 sequential Caspio calls and made full rebuild crawl.)
-    const missingClientIds = rows
+    // Always live-pull Caspio for open-auth "no claims yet" members (Client_ID2 + MRN fallback).
+    // Older paid rows can sit below maxClaimPk and never arrive via incremental PK delta.
+    // Previously skipped entirely when missingClientIds.length > 40 and inventory was large.
+    const missingMembers: TargetedMemberRef[] = rows
       .filter(
         (row) =>
           row.noClaimsYet &&
-          row.clientId2 &&
-          (row.window === 'in_window' || row.window === 'ending_soon' || row.window === 'not_started')
+          (row.clientId2 || row.mrn) &&
+          (row.window === 'in_window' ||
+            row.window === 'ending_soon' ||
+            row.window === 'not_started' ||
+            // Also catch false negatives still listed under open+ended filters.
+            row.window === 'expired')
       )
-      .map((row) => row.clientId2);
+      .map((row) => ({
+        clientId2: row.clientId2 || undefined,
+        mrn: row.mrn || undefined,
+        memberFirstName: row.memberFirstName || undefined,
+        memberLastName: row.memberLastName || undefined,
+      }));
     let claimRowsTargeted = 0;
-    const shouldTarget =
-      missingClientIds.length > 0 &&
-      (forceCaspio || claims.length < 100 || missingClientIds.length <= 40);
-    if (shouldTarget) {
-      const targeted = await fetchClaimsForClientIds(credentials, missingClientIds, {
-        limit: forceCaspio ? 80 : 40,
+    if (missingMembers.length > 0 && !scrapeAll) {
+      console.log(
+        `[kaiser-t2038-claim-audit] targeted refresh for ${missingMembers.length} noClaimsYet member(s)`
+      );
+      const targeted = await fetchClaimsForMembers(credentials, missingMembers, {
         concurrency: 8,
+        maxMembers: 500,
       });
       claimRowsTargeted = targeted.length;
+      console.log(
+        `[kaiser-t2038-claim-audit] targeted pull returned ${targeted.length} claim row(s)`
+      );
       if (targeted.length > 0) {
         newClaims = mergeClaimRecords(targeted, newClaims);
         claims = mergeClaimRecords(targeted, claims);
@@ -744,7 +971,13 @@ export async function GET(request: NextRequest) {
           justificationsByKey,
         });
       }
+    } else if (missingMembers.length > 0 && scrapeAll) {
+      console.log(
+        `[kaiser-t2038-claim-audit] skipping targeted refresh (forceCaspio full scrape already ran)`
+      );
     }
+
+    rows = applyActionableGapMonthPolicy(rows);
 
     // Persist only net-new claim rows (not the entire inventory every full rebuild).
     const existingKeys = new Set(baseInventory.map((row) => claimRecordKey(row)));
@@ -789,6 +1022,8 @@ export async function GET(request: NextRequest) {
       membersFromCache: cachedMembers.length,
       maxClaimPk: saved.meta.maxClaimPk,
       fetchedAt,
+      snapshotAt: fetchedAt,
+      lastCaspioRefreshAt: fetchedAt,
     });
   } catch (error: unknown) {
     console.error('[kaiser-t2038-claim-audit GET]', error);

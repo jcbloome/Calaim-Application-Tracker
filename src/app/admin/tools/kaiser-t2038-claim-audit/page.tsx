@@ -13,13 +13,14 @@ import { useToast } from '@/hooks/use-toast';
 import {
   DEFAULT_CLAIMABLE_REASON,
   DEFAULT_JUSTIFY_REASON,
+  isClaimAuditActiveCalaimStatus,
   summarizeKaiserT2038ClaimAudit,
   type KaiserT2038ClaimAuditRow,
   type KaiserT2038ClaimAuditRunMode,
   type MonthDisposition,
 } from '@/lib/kaiser-t2038-claim-audit';
-import { isAuthorizedCalaimStatus } from '@/lib/t2038-claims';
 import { AlertTriangle, ChevronDown, ChevronRight, Database, Loader2, RefreshCw } from 'lucide-react';
+import { KaiserMrnMcoMismatchCard } from './KaiserMrnMcoMismatchCard';
 
 type CoverageFilter = 'all' | 'incomplete' | 'gaps_only' | 'no_claims_yet' | 'complete';
 type AuthFilter = 'all' | 'open' | 'ended' | 'missing_dates';
@@ -34,6 +35,7 @@ const normalizeStatus = (value: unknown) =>
 
 const COMMON_CALAIM_STATUSES = [
   'Authorized',
+  'H2022',
   'Authorized On Hold',
   'Authorization Ended',
   'Member Died',
@@ -78,6 +80,25 @@ const windowBadge = (row: KaiserT2038ClaimAuditRow) => {
   return { label: 'Open auth', className: 'bg-emerald-100 text-emerald-900' };
 };
 
+/** Distinct badge for CalAIM_Status so H2022 vs Authorized is obvious in the member list. */
+const calaimStatusBadge = (calaimStatus: string) => {
+  const label = clean(calaimStatus) || '—';
+  const n = normalizeStatus(label);
+  if (n === 'h2022') {
+    return { label: 'H2022', className: 'bg-indigo-50 text-indigo-950 border-indigo-300' };
+  }
+  if (n === 'authorized') {
+    return { label: 'Authorized', className: 'bg-teal-50 text-teal-950 border-teal-300' };
+  }
+  if (n.includes('authorization ended')) {
+    return { label, className: 'bg-rose-50 text-rose-950 border-rose-200' };
+  }
+  if (n === 'authorized on hold') {
+    return { label, className: 'bg-amber-50 text-amber-950 border-amber-200' };
+  }
+  return { label, className: 'bg-slate-50 text-slate-800 border-slate-200' };
+};
+
 export default function KaiserT2038ClaimAuditPage() {
   const auth = useAuth();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -85,9 +106,13 @@ export default function KaiserT2038ClaimAuditPage() {
   const [rows, setRows] = useState<KaiserT2038ClaimAuditRow[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [fetchedAt, setFetchedAt] = useState('');
+  const [snapshotAt, setSnapshotAt] = useState('');
+  const [lastCaspioRefreshAt, setLastCaspioRefreshAt] = useState('');
   const [runMode, setRunMode] = useState<KaiserT2038ClaimAuditRunMode | ''>('');
   const [runId, setRunId] = useState('');
   const [hasSavedRun, setHasSavedRun] = useState(false);
+  const [autoRefreshDone, setAutoRefreshDone] = useState(false);
+  const [refreshingMemberId, setRefreshingMemberId] = useState('');
   const [claimStats, setClaimStats] = useState<{
     live: number;
     cached: number;
@@ -123,6 +148,9 @@ export default function KaiserT2038ClaimAuditPage() {
     setRows(Array.isArray(body.rows) ? (body.rows as KaiserT2038ClaimAuditRow[]) : []);
     setSummary((body.summary as Summary) || null);
     setFetchedAt(String(body.fetchedAt || ''));
+    setSnapshotAt(String(body.snapshotAt || body.fetchedAt || ''));
+    const caspioAt = String(body.lastCaspioRefreshAt || '');
+    if (caspioAt) setLastCaspioRefreshAt(caspioAt);
     setRunMode((String(body.mode || '') as KaiserT2038ClaimAuditRunMode) || '');
     setRunId(String(body.runId || ''));
     setHasSavedRun(Boolean(body.hasSavedRun));
@@ -145,11 +173,11 @@ export default function KaiserT2038ClaimAuditPage() {
   }, []);
 
   const load = useCallback(
-    async (mode: KaiserT2038ClaimAuditRunMode) => {
+    async (mode: KaiserT2038ClaimAuditRunMode, opts?: { silent?: boolean }) => {
       const user = auth.currentUser;
       if (!user) {
         setError('Sign in required.');
-        return;
+        return false;
       }
       setIsLoading(true);
       setLoadingMode(mode);
@@ -165,19 +193,25 @@ export default function KaiserT2038ClaimAuditPage() {
           throw new Error(String(body?.error || `HTTP ${response.status}`));
         }
         applyAuditResponse(body);
-        if (mode === 'incremental') {
-          toast({
-            title: 'Claims updated',
-            description: `${Number(body.claimRowsNew || 0) || 0} new claim row(s) merged · gaps recalculated`,
-          });
-        } else if (mode === 'full') {
-          toast({
-            title: 'Full rebuild saved',
-            description: `${Number(body.claimRowsFetched || 0) || 0} claim rows · run stored in Firestore`,
-          });
+        if (!opts?.silent) {
+          if (mode === 'incremental') {
+            toast({
+              title: 'Refreshed from Caspio',
+              description: `${Number(body.claimRowsNew || 0) || 0} new · ${
+                Number(body.claimRowsTargeted || 0) || 0
+              } targeted for no-claims members · gaps recalculated`,
+            });
+          } else if (mode === 'full') {
+            toast({
+              title: 'Full rebuild saved',
+              description: `${Number(body.claimRowsFetched || 0) || 0} claim rows · run stored in Firestore`,
+            });
+          }
         }
+        return Boolean(body.hasSavedRun);
       } catch (err: unknown) {
         setError(String((err as { message?: string })?.message || 'Could not load claim audit.'));
+        return false;
       } finally {
         setIsLoading(false);
         setLoadingMode('');
@@ -186,9 +220,66 @@ export default function KaiserT2038ClaimAuditPage() {
     [auth, applyAuditResponse, toast]
   );
 
+  const refreshMemberClaims = useCallback(
+    async (row: KaiserT2038ClaimAuditRow) => {
+      const user = auth.currentUser;
+      if (!user) {
+        setError('Sign in required.');
+        return;
+      }
+      const params = new URLSearchParams({ mode: 'refresh_member' });
+      if (row.clientId2) params.set('clientId2', row.clientId2);
+      if (row.mrn) params.set('mrn', row.mrn);
+      if (row.memberFirstName) params.set('first', row.memberFirstName);
+      if (row.memberLastName) params.set('last', row.memberLastName);
+      setRefreshingMemberId(row.id);
+      setError('');
+      try {
+        const idToken = await user.getIdToken();
+        const response = await fetch(`/api/admin/kaiser-t2038-claim-audit?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body?.success) {
+          throw new Error(String(body?.error || `HTTP ${response.status}`));
+        }
+        applyAuditResponse(body);
+        const refreshed = body.refreshedRow as KaiserT2038ClaimAuditRow | null;
+        toast({
+          title: 'Member claims refreshed',
+          description: refreshed?.noClaimsYet
+            ? `${row.memberName || row.clientId2}: still no submitted claims in Caspio`
+            : `${row.memberName || row.clientId2}: ${Number(body.claimRowsLive || 0) || 0} claim row(s) pulled`,
+        });
+      } catch (err: unknown) {
+        toast({
+          title: 'Refresh failed',
+          description: String((err as { message?: string })?.message || 'Could not refresh member claims.'),
+          variant: 'destructive',
+        });
+      } finally {
+        setRefreshingMemberId('');
+      }
+    },
+    [auth, applyAuditResponse, toast]
+  );
+
   useEffect(() => {
-    if (!isAdminLoading && isAdmin) void load('saved');
-  }, [isAdmin, isAdminLoading, load]);
+    if (isAdminLoading || !isAdmin || autoRefreshDone) return;
+    let cancelled = false;
+    (async () => {
+      const savedOk = await load('saved', { silent: true });
+      if (cancelled) return;
+      if (savedOk) {
+        await load('incremental', { silent: true });
+      }
+      if (!cancelled) setAutoRefreshDone(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, isAdminLoading, autoRefreshDone, load]);
 
   const statusOptions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -215,7 +306,8 @@ export default function KaiserT2038ClaimAuditPage() {
       if (authFilter === 'missing_dates' && row.window !== 'missing_dates') return false;
       if (statusFilter === 'all') return true;
       const wantStatus = normalizeStatus(statusFilter);
-      if (wantStatus === 'authorized') return isAuthorizedCalaimStatus(row.calaimStatus);
+      // Default "Authorized" lane also includes H2022 (active members needing T2038 claim coverage).
+      if (wantStatus === 'authorized') return isClaimAuditActiveCalaimStatus(row.calaimStatus);
       if (wantStatus === 'non active' || wantStatus === 'nonactive' || wantStatus === 'inactive') {
         const got = normalizeStatus(row.calaimStatus);
         return got === 'non active' || got === 'nonactive' || got === 'inactive';
@@ -302,12 +394,12 @@ export default function KaiserT2038ClaimAuditPage() {
         unsubmittedClaimCount: row.unsubmittedClaimCount || 0,
       }));
     const gapMembers = scoped.filter((row) => !row.noClaimsYet && row.openMissingMonthCount > 0).map(toGapMember);
-    // Members we did bill, now off CalAIM_Status Authorized, with gaps inside the 6-month window —
+    // Members we did bill, now off Authorized/H2022, with gaps inside the 6-month window —
     // ignores the status/auth filters so stopped billing is always visible.
     const exAuthGapMembers = rows
       .filter(
         (row) =>
-          !isAuthorizedCalaimStatus(row.calaimStatus) &&
+          !isClaimAuditActiveCalaimStatus(row.calaimStatus) &&
           !row.noClaimsYet &&
           Boolean(row.firstClaimDate) &&
           row.openMissingMonthCount > 0
@@ -455,21 +547,31 @@ export default function KaiserT2038ClaimAuditPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Kaiser T2038 Claim Audit</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Authorized Kaiser members (including ended authorizations) vs{' '}
+            Kaiser members (<span className="font-medium">Authorized</span> or{' '}
+            <span className="font-medium">H2022</span>, plus ended auths) vs{' '}
             <span className="font-medium">Kaiser-only</span>{' '}
-            <code className="text-xs">CalAIM_Claim_Submit_T2038</code> rows (<code className="text-xs">MCP</code>). Gap
-            months start at the <span className="font-medium">first submitted claim</span> (not Caspio auth start —
-            ILS may release later) through auth end / today. Gaps from <span className="font-medium">2025</span> or{' '}
-            <span className="font-medium">older than 6 months</span> are ignored. Also flags new auths with{' '}
-            <span className="font-medium">no claims yet</span>.
+            <code className="text-xs">CalAIM_Claim_Submit_T2038</code> rows (<code className="text-xs">MCP</code>).{' '}
+            <span className="font-medium">Unsubmitted</span> = blank <code className="text-xs">Claim_Status</code>{' '}
+            (entered in Caspio, not sent to clearinghouse).{' '}
+            <span className="font-medium">No claims yet</span> = no clearinghouse-submitted rows on the member (prior
+            auths count). Gap months start at the first claim on/after the current auth start through auth end / today;
+            gaps from <span className="font-medium">2025</span> or <span className="font-medium">older than 6 months</span>{' '}
+            are ignored.
           </p>
-          {fetchedAt ? (
+          {fetchedAt || snapshotAt ? (
             <p className="mt-1 text-xs text-muted-foreground">
-              Last run: {new Date(fetchedAt).toLocaleString()}
+              Snapshot:{' '}
+              {snapshotAt || fetchedAt
+                ? new Date(snapshotAt || fetchedAt).toLocaleString()
+                : '—'}
+              {lastCaspioRefreshAt
+                ? ` · Last Caspio refresh: ${new Date(lastCaspioRefreshAt).toLocaleString()}`
+                : ' · Caspio refresh pending…'}
               {runMode ? ` · ${runMode}` : ''}
               {runId ? ` · ${runId.slice(0, 8)}…` : ''} · claims {claimStats.total}
               {claimStats.newClaims ? ` (+${claimStats.newClaims} new)` : ''}
-              {claimStats.targeted ? ` · targeted ${claimStats.targeted}` : ''} · {claimStats.clients} Client_ID2 keys
+              {claimStats.targeted ? ` · targeted ${claimStats.targeted}` : ''} · {claimStats.clients}{' '}
+              Client_ID2 keys
               {memberStats ? ` · members cursor ${memberStats.cursor ?? 'n/a'} / cache ${memberStats.cache}` : ''}
             </p>
           ) : null}
@@ -489,7 +591,7 @@ export default function KaiserT2038ClaimAuditPage() {
             ) : (
               <RefreshCw className="mr-2 h-4 w-4" />
             )}
-            Update new claims
+            Refresh from Caspio
           </Button>
           <Button variant="secondary" onClick={() => void load('full')} disabled={isLoading}>
             {isLoading && loadingMode === 'full' ? (
@@ -513,12 +615,15 @@ export default function KaiserT2038ClaimAuditPage() {
         <Alert>
           <AlertTitle>No saved audit yet</AlertTitle>
           <AlertDescription>
-            Caspio is not pulled on page open. Run <span className="font-medium">Full rebuild</span> once to store the
-            member/claim snapshot in Firestore. After that, use <span className="font-medium">Update new claims</span>{' '}
-            to pull only new claim rows and recalculate gaps.
+            Run <span className="font-medium">Full rebuild</span> once to seed Firestore. After that the page loads the
+            saved snapshot then auto-runs <span className="font-medium">Refresh from Caspio</span> (new PK rows + live
+            pulls for every open-auth “no claims yet” member). Use per-member <span className="font-medium">Refresh
+            claims</span> for a single Client_ID2 / MRN.
           </AlertDescription>
         </Alert>
       ) : null}
+
+      <KaiserMrnMcoMismatchCard enabled={!isAdminLoading && isAdmin} />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -664,12 +769,16 @@ export default function KaiserT2038ClaimAuditPage() {
                 <Badge variant="outline" className="bg-sky-50 text-sky-950 border-sky-300">
                   {queueSummary.noClaimsMembers.length}
                 </Badge>
-                <span className="truncate text-xs text-muted-foreground">Awaiting first CalAIM_Claim_Submit_T2038 row</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  Authorized / H2022 with no clearinghouse claims on file
+                </span>
               </button>
               {summaryNoClaimsOpen ? (
                 <div className="max-h-56 space-y-0.5 overflow-y-auto border-t bg-sky-50/40 px-2 py-1.5 text-xs">
                   {queueSummary.noClaimsMembers.length === 0 ? (
-                    <p className="px-1 py-2 text-muted-foreground">No members awaiting a first claim in this filter set.</p>
+                    <p className="px-1 py-2 text-muted-foreground">
+                      No Authorized / H2022 members missing clearinghouse claims in this filter set.
+                    </p>
                   ) : (
                     queueSummary.noClaimsMembers.map((member) => (
                       <button
@@ -692,8 +801,8 @@ export default function KaiserT2038ClaimAuditPage() {
                         <span className="ml-auto shrink-0 text-muted-foreground">
                           Client_ID2 {member.clientId2 || 'none yet'} ·{' '}
                           {member.unsubmittedClaimCount
-                            ? `${member.unsubmittedClaimCount} entered, not submitted`
-                            : 'First claim —'}
+                            ? `${member.unsubmittedClaimCount} in Caspio, not sent to clearinghouse`
+                            : 'No claims on file'}
                         </span>
                       </button>
                     ))
@@ -859,9 +968,12 @@ export default function KaiserT2038ClaimAuditPage() {
               onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
             >
               <option value="all">All statuses</option>
-              <option value="Authorized">Authorized</option>
+              <option value="Authorized">Authorized + H2022</option>
               {statusOptions
-                .filter(([label]) => normalizeStatus(label) !== 'authorized')
+                .filter(([label]) => {
+                  const n = normalizeStatus(label);
+                  return n !== 'authorized' && n !== 'h2022';
+                })
                 .map(([label, count]) => (
                   <option key={label} value={label}>
                     {label}
@@ -897,6 +1009,7 @@ export default function KaiserT2038ClaimAuditPage() {
           ) : null}
           {filteredRows.map((row) => {
             const badge = windowBadge(row);
+            const calaimBadge = calaimStatusBadge(row.calaimStatus);
             const expanded = expandedId === row.id;
             const gapMonths = (row.months || []).filter((month) => month.status === 'missing');
             const gapMonthLabels = gapMonths.map((month) => month.label || month.monthKey);
@@ -918,6 +1031,9 @@ export default function KaiserT2038ClaimAuditPage() {
                       <span className="truncate font-medium">{row.memberName || row.clientId2}</span>
                       <Badge variant="outline" className={badge.className}>
                         {badge.label}
+                      </Badge>
+                      <Badge variant="outline" className={calaimBadge.className} title="CalAIM_Status">
+                        {calaimBadge.label}
                       </Badge>
                       {row.noClaimsYet ? (
                         <Badge variant="outline" className="bg-sky-50 text-sky-950 border-sky-300">
@@ -948,8 +1064,8 @@ export default function KaiserT2038ClaimAuditPage() {
                           {row.noClaimsYet ? (
                             <span className="truncate text-xs text-sky-900/80">
                               {row.unsubmittedClaimCount
-                                ? `Awaiting first claim · ${row.unsubmittedClaimCount} entered, not submitted`
-                                : 'Awaiting first claim'}
+                                ? `No clearinghouse claims · ${row.unsubmittedClaimCount} Caspio-only (blank Claim_Status)`
+                                : 'No claims on file'}
                             </span>
                           ) : gapMonthLabels.length > 0 ? (
                             <span className="min-w-0 truncate text-xs text-amber-900">
@@ -965,16 +1081,17 @@ export default function KaiserT2038ClaimAuditPage() {
                           Client_ID2 {row.clientId2 || '—'}
                           {row.mrn ? ` · MRN ${row.mrn}` : ''} · Auth {row.authorizationStart || '—'} →{' '}
                           {row.authorizationEnd || '—'}
-                          {row.authorizationNumber ? ` · #${row.authorizationNumber}` : ''} · Status{' '}
+                          {row.authorizationNumber ? ` · #${row.authorizationNumber}` : ''} · CalAIM_Status{' '}
                           {row.calaimStatus || '—'}
+                          {row.kaiserStatus ? ` · Kaiser ${row.kaiserStatus}` : ''}
                         </div>
                         <div className="text-xs">
                           {row.noClaimsYet
                             ? row.unsubmittedClaimCount
-                              ? `No submitted claims — ${row.unsubmittedClaimCount} row(s) entered with blank Claim_Status (DOS ${
+                              ? `No clearinghouse claims on file — ${row.unsubmittedClaimCount} Caspio-only row(s) with blank Claim_Status (not sent to clearinghouse; DOS ${
                                   (row.unsubmittedClaimDates || []).join(', ') || '—'
                                 })`
-                              : 'New / unused auth — no CalAIM_Claim_Submit_T2038 rows yet'
+                              : 'No CalAIM_Claim_Submit_T2038 rows on file (Authorized / H2022)'
                             : `First claim ${row.firstClaimDate || '—'} (${row.firstClaimMonthKey || '—'}) · Gap window ${
                                 row.gapStartMonthKey || '—'
                               } → auth end/today · Claimed ${row.claimedMonthCount} · Justified ${
@@ -1002,17 +1119,39 @@ export default function KaiserT2038ClaimAuditPage() {
 
                 {expanded ? (
                   <div className="space-y-4 border-t bg-slate-50/60 px-3 py-3">
-                    <div>
-                      <div className="mb-2 text-sm font-medium">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-medium">
                         {row.noClaimsYet
                           ? 'No claim months yet'
                           : 'Months — check No claim or Claimable'}
                       </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={isLoading || refreshingMemberId === row.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void refreshMemberClaims(row);
+                        }}
+                      >
+                        {refreshingMemberId === row.id ? (
+                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                        )}
+                        Refresh claims
+                      </Button>
+                    </div>
+                    <div>
                       {row.noClaimsYet ? (
                         <div className="rounded border border-sky-200 bg-sky-50/80 p-3 text-xs text-muted-foreground">
-                          Authorization is on file but no claims have been submitted in{' '}
-                          <code>CalAIM_Claim_Submit_T2038</code> for this Client_ID2. Submit the first claim, then gaps
-                          will be measured from that month forward.
+                          No clearinghouse-submitted claims on file for this Client_ID2 / MRN
+                          {row.unsubmittedClaimCount
+                            ? ` — ${row.unsubmittedClaimCount} row(s) exist in Caspio with blank Claim_Status (not sent to clearinghouse yet)`
+                            : ''}
+                          . Use <span className="font-medium">Refresh claims</span> to live-check Caspio (covers older
+                          Payment Received rows below the incremental PK cursor).
                         </div>
                       ) : null}
                       {!row.noClaimsYet && row.months.length === 0 ? (
@@ -1076,7 +1215,8 @@ export default function KaiserT2038ClaimAuditPage() {
                                     ) : null}
                                     {month.claimDates.length === 0 && (month.unsubmittedDates || []).length > 0 ? (
                                       <span className="truncate text-xs text-violet-800">
-                                        Entered, not submitted · DOS {(month.unsubmittedDates || []).join(', ')}
+                                        Caspio only (blank Claim_Status) · DOS{' '}
+                                        {(month.unsubmittedDates || []).join(', ')}
                                       </span>
                                     ) : null}
                                   </div>
@@ -1120,8 +1260,8 @@ export default function KaiserT2038ClaimAuditPage() {
                       ) : null}
                       <p className="mt-2 text-[11px] text-muted-foreground">
                         Not claimed = open gap. No claim = not submitting. Claimable = forgotten claim — queued for a
-                        future Caspio batch submit. DOS on claimed months comes from Caspio. Rows with a blank
-                        Claim_Status are shown as entered, not submitted.
+                        future Caspio batch submit. Blank Claim_Status = Caspio-only (not sent to clearinghouse).
+                        Submitted = Claim Submitted / Payment Received / other non-blank status.
                       </p>
                     </div>
                   </div>
