@@ -835,15 +835,8 @@ export async function GET(request: NextRequest) {
     const priorMaxPk = String(state.maxClaimPk || '').trim();
     const priorFetchedAt = String(state.fetchedAt || state.createdAtIso || '').trim();
 
-    if (isIncremental && (!stateSnap.exists || !priorMaxPk)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'No saved audit yet. Run a full rebuild once before incremental updates.',
-        },
-        { status: 400 }
-      );
-    }
+    // First visit / no inventory yet: treat incremental like a seed rebuild (live Caspio pull).
+    const seedFromScratch = isIncremental && (!stateSnap.exists || !priorMaxPk);
 
     // Never force-refresh the entire members table here — that alone can take minutes.
     // Members come from the existing Caspio/Firestore member cache.
@@ -876,9 +869,9 @@ export async function GET(request: NextRequest) {
     const inventoryStale =
       !isIncremental &&
       kaiserStored.some((row) => row._claimSchema !== KAISER_T2038_CLAIM_STORAGE_SCHEMA);
-    const scrapeAll = forceCaspio || inventoryStale;
+    const scrapeAll = forceCaspio || inventoryStale || seedFromScratch || baseInventory.length < 100;
 
-    if (isIncremental) {
+    if (isIncremental && !scrapeAll) {
       const deltaLive = await fetchSubmittedT2038Claims(credentials, {
         afterPk: priorMaxPk || inventoryMaxPk || undefined,
       });

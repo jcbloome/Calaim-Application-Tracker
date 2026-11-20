@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useAuth } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -19,7 +19,7 @@ import {
   type KaiserT2038ClaimAuditRunMode,
   type MonthDisposition,
 } from '@/lib/kaiser-t2038-claim-audit';
-import { AlertTriangle, ChevronDown, ChevronRight, Database, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 import { KaiserMrnMcoMismatchCard } from './KaiserMrnMcoMismatchCard';
 
 type CoverageFilter = 'all' | 'incomplete' | 'gaps_only' | 'no_claims_yet' | 'complete';
@@ -111,7 +111,6 @@ export default function KaiserT2038ClaimAuditPage() {
   const [runMode, setRunMode] = useState<KaiserT2038ClaimAuditRunMode | ''>('');
   const [runId, setRunId] = useState('');
   const [hasSavedRun, setHasSavedRun] = useState(false);
-  const [autoRefreshDone, setAutoRefreshDone] = useState(false);
   const [refreshingMemberId, setRefreshingMemberId] = useState('');
   const [claimStats, setClaimStats] = useState<{
     live: number;
@@ -264,22 +263,6 @@ export default function KaiserT2038ClaimAuditPage() {
     },
     [auth, applyAuditResponse, toast]
   );
-
-  useEffect(() => {
-    if (isAdminLoading || !isAdmin || autoRefreshDone) return;
-    let cancelled = false;
-    (async () => {
-      const savedOk = await load('saved', { silent: true });
-      if (cancelled) return;
-      if (savedOk) {
-        await load('incremental', { silent: true });
-      }
-      if (!cancelled) setAutoRefreshDone(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAdmin, isAdminLoading, autoRefreshDone, load]);
 
   const statusOptions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -566,7 +549,7 @@ export default function KaiserT2038ClaimAuditPage() {
                 : '—'}
               {lastCaspioRefreshAt
                 ? ` · Last Caspio refresh: ${new Date(lastCaspioRefreshAt).toLocaleString()}`
-                : ' · Caspio refresh pending…'}
+                : null}
               {runMode ? ` · ${runMode}` : ''}
               {runId ? ` · ${runId.slice(0, 8)}…` : ''} · claims {claimStats.total}
               {claimStats.newClaims ? ` (+${claimStats.newClaims} new)` : ''}
@@ -577,15 +560,10 @@ export default function KaiserT2038ClaimAuditPage() {
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => void load('saved')} disabled={isLoading}>
-            {isLoading && loadingMode === 'saved' ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Database className="mr-2 h-4 w-4" />
-            )}
-            Load saved
-          </Button>
-          <Button onClick={() => void load('incremental')} disabled={isLoading || !hasSavedRun}>
+          <Button
+            onClick={() => void load('incremental')}
+            disabled={isLoading || isAdminLoading || !isAdmin}
+          >
             {isLoading && loadingMode === 'incremental' ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -593,7 +571,7 @@ export default function KaiserT2038ClaimAuditPage() {
             )}
             Refresh from Caspio
           </Button>
-          <Button variant="secondary" onClick={() => void load('full')} disabled={isLoading}>
+          <Button variant="secondary" onClick={() => void load('full')} disabled={isLoading || isAdminLoading || !isAdmin}>
             {isLoading && loadingMode === 'full' ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -611,14 +589,14 @@ export default function KaiserT2038ClaimAuditPage() {
         </Alert>
       ) : null}
 
-      {!hasSavedRun && !isLoading && !error ? (
+      {!isLoading && !error && rows.length === 0 ? (
         <Alert>
-          <AlertTitle>No saved audit yet</AlertTitle>
+          <AlertTitle>No audit loaded</AlertTitle>
           <AlertDescription>
-            Run <span className="font-medium">Full rebuild</span> once to seed Firestore. After that the page loads the
-            saved snapshot then auto-runs <span className="font-medium">Refresh from Caspio</span> (new PK rows + live
-            pulls for every open-auth “no claims yet” member). Use per-member <span className="font-medium">Refresh
-            claims</span> for a single Client_ID2 / MRN.
+            This page does not auto-load a saved snapshot (it can be stale). Click{' '}
+            <span className="font-medium">Refresh from Caspio</span> for a live pull, or{' '}
+            <span className="font-medium">Full rebuild</span> to reseed from Caspio. Per-member{' '}
+            <span className="font-medium">Refresh claims</span> is available after a run is loaded.
           </AlertDescription>
         </Alert>
       ) : null}

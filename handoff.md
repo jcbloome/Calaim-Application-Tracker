@@ -2,12 +2,12 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `d8485952` (Kaiser T2038 Claim Audit — fresh claims / matching / CalAIM_Status)  
+**HEAD:** (pending) Kaiser T2038 Claim Audit — Caspio refresh on demand only  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
 ### New-chat priority (2026-11-20)
-1. **Deploy** App Hosting for `d8485952`; staff open `/admin/tools/kaiser-t2038-claim-audit` and confirm Kathleen / Daniel / Mooney / Alderette leave false **No claims yet** after Refresh from Caspio.
+1. **Deploy** latest T2038 claim audit (no auto-load; **Refresh from Caspio** only); staff confirm Kathleen / Daniel / Mooney / Alderette after a manual refresh.
 2. **Staff retest on production** (login required): Kaiser cover sheet download (Paula Davis) + See Files → CS Summary / Waivers.
 3. **Done (staff):** Caspio push mappings locked as **Draft3** (placement agency fields). Spot-check one CS Summary push.
 4. **Optional:** `cd functions && npm run build && npm run deploy` for ERA parser bucket hardening.
@@ -16,6 +16,9 @@
 ---
 
 ## Changes 2026-11-20
+
+- **Kaiser T2038 Claim Audit — no auto-load; Caspio only on demand:** Page open does **not** load a saved snapshot (stale risk). Empty until staff click **Refresh from Caspio** (incremental, seeds from Caspio if no inventory) or **Full rebuild**. Removed **Load saved**. Per-member **Refresh claims** still available after a run.
+  - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `handoff.md`.
 
 - **Kaiser T2038 Claim Audit — show CalAIM_Status on member rows:** Members list now shows a **CalAIM_Status** badge (distinct **H2022** vs **Authorized** colors) on every row, plus `CalAIM_Status` labeled in the detail line.
   - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
@@ -34,7 +37,7 @@
 
 - **Kaiser T2038 Claim Audit — fresh claims on demand (false “No claims yet”):** Page used to paint a **stale Firestore snapshot** (`mode=saved`) and never hit Caspio on open. **Update new claims** (`incremental`) only pulled `PK_ID` after the saved max PK, so older **Payment Received / Claim Submitted** rows never arrived. Targeted live pulls for open-auth `noClaimsYet` members were **skipped when there were more than ~40** such members and inventory was large — Kathleen / Daniel stayed wrong after Update.
   - **API:** Always batch live Caspio pulls for all open-auth (and expired) `noClaimsYet` members on incremental / non-force full rebuild — Client_ID2 first, then **MCP_CIN / MRN** if empty; concurrency ~8, up to 500 members (no hard skip at 40). New `mode=refresh_member&clientId2=&mrn=` merges one member into inventory and rebuilds the saved run.
-  - **UI:** Instant saved paint, then **auto-runs incremental** once; primary button renamed **Refresh from Caspio**; expanded rows get **Refresh claims**; status line shows **Snapshot** vs **Last Caspio refresh**.
+  - **UI:** No auto-load; manual **Refresh from Caspio** / **Full rebuild** / per-member **Refresh claims** only.
   - **Verify (lib):** Synthetic Kathleen + Daniel claim rows (`Claim Submitted` / `Payment Received`, including placeholder Client_ID2 `10000` matched by CIN) → `noClaimsYet: false`.
   - Files: `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `src/lib/kaiser-t2038-claim-audit.ts` (`KaiserT2038ClaimAuditRunMode` += `refresh_member`), `handoff.md`.
 
