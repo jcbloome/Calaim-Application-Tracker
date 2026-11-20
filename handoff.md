@@ -2,12 +2,12 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** (pending) Kaiser T2038 Claim Audit — Caspio refresh on demand only  
+**HEAD:** `3955d5f6` (Kaiser T2038 Claim Audit — Caspio refresh on demand only)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
 ### New-chat priority (2026-11-20)
-1. **Deploy** latest T2038 claim audit (no auto-load; **Refresh from Caspio** only); staff confirm Kathleen / Daniel / Mooney / Alderette after a manual refresh.
+1. **Deploy** App Hosting for `3955d5f6`; staff open T2038 claim audit and use **Refresh from Caspio** (no auto-load). Confirm Kathleen / Daniel / Mooney / Alderette after refresh.
 2. **Staff retest on production** (login required): Kaiser cover sheet download (Paula Davis) + See Files → CS Summary / Waivers.
 3. **Done (staff):** Caspio push mappings locked as **Draft3** (placement agency fields). Spot-check one CS Summary push.
 4. **Optional:** `cd functions && npm run build && npm run deploy` for ERA parser bucket hardening.
