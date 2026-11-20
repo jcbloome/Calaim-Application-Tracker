@@ -2,6 +2,7 @@
 
 **Date:** 2026-11-19  
 **Branch:** `main`  
+**HEAD:** `d22196b9` (CS Summary placement agency fields; Caspio Draft3 locked)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
@@ -16,7 +17,7 @@
 
 ## Changes 2026-11-19
 
-- **CS Summary Section 2 — placement agency fields:** Added Yes/N/A “Is user submitting placement agency?” plus Contact / Phone / Email when Yes. Form fields: `placementAgency`, `placementAgencyContact`, `placementAgencyPhone`, `placementAgencyEmail` ↔ Caspio `Placement_Agency`, `Placement_Agency_Contact`, `Placement_Agency_Phone`, `Placement_Agency_Email`. Wired into schema, Step1 UI, printable EN/ES/VI, filled PDF sections, review + admin/pathway quick views, Caspio pull allowlist/inferred map, caspio-api + single-publisher payloads, field-mapping templates. **Locked mappings saved as Draft3** (staff).
+- **CS Summary Section 2 — placement agency fields:** Added Yes/N/A “Is user submitting placement agency?” plus Contact / Phone / Email when Yes. Form fields: `placementAgency`, `placementAgencyContact`, `placementAgencyPhone`, `placementAgencyEmail` ↔ Caspio `Placement_Agency`, `Placement_Agency_Contact`, `Placement_Agency_Phone`, `Placement_Agency_Email`. Wired into schema, Step1 UI, printable EN/ES/VI, filled PDF sections, review + admin/pathway quick views, Caspio pull allowlist/inferred map, caspio-api + single-publisher payloads, field-mapping templates. **Locked mappings saved as Draft3** (staff). Commit: `d22196b9`.
   - Files: `src/app/forms/cs-summary-form/schema.ts`, `components/Step1.tsx`, `CsSummaryFormCore.tsx`, `review/page.tsx`, `printable/PrintableCsSummaryFormContent.tsx`, `src/components/forms/PrintableCsSummaryForm*.tsx`, `src/lib/cs-summary-pdf-sections.ts`, `src/lib/definitions.ts`, `src/lib/caspio-api.ts`, `src/lib/caspio-single-publisher.ts`, `src/app/api/admin/caspio/pull-cs-summary-preview/route.ts`, `src/app/admin/caspio-field-mapping/page.tsx`, `src/app/admin/caspio-test/page.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/app/admin/applications/components/AdminApplicationsTable.tsx`, `src/app/pathway/page.tsx`, `handoff.md`.
 
 ## Changes 2026-11-16
