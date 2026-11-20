@@ -2,12 +2,12 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** (uncommitted) Kaiser T2038 Claim Audit — fresh claims on demand  
+**HEAD:** `d8485952` (Kaiser T2038 Claim Audit — fresh claims / matching / CalAIM_Status)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
 ### New-chat priority (2026-11-20)
-1. **Commit + deploy** Kaiser T2038 Claim Audit freshness (below) when ready; staff open `/admin/tools/kaiser-t2038-claim-audit` and confirm Kathleen Dangleis (`11255` / `000004044618`) and Daniel Shannon (`9970` / `000025994001`) leave **No claims yet** after auto Refresh from Caspio.
+1. **Deploy** App Hosting for `d8485952`; staff open `/admin/tools/kaiser-t2038-claim-audit` and confirm Kathleen / Daniel / Mooney / Alderette leave false **No claims yet** after Refresh from Caspio.
 2. **Staff retest on production** (login required): Kaiser cover sheet download (Paula Davis) + See Files → CS Summary / Waivers.
 3. **Done (staff):** Caspio push mappings locked as **Draft3** (placement agency fields). Spot-check one CS Summary push.
 4. **Optional:** `cd functions && npm run build && npm run deploy` for ERA parser bucket hardening.
