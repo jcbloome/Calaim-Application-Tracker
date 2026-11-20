@@ -105,6 +105,7 @@ export default function Step1({
   const referrerRelationship = watch('referrerRelationship');
   const referrerEmail = watch('referrerEmail');
   const agency = watch('agency');
+  const placementAgency = watch('placementAgency');
   const submitterAlsoReceivesDocRequests = watch('submitterAlsoReceivesDocRequests');
   const memberFirstName = watch('memberFirstName');
   const memberLastName = watch('memberLastName');
@@ -1011,6 +1012,99 @@ export default function Step1({
               />
             </div>
           ) : null}
+          <div className="space-y-4 rounded-md border p-4">
+            <FormField
+              control={control}
+              name="placementAgency"
+              render={({ field }) => (
+                <FormItem className="space-y-3">
+                  <FormLabel>Is user submitting placement agency?</FormLabel>
+                  <FormControl>
+                    <RadioGroup
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        if (value !== 'Yes') {
+                          setValue('placementAgencyContact', '');
+                          setValue('placementAgencyPhone', '');
+                          setValue('placementAgencyEmail', '');
+                          clearErrors(['placementAgencyContact', 'placementAgencyPhone', 'placementAgencyEmail']);
+                        }
+                      }}
+                      value={field.value ?? ''}
+                      className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
+                    >
+                      <FormItem className="flex items-center space-x-3 space-y-0">
+                        <FormControl>
+                          <RadioGroupItem value="Yes" />
+                        </FormControl>
+                        <FormLabel className="font-normal">Yes</FormLabel>
+                      </FormItem>
+                      <FormItem className="flex items-center space-x-3 space-y-0">
+                        <FormControl>
+                          <RadioGroupItem value="N/A" />
+                        </FormControl>
+                        <FormLabel className="font-normal">N/A</FormLabel>
+                      </FormItem>
+                    </RadioGroup>
+                  </FormControl>
+                  <FormDescription>
+                    Maps to Caspio <span className="font-mono">Placement_Agency</span>. Choose Yes when a placement agency is involved.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {placementAgency === 'Yes' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={control}
+                  name="placementAgencyContact"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Placement Agency Contact</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value ?? ''}
+                          onChange={(e) => field.onChange(formatName(e.target.value))}
+                        />
+                      </FormControl>
+                      <FormDescription>Caspio Placement_Agency_Contact</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={control}
+                  name="placementAgencyPhone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Placement Agency Phone</FormLabel>
+                      <FormControl>
+                        <PhoneInput {...field} />
+                      </FormControl>
+                      <FormDescription>Caspio Placement_Agency_Phone</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={control}
+                  name="placementAgencyEmail"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Placement Agency Email</FormLabel>
+                      <FormControl>
+                        <Input type="text" inputMode="email" {...field} value={field.value ?? ''} />
+                      </FormControl>
+                      <FormDescription>Caspio Placement_Agency_Email. If no email, enter N/A.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            ) : null}
+          </div>
       </FormSection>
       
       <FormSection 

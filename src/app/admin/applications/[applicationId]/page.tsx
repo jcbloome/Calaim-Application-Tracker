@@ -10217,6 +10217,10 @@ function ApplicationDetailPageContent() {
                                 <div><p className="text-sm text-muted-foreground">Phone</p><p className="font-semibold">{application.referrerPhone || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                                 <div><p className="text-sm text-muted-foreground">Relationship</p><p className="font-semibold">{application.referrerRelationship || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                                 <div><p className="text-sm text-muted-foreground">Agency</p><p className="font-semibold">{application.agency || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Submitting Placement Agency</p><p className="font-semibold">{(application as any).placementAgency || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Placement Agency Contact</p><p className="font-semibold">{(application as any).placementAgencyContact || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Placement Agency Phone</p><p className="font-semibold">{(application as any).placementAgencyPhone || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Placement Agency Email</p><p className="font-semibold">{(application as any).placementAgencyEmail || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                               </div>
                               <Separator className="my-6" />
                             </div>

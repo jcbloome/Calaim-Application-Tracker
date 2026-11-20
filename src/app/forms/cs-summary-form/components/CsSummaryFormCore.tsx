@@ -30,6 +30,7 @@ const steps = [
       'memberFirstName', 'memberLastName', 'memberAge', 'memberMrn', 'confirmMemberMrn', 'memberLanguage',
       'memberMediCalNum', 'confirmMemberMediCalNum', 'memberDob', 'sex', 'memberPhone', 'memberEmail',
       'referrerFirstName', 'referrerLastName', 'referrerPhone', 'referrerRelationship', 'agency',
+      'placementAgency', 'placementAgencyContact', 'placementAgencyPhone', 'placementAgencyEmail',
       'submitterAlsoReceivesDocRequests',
       'isPrimaryContactSameAsReferrer', 'isPrimaryContactSameAsMember',
       'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',

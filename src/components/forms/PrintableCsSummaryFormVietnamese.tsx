@@ -71,6 +71,16 @@ export function PrintableCsSummaryFormVietnamese({
       buildField({ label: 'Dien thoai nguoi gioi thieu', value: data.referrerPhone, required: true, width: 'half' }),
       buildField({ label: 'Moi quan he voi thanh vien', value: data.referrerRelationship, required: true, width: 'half' }),
       buildField({ label: 'Co quan/to chuc', value: data.agency, width: 'full' }),
+      buildField({
+        label: 'Nguoi nop co phai placement agency?',
+        value: data.placementAgency,
+        type: 'radio',
+        options: ['Yes', 'N/A'],
+        width: 'full',
+      }),
+      buildField({ label: 'Lien he placement agency', value: data.placementAgencyContact, width: 'half' }),
+      buildField({ label: 'Dien thoai placement agency', value: data.placementAgencyPhone, width: 'half' }),
+      buildField({ label: 'Email placement agency', value: data.placementAgencyEmail, width: 'full' }),
     ]),
     buildSection('Phan 3: Nguoi lien he chinh', [
       buildField({ label: 'Ten nguoi lien he', value: data.bestContactFirstName, required: true, width: 'half' }),

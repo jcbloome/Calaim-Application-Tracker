@@ -16,6 +16,9 @@
 
 ## 🗓️ **Development History**
 
+### **November 19, 2026 - Updates**
+- ✅ **Feature Added**: CS Summary Section 2 placement agency fields (Yes/N/A + contact/phone/email) mapped to Caspio `Placement_Agency*` for form, printable, PDF, and Caspio push/pull.
+
 ### **April 23, 2026 - Updates**
 - ✅ **Feature Added**: Added H2022 renewal alert automation via `/api/cron/h2022-rn-renewal-alerts` to flag members ending within 30 days, notify ALFT reviewers (email + staff notifications), and create daily task tracker items for RN rescheduling follow-up.
 - ✅ **Bug Fixed**: Fixed ALFT reviewer persistence in Staff Management when legacy email-keyed recipient settings normalize to UID keys by preserving merged `alftReviewer/alft` and other review toggles during migration.

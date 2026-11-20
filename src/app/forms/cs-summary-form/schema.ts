@@ -65,6 +65,14 @@ export const formSchema = z.object({
     referrerPhone: optionalPhone,
     referrerRelationship: optionalString,
     agency: optionalString,
+    /** Caspio Placement_Agency — Yes / N/A */
+    placementAgency: z.enum(['Yes', 'N/A']).optional().nullable(),
+    /** Caspio Placement_Agency_Contact */
+    placementAgencyContact: optionalString,
+    /** Caspio Placement_Agency_Phone */
+    placementAgencyPhone: optionalPhone,
+    /** Caspio Placement_Agency_Email */
+    placementAgencyEmail: optionalEmail,
     submitterIsPoaForHealth: z.enum(['yes', 'no']).optional().nullable(),
     healthPoaFirstName: optionalString,
     healthPoaLastName: optionalString,

@@ -76,6 +76,16 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="Submitting User Email" />
                     <Field label="Submitting User Relationship to Member (e.g., Son, POA, Self, etc.)" />
                     <Field label="Agency (e.g., Bob's Referral Agency, Hospital Name, etc.)" description="If not applicable, leave blank."/>
+                    <div className="sm:col-span-2 pt-2">
+                      <label className="block text-xs font-medium text-gray-700">Is user submitting placement agency?</label>
+                      <div className="mt-2 flex flex-wrap gap-4">
+                        <CheckboxField label="Yes" />
+                        <CheckboxField label="N/A" />
+                      </div>
+                    </div>
+                    <Field label="Placement Agency Contact" />
+                    <Field label="Placement Agency Phone" description="xxx-xxx-xxxx" />
+                    <Field label="Placement Agency Email" description='If no email, enter "N/A".' className="sm:col-span-2" />
                 </div>
                 </div>
 

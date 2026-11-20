@@ -71,6 +71,14 @@ export type Application = {
   referrerEmail?: string;
   ispContactName?: string;
   agency?: string | null;
+  /** Caspio Placement_Agency (Yes / N/A) */
+  placementAgency?: 'Yes' | 'N/A' | string | null;
+  /** Caspio Placement_Agency_Contact */
+  placementAgencyContact?: string | null;
+  /** Caspio Placement_Agency_Phone */
+  placementAgencyPhone?: string | null;
+  /** Caspio Placement_Agency_Email */
+  placementAgencyEmail?: string | null;
   memberAge?: number;
   memberMediCalNum?: string;
   confirmMemberMediCalNum?: string;

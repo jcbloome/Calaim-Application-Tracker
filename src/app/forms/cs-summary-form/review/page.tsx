@@ -295,6 +295,10 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                             <Field label="Submitting User Phone" value={application.referrerPhone} />
                             <Field label="Submitting User Relationship to Member" value={application.referrerRelationship} />
                             <Field label="Agency" value={application.agency} />
+                            <Field label="Is user submitting placement agency?" value={(application as any).placementAgency} />
+                            <Field label="Placement Agency Contact" value={(application as any).placementAgencyContact} />
+                            <Field label="Placement Agency Phone" value={(application as any).placementAgencyPhone} />
+                            <Field label="Placement Agency Email" value={(application as any).placementAgencyEmail} />
                         </Section>
                         
                          <Separator />

@@ -35,6 +35,10 @@ const CaspioApplicationSchema = z.object({
   ReferrerPhone: z.string(),
   ReferrerRelationship: z.string(),
   Agency: z.string().optional().nullable(),
+  Placement_Agency: z.string().optional().nullable(),
+  Placement_Agency_Contact: z.string().optional().nullable(),
+  Placement_Agency_Phone: z.string().optional().nullable(),
+  Placement_Agency_Email: z.string().optional().nullable(),
   
   // Primary Contact
   PrimaryContactFirstName: z.string(),
@@ -242,6 +246,10 @@ function transformToCaspioFormat(
     ReferrerPhone: firebaseData.referrerPhone || '',
     ReferrerRelationship: firebaseData.referrerRelationship || '',
     Agency: firebaseData.agency,
+    Placement_Agency: firebaseData.placementAgency || null,
+    Placement_Agency_Contact: firebaseData.placementAgencyContact || null,
+    Placement_Agency_Phone: firebaseData.placementAgencyPhone || null,
+    Placement_Agency_Email: firebaseData.placementAgencyEmail || null,
     
     // Primary Contact
     PrimaryContactFirstName: firebaseData.bestContactFirstName || '',

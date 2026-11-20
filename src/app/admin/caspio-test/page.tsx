@@ -76,6 +76,10 @@ const csSummaryFields = {
   referrerPhone: "",
   referrerRelationship: "",
   agency: "",
+  placementAgency: "",
+  placementAgencyContact: "",
+  placementAgencyPhone: "",
+  placementAgencyEmail: "",
 
   // Step 1 - Primary Contact Person
   bestContactFirstName: "",

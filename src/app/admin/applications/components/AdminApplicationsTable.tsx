@@ -512,6 +512,10 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                         <QuickViewField label="Phone" value={application.referrerPhone} />
                         <QuickViewField label="Relationship" value={application.referrerRelationship} />
                         <QuickViewField label="Agency" value={application.agency} />
+                        <QuickViewField label="Submitting Placement Agency" value={(application as any).placementAgency} />
+                        <QuickViewField label="Placement Agency Contact" value={(application as any).placementAgencyContact} />
+                        <QuickViewField label="Placement Agency Phone" value={(application as any).placementAgencyPhone} />
+                        <QuickViewField label="Placement Agency Email" value={(application as any).placementAgencyEmail} />
                     </Section>
 
                     <Section title="Primary Contact">

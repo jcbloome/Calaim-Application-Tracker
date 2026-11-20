@@ -160,6 +160,28 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           value={data.referrerEmail}
           width="full"
         />
+        <PrintableField
+          label="Is user submitting placement agency?"
+          value={data.placementAgency}
+          type="radio"
+          options={['Yes', 'N/A']}
+          width="full"
+        />
+        <PrintableField
+          label="Placement Agency Contact"
+          value={data.placementAgencyContact}
+          width="half"
+        />
+        <PrintableField
+          label="Placement Agency Phone"
+          value={data.placementAgencyPhone}
+          width="half"
+        />
+        <PrintableField
+          label="Placement Agency Email"
+          value={data.placementAgencyEmail}
+          width="full"
+        />
       </PrintableFormSection>
 
       {/* Primary Contact Information */}

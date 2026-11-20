@@ -446,6 +446,10 @@ function transformToMembersFormat(firebaseData: any, clientId: string): any {
     ReferrerPhone: firebaseData.referrerPhone || '',
     ReferrerRelationship: firebaseData.referrerRelationship || '',
     Agency: firebaseData.agency || null,
+    Placement_Agency: firebaseData.placementAgency || null,
+    Placement_Agency_Contact: firebaseData.placementAgencyContact || null,
+    Placement_Agency_Phone: firebaseData.placementAgencyPhone || null,
+    Placement_Agency_Email: firebaseData.placementAgencyEmail || null,
     
     // Primary Contact
     PrimaryContactFirstName: firebaseData.bestContactFirstName || '',

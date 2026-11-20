@@ -1978,6 +1978,10 @@ function PathwayPageContent() {
                   <Section title="Submitting User Information">
                     <QuickViewField label="Submitting User Name" value={`${application.referrerFirstName || ''} ${application.referrerLastName || ''}`} />
                     <QuickViewField label="Agency" value={application.agency} />
+                    <QuickViewField label="Submitting Placement Agency" value={(application as any).placementAgency} />
+                    <QuickViewField label="Placement Agency Contact" value={(application as any).placementAgencyContact} />
+                    <QuickViewField label="Placement Agency Phone" value={(application as any).placementAgencyPhone} />
+                    <QuickViewField label="Placement Agency Email" value={(application as any).placementAgencyEmail} />
                     <QuickViewField label="Submitting User Email" value={application.referrerEmail} />
                     <QuickViewField label="Submitting User Phone" value={application.referrerPhone} />
                    </Section>
@@ -2198,6 +2202,10 @@ function PathwayPageContent() {
                               <Section title="Submitting User Information">
                                 <QuickViewField label="Submitting User Name" value={`${application.referrerFirstName || ''} ${application.referrerLastName || ''}`} />
                                 <QuickViewField label="Agency" value={application.agency} />
+                    <QuickViewField label="Submitting Placement Agency" value={(application as any).placementAgency} />
+                    <QuickViewField label="Placement Agency Contact" value={(application as any).placementAgencyContact} />
+                    <QuickViewField label="Placement Agency Phone" value={(application as any).placementAgencyPhone} />
+                    <QuickViewField label="Placement Agency Email" value={(application as any).placementAgencyEmail} />
                                 <QuickViewField label="Submitting User Email" value={application.referrerEmail} />
                                 <QuickViewField label="Submitting User Phone" value={application.referrerPhone} />
                               </Section>

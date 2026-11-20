@@ -101,6 +101,10 @@ export function buildCsSummaryPdfSectionsFromApplication(
         ['Referrer Phone', s(app.referrerPhone)],
         ['Referrer Relationship', s(app.referrerRelationship)],
         ['Agency', s(app.agency)],
+        ['Submitting Placement Agency', s(app.placementAgency)],
+        ['Placement Agency Contact', s(app.placementAgencyContact)],
+        ['Placement Agency Phone', s(app.placementAgencyPhone)],
+        ['Placement Agency Email', s(app.placementAgencyEmail)],
       ],
     },
     {

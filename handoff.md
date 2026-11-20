@@ -1,18 +1,23 @@
 # Handoff — CalAIM Application Tracker
 
 **Date:** 2026-11-19  
-**Branch:** `main` (synced with `origin/main` at handoff)  
-**HEAD:** `057abbb2` (handoff record for `179ba6d4`)  
+**Branch:** `main`  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
 ### New-chat priority (2026-11-19)
-1. **Confirm App Hosting rollout succeeds** for `179ba6d4` / `057abbb2` (previous rollouts were “Build failed” on `databaseURL` type error — fixed; local `npm run build` passed).
-2. **After web deploy live:** retest staff Kaiser cover sheet download (Paula Davis case) and See Files → CS Summary / Waivers download.
-3. **Optional:** `cd functions && npm run build && npm run deploy` for ERA parser bucket hardening (not required for cover sheet / See Files).
-4. Do **not** use SFTP To Go / AWS for this app — files are Firebase Storage; documented backups are Firestore → GCS.
+1. **Done:** App Hosting rollout succeeded for `179ba6d4` / `057abbb2` / `c41d6133` (GitHub check “App Hosting - Rollout … Build succeeded”; live site HTTP 200).
+2. **Staff retest on production** (login required): Kaiser cover sheet download (Paula Davis) + See Files → CS Summary / Waivers. Local Paula Davis cover-sheet download path exercised after deploy.
+3. **Done (staff):** Caspio push mappings locked as **Draft3** (includes placement agency: `placementAgency`→`Placement_Agency`, contact/phone/email → `Placement_Agency_*`). Spot-check one CS Summary push that those four fields land in Caspio.
+4. **Optional:** `cd functions && npm run build && npm run deploy` for ERA parser bucket hardening.
+5. Do **not** use SFTP To Go / AWS for this app — files are Firebase Storage; documented backups are Firestore → GCS.
 
 ---
+
+## Changes 2026-11-19
+
+- **CS Summary Section 2 — placement agency fields:** Added Yes/N/A “Is user submitting placement agency?” plus Contact / Phone / Email when Yes. Form fields: `placementAgency`, `placementAgencyContact`, `placementAgencyPhone`, `placementAgencyEmail` ↔ Caspio `Placement_Agency`, `Placement_Agency_Contact`, `Placement_Agency_Phone`, `Placement_Agency_Email`. Wired into schema, Step1 UI, printable EN/ES/VI, filled PDF sections, review + admin/pathway quick views, Caspio pull allowlist/inferred map, caspio-api + single-publisher payloads, field-mapping templates. **Locked mappings saved as Draft3** (staff).
+  - Files: `src/app/forms/cs-summary-form/schema.ts`, `components/Step1.tsx`, `CsSummaryFormCore.tsx`, `review/page.tsx`, `printable/PrintableCsSummaryFormContent.tsx`, `src/components/forms/PrintableCsSummaryForm*.tsx`, `src/lib/cs-summary-pdf-sections.ts`, `src/lib/definitions.ts`, `src/lib/caspio-api.ts`, `src/lib/caspio-single-publisher.ts`, `src/app/api/admin/caspio/pull-cs-summary-preview/route.ts`, `src/app/admin/caspio-field-mapping/page.tsx`, `src/app/admin/caspio-test/page.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/app/admin/applications/components/AdminApplicationsTable.tsx`, `src/app/pathway/page.tsx`, `handoff.md`.
 
 ## Changes 2026-11-16
 

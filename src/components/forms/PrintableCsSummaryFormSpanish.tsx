@@ -71,6 +71,16 @@ export function PrintableCsSummaryFormSpanish({
       buildField({ label: 'Teléfono del Referente', value: data.referrerPhone, required: true, width: 'half' }),
       buildField({ label: 'Relación con el Miembro', value: data.referrerRelationship, required: true, width: 'half' }),
       buildField({ label: 'Agencia/Organización', value: data.agency, width: 'full' }),
+      buildField({
+        label: '¿El usuario envía agencia de colocación?',
+        value: data.placementAgency,
+        type: 'radio',
+        options: ['Yes', 'N/A'],
+        width: 'full',
+      }),
+      buildField({ label: 'Contacto de agencia de colocación', value: data.placementAgencyContact, width: 'half' }),
+      buildField({ label: 'Teléfono de agencia de colocación', value: data.placementAgencyPhone, width: 'half' }),
+      buildField({ label: 'Correo de agencia de colocación', value: data.placementAgencyEmail, width: 'full' }),
     ]),
     buildSection('Sección 3: Persona de Contacto Principal', [
       buildField({ label: 'Nombre del Contacto', value: data.bestContactFirstName, required: true, width: 'half' }),
