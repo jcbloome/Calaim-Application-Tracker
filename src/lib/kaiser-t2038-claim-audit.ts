@@ -157,6 +157,10 @@ export type ClaimMonthCell = {
   /** Whether member-notes has an entry dated in this calendar month. */
   noteEvidence?: NoteMonthEvidence;
   noteCount?: number;
+  /** ISO timestamp when this claimable month was pushed to CalAIM_Claim_Submit_T2038. */
+  caspioPushedAt?: string;
+  /** Caspio PK_ID from the insert, when known. */
+  caspioClaimPkId?: string;
 };
 
 export type SubmittedClaimRow = {
@@ -225,6 +229,9 @@ export type MonthJustification = {
   justifiedBy: string;
   justifiedByEmail: string;
   updatedAt: string;
+  /** Set after successful Connections Claim Submission insert. */
+  caspioPushedAt?: string;
+  caspioClaimPkId?: string;
 };
 
 export const DEFAULT_JUSTIFY_REASON = 'No claim — staff review';
@@ -712,6 +719,8 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
         justifiedAt: justification?.updatedAt || '',
         noteEvidence: 'unknown' as NoteMonthEvidence,
         noteCount: 0,
+        caspioPushedAt: justification?.caspioPushedAt || '',
+        caspioClaimPkId: justification?.caspioClaimPkId || '',
       };
     });
 
@@ -824,6 +833,15 @@ export function applyMemberNoteEvidenceToAuditRows(
       const noteEvidence: NoteMonthEvidence = noteMonths.has(month.monthKey) ? 'has_notes' : 'no_notes';
       if (month.status === 'claimed') {
         return { ...month, noteEvidence, noteCount };
+      }
+      // Already pushed to Caspio — never reclassify away from claimable.
+      if (clean(month.caspioPushedAt)) {
+        return {
+          ...month,
+          status: 'claimable' as const,
+          noteEvidence,
+          noteCount,
+        };
       }
       const hasStaffDisposition = Boolean(clean(month.justifiedBy));
       const wasAutoFromNotes =

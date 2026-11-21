@@ -24,6 +24,7 @@ import {
   findKaiserMrnNonKaiserMcoMembers,
   DEFAULT_CLAIMABLE_REASON,
   DEFAULT_JUSTIFY_REASON,
+  isNotesClaimableJustification,
   summarizeKaiserT2038ClaimAudit,
   type KaiserT2038ClaimAuditRunMeta,
   type KaiserT2038ClaimAuditRunMode,
@@ -547,7 +548,7 @@ async function loadJustifications(adminDb: any) {
     const dispositionRaw = String(data.disposition || '').trim().toLowerCase();
     const reason = String(data.reason || '').trim();
     const disposition: MonthDisposition =
-      dispositionRaw === 'claimable' || reason === DEFAULT_CLAIMABLE_REASON ? 'claimable' : 'justified';
+      dispositionRaw === 'claimable' || isNotesClaimableJustification(reason) ? 'claimable' : 'justified';
     byKey.set(`${clientId2}__${monthKey}`, {
       clientId2,
       monthKey,
@@ -556,6 +557,8 @@ async function loadJustifications(adminDb: any) {
       justifiedBy: String(data.justifiedBy || '').trim(),
       justifiedByEmail: String(data.justifiedByEmail || '').trim(),
       updatedAt: String(data.updatedAt || '').trim(),
+      caspioPushedAt: String(data.caspioPushedAt || '').trim(),
+      caspioClaimPkId: String(data.caspioClaimPkId || '').trim(),
     });
   });
   return byKey;

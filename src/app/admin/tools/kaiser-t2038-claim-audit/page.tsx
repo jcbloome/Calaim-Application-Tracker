@@ -23,10 +23,26 @@ import {
   type KaiserT2038ClaimAuditRunMode,
   type MonthDisposition,
 } from '@/lib/kaiser-t2038-claim-audit';
-import { AlertTriangle, ChevronDown, ChevronRight, Database, Loader2, MessageSquare, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Database,
+  Download,
+  Eye,
+  Loader2,
+  MessageSquare,
+  RefreshCw,
+  Send,
+} from 'lucide-react';
 import { MemberNotesModal } from '@/app/admin/kaiser-tracker/components/MemberNotesModal';
 import type { KaiserMember } from '@/app/admin/kaiser-tracker/components/shared';
 import { KaiserMrnMcoMismatchCard } from './KaiserMrnMcoMismatchCard';
+import {
+  ClaimableClaimSubmitModal,
+  type ClaimPushResult,
+  type ClaimSubmitTarget,
+} from './ClaimableClaimSubmitModal';
 
 type CoverageFilter =
   | 'all'
@@ -208,6 +224,8 @@ export default function KaiserT2038ClaimAuditPage() {
   const [summaryExAuthOpen, setSummaryExAuthOpen] = useState(false);
   const [savingKey, setSavingKey] = useState('');
   const [memberNotesModal, setMemberNotesModal] = useState(EMPTY_NOTES_MODAL);
+  const [claimSubmitOpen, setClaimSubmitOpen] = useState(false);
+  const [claimSubmitTargets, setClaimSubmitTargets] = useState<ClaimSubmitTarget[]>([]);
 
   const applyAuditResponse = useCallback((body: Record<string, unknown>) => {
     setRows(Array.isArray(body.rows) ? (body.rows as KaiserT2038ClaimAuditRow[]) : []);
@@ -722,6 +740,146 @@ export default function KaiserT2038ClaimAuditPage() {
     };
   }, [rows, matchesStatusAndAuth]);
 
+  const openClaimableSubmit = useCallback(
+    (
+      members = queueSummary.claimableMembers,
+      opts?: { onlyUnpushed?: boolean; single?: { clientId2: string; monthKey: string; memberName?: string } }
+    ) => {
+      if (opts?.single) {
+        setClaimSubmitTargets([opts.single]);
+        setClaimSubmitOpen(true);
+        return;
+      }
+      const targets: ClaimSubmitTarget[] = [];
+      const onlyUnpushed = opts?.onlyUnpushed !== false;
+      for (const member of members) {
+        const row = rows.find((item) => item.id === member.id || item.clientId2 === member.clientId2);
+        for (const month of member.months || []) {
+          if (!member.clientId2 || !month.key) continue;
+          const cell = row?.months?.find((m) => m.monthKey === month.key);
+          if (onlyUnpushed && cell?.caspioPushedAt) continue;
+          targets.push({
+            clientId2: member.clientId2,
+            monthKey: month.key,
+            memberName: member.name,
+          });
+        }
+      }
+      if (!targets.length) {
+        toast({
+          title: onlyUnpushed ? 'Nothing left to push' : 'No claimable months',
+          description: onlyUnpushed
+            ? 'All claimable months for this selection are already pushed to Caspio.'
+            : 'Mark or auto-detect claimable months (notes on file) first.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      setClaimSubmitTargets(targets);
+      setClaimSubmitOpen(true);
+    },
+    [queueSummary.claimableMembers, rows, toast]
+  );
+
+  const markMonthsPushed = useCallback((results: ClaimPushResult[]) => {
+    if (!results.length) return;
+    setRows((prev) =>
+      prev.map((row) => {
+        let changed = false;
+        const months = row.months.map((month) => {
+          const hit = results.find(
+            (result) => result.clientId2 === row.clientId2 && result.monthKey === month.monthKey
+          );
+          if (!hit) return month;
+          changed = true;
+          return {
+            ...month,
+            status: 'claimable' as const,
+            caspioPushedAt: hit.caspioPushedAt,
+            caspioClaimPkId: hit.caspioClaimPkId || month.caspioClaimPkId || '',
+          };
+        });
+        return changed ? { ...row, months } : row;
+      })
+    );
+  }, []);
+
+  const pushedClaimTargets = useMemo(() => {
+    const targets: ClaimSubmitTarget[] = [];
+    for (const row of rows) {
+      for (const month of row.months || []) {
+        if (month.status !== 'claimable' || !month.caspioPushedAt) continue;
+        if (!row.clientId2) continue;
+        targets.push({
+          clientId2: row.clientId2,
+          monthKey: month.monthKey,
+          memberName: row.memberName,
+        });
+      }
+    }
+    return targets;
+  }, [rows]);
+
+  const [isBuildingEdi, setIsBuildingEdi] = useState(false);
+
+  const downloadPushedClaimsEdi = useCallback(async () => {
+    if (!pushedClaimTargets.length) {
+      toast({
+        title: 'No pushed claims',
+        description: 'Push claimable months to Caspio first, then download SDS EDI.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) return;
+    setIsBuildingEdi(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/admin/kaiser-t2038-claim-submit', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'edi_pushed',
+          targets: pushedClaimTargets.map((target) => ({
+            clientId2: target.clientId2,
+            monthKey: target.monthKey,
+          })),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(String(body?.error || `HTTP ${response.status}`));
+      }
+      const edi = String(body.edi || '');
+      if (!edi) {
+        throw new Error('EDI builder returned an empty file.');
+      }
+      const blob = new Blob([edi], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `kaiser-t2038-sds-pushed-${new Date().toISOString().slice(0, 10)}.edi`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast({
+        title: 'SDS EDI ready',
+        description: `${body.included || pushedClaimTargets.length} claim(s) for manual Smart Data Solutions upload.`,
+      });
+    } catch (err: unknown) {
+      toast({
+        title: 'EDI download failed',
+        description: String((err as { message?: string })?.message || err),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsBuildingEdi(false);
+    }
+  }, [auth.currentUser, pushedClaimTargets, toast]);
+
   const saveMonthDisposition = async (
     row: KaiserT2038ClaimAuditRow,
     monthKey: string,
@@ -1077,6 +1235,33 @@ export default function KaiserT2038ClaimAuditPage() {
                 </p>
               </button>
             </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={queueSummary.claimableMembers.length === 0}
+                onClick={() => openClaimableSubmit()}
+              >
+                Preview &amp; push claimable to Caspio
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={pushedClaimTargets.length === 0 || isBuildingEdi}
+                onClick={() => void downloadPushedClaimsEdi()}
+              >
+                {isBuildingEdi ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                SDS EDI for pushed ({pushedClaimTargets.length})
+              </Button>
+              <span className="self-center text-[11px] text-muted-foreground">
+                Or use Preview / Push on each month under the member
+              </span>
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -1171,25 +1356,37 @@ export default function KaiserT2038ClaimAuditPage() {
             </div>
 
             <div className="rounded border border-emerald-200">
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-emerald-50/70"
-                onClick={() => setSummaryClaimableOpen((open) => !open)}
-              >
-                {summaryClaimableOpen ? (
-                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                )}
-                <span className="font-medium text-emerald-950">Claimable · notes on file</span>
-                <Badge variant="outline" className="bg-emerald-50 text-emerald-950 border-emerald-300">
-                  {queueSummary.claimableMembers.length}
-                </Badge>
-                <span className="truncate text-xs text-muted-foreground">
-                  {queueSummary.claimableMonthTotal} month
-                  {queueSummary.claimableMonthTotal === 1 ? '' : 's'} · click member to see why
-                </span>
-              </button>
+              <div className="flex items-center gap-2 px-3 py-2">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm hover:opacity-90"
+                  onClick={() => setSummaryClaimableOpen((open) => !open)}
+                >
+                  {summaryClaimableOpen ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="font-medium text-emerald-950">Claimable · notes on file</span>
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-950 border-emerald-300">
+                    {queueSummary.claimableMembers.length}
+                  </Badge>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {queueSummary.claimableMonthTotal} month
+                    {queueSummary.claimableMonthTotal === 1 ? '' : 's'} · click member to see why
+                  </span>
+                </button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 shrink-0"
+                  disabled={queueSummary.claimableMembers.length === 0}
+                  onClick={() => openClaimableSubmit()}
+                >
+                  Submit claims…
+                </Button>
+              </div>
               {summaryClaimableOpen ? (
                 <div className="max-h-72 space-y-0.5 overflow-y-auto border-t bg-emerald-50/30 px-2 py-1.5 text-xs">
                   {queueSummary.claimableMembers.length === 0 ? (
@@ -1198,32 +1395,45 @@ export default function KaiserT2038ClaimAuditPage() {
                     </p>
                   ) : (
                     queueSummary.claimableMembers.map((member) => (
-                      <button
+                      <div
                         key={`claimable-${member.id}`}
-                        type="button"
-                        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded px-1.5 py-1 text-left hover:bg-emerald-100/70"
-                        onClick={() =>
-                          focusMemberInList({
-                            id: member.id,
-                            clientId2: member.clientId2,
-                            name: member.name,
-                            coverage: 'claimable',
-                          })
-                        }
+                        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded px-1.5 py-1 hover:bg-emerald-100/70"
                       >
-                        <span className="min-w-0 truncate font-medium">{member.name}</span>
-                        <span className="hidden shrink-0 lg:inline">
-                          {statusLine(member.calaimStatus, member.kaiserStatus)}
-                        </span>
-                        <span className="text-emerald-900">{member.why}</span>
-                        <span className="ml-auto min-w-0 truncate text-emerald-950">
-                          {member.months
-                            .map((month) =>
-                              month.noteCount > 0 ? `${month.label} (${month.noteCount} notes)` : month.label
-                            )
-                            .join(', ')}
-                        </span>
-                      </button>
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-left"
+                          onClick={() =>
+                            focusMemberInList({
+                              id: member.id,
+                              clientId2: member.clientId2,
+                              name: member.name,
+                              coverage: 'claimable',
+                            })
+                          }
+                        >
+                          <span className="min-w-0 truncate font-medium">{member.name}</span>
+                          <span className="hidden shrink-0 lg:inline">
+                            {statusLine(member.calaimStatus, member.kaiserStatus)}
+                          </span>
+                          <span className="text-emerald-900">{member.why}</span>
+                          <span className="ml-auto min-w-0 truncate text-emerald-950">
+                            {member.months
+                              .map((month) =>
+                                month.noteCount > 0 ? `${month.label} (${month.noteCount} notes)` : month.label
+                              )
+                              .join(', ')}
+                          </span>
+                        </button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-6 shrink-0 px-2 text-[11px]"
+                          onClick={() => openClaimableSubmit([member])}
+                        >
+                          Preview
+                        </Button>
+                      </div>
                     ))
                   )}
                 </div>
@@ -1827,6 +2037,19 @@ export default function KaiserT2038ClaimAuditPage() {
                           )}
                           Refresh claims
                         </Button>
+                        {(row.months || []).some((month) => month.caspioPushedAt) ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isBuildingEdi}
+                            onClick={() => void downloadPushedClaimsEdi()}
+                            title="Download SDS EDI for all pushed claimable months"
+                          >
+                            <Download className="mr-2 h-3.5 w-3.5" />
+                            SDS EDI
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
                     <div>
@@ -1847,10 +2070,11 @@ export default function KaiserT2038ClaimAuditPage() {
                       ) : null}
                       {!row.noClaimsYet && row.months.length > 0 ? (
                         <div className="overflow-hidden rounded border bg-white">
-                          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 border-b bg-muted/40 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+                          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 border-b bg-muted/40 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
                             <span>Month</span>
-                            <span className="w-20 text-center">No claim</span>
-                            <span className="w-20 text-center">Claimable</span>
+                            <span className="w-16 text-center">No claim</span>
+                            <span className="w-16 text-center">Claimable</span>
+                            <span className="w-[9.5rem] text-center">Caspio</span>
                           </div>
                           {row.months.map((month) => {
                             const draftKey = `${row.clientId2}__${month.monthKey}`;
@@ -1860,22 +2084,26 @@ export default function KaiserT2038ClaimAuditPage() {
                               month.status === 'justified' && isNoWorkJustification(month.justificationReason);
                             const isJustified = month.status === 'justified';
                             const isClaimable = month.status === 'claimable';
+                            const isPushed = Boolean(month.caspioPushedAt);
                             const hasNotes = month.noteEvidence === 'has_notes';
                             const noNotes = month.noteEvidence === 'no_notes';
                             const claimableBlocked = noNotes && !isClaimable;
+                            const canPush = isClaimable && !isPushed && !isClaimed && Boolean(row.clientId2);
                             return (
                               <div
                                 key={month.monthKey}
-                                className={`grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-t px-3 py-2 text-sm ${
-                                  month.status === 'missing'
-                                    ? 'bg-amber-50/40'
-                                    : isClaimable
-                                      ? 'bg-violet-50/50'
-                                      : isNoWork
-                                        ? 'bg-slate-50/70'
-                                        : isJustified
-                                          ? 'bg-sky-50/40'
-                                          : ''
+                                className={`grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 border-t px-3 py-2 text-sm ${
+                                  isPushed
+                                    ? 'bg-emerald-50/50'
+                                    : month.status === 'missing'
+                                      ? 'bg-amber-50/40'
+                                      : isClaimable
+                                        ? 'bg-violet-50/50'
+                                        : isNoWork
+                                          ? 'bg-slate-50/70'
+                                          : isJustified
+                                            ? 'bg-sky-50/40'
+                                            : ''
                                 }`}
                               >
                                 <div className="min-w-0">
@@ -1884,6 +2112,10 @@ export default function KaiserT2038ClaimAuditPage() {
                                     {isClaimed ? (
                                       <Badge variant="outline" className="bg-emerald-50 text-emerald-900 text-[10px]">
                                         claimed
+                                      </Badge>
+                                    ) : isPushed ? (
+                                      <Badge variant="outline" className="bg-emerald-50 text-emerald-900 border-emerald-300 text-[10px]">
+                                        pushed to Caspio
                                       </Badge>
                                     ) : isNoWork ? (
                                       <Badge variant="outline" className="bg-slate-100 text-slate-800 text-[10px]">
@@ -1927,10 +2159,10 @@ export default function KaiserT2038ClaimAuditPage() {
                                     ) : null}
                                   </div>
                                 </div>
-                                <label className="flex w-20 cursor-pointer items-center justify-center gap-1.5 text-xs">
+                                <label className="flex w-16 cursor-pointer items-center justify-center gap-1.5 text-xs">
                                   <Checkbox
-                                    checked={isJustified}
-                                    disabled={isSaving || isClaimed}
+                                    checked={isJustified && !isPushed}
+                                    disabled={isSaving || isClaimed || isPushed}
                                     onCheckedChange={(checked) => {
                                       if (checked === true) {
                                         void saveMonthDisposition(row, month.monthKey, {
@@ -1944,7 +2176,7 @@ export default function KaiserT2038ClaimAuditPage() {
                                   <span className="sr-only">No claim</span>
                                 </label>
                                 <label
-                                  className="flex w-20 cursor-pointer items-center justify-center gap-1.5 text-xs"
+                                  className="flex w-16 cursor-pointer items-center justify-center gap-1.5 text-xs"
                                   title={
                                     claimableBlocked
                                       ? 'Not claimable — no member notes were entered that month'
@@ -1953,7 +2185,7 @@ export default function KaiserT2038ClaimAuditPage() {
                                 >
                                   <Checkbox
                                     checked={isClaimable}
-                                    disabled={isSaving || isClaimed || claimableBlocked}
+                                    disabled={isSaving || isClaimed || claimableBlocked || isPushed}
                                     onCheckedChange={(checked) => {
                                       if (checked === true) {
                                         if (noNotes) {
@@ -1975,17 +2207,68 @@ export default function KaiserT2038ClaimAuditPage() {
                                   />
                                   <span className="sr-only">Claimable</span>
                                 </label>
+                                <div className="flex w-[9.5rem] items-center justify-end gap-1">
+                                  {isPushed ? (
+                                    <span className="text-[10px] text-emerald-800" title={month.caspioPushedAt}>
+                                      Pushed
+                                      {month.caspioClaimPkId ? ` · ${month.caspioClaimPkId}` : ''}
+                                    </span>
+                                  ) : canPush ? (
+                                    <>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 px-2 text-[11px]"
+                                        title="Preview Caspio claim fields"
+                                        onClick={() =>
+                                          openClaimableSubmit(undefined, {
+                                            single: {
+                                              clientId2: row.clientId2,
+                                              monthKey: month.monthKey,
+                                              memberName: row.memberName,
+                                            },
+                                          })
+                                        }
+                                      >
+                                        <Eye className="mr-1 h-3 w-3" />
+                                        Preview
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        className="h-7 px-2 text-[11px]"
+                                        title="Push this month to Caspio Connections Claim Submission"
+                                        onClick={() =>
+                                          openClaimableSubmit(undefined, {
+                                            single: {
+                                              clientId2: row.clientId2,
+                                              monthKey: month.monthKey,
+                                              memberName: row.memberName,
+                                            },
+                                          })
+                                        }
+                                      >
+                                        <Send className="mr-1 h-3 w-3" />
+                                        Push
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <span className="text-[10px] text-muted-foreground">—</span>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}
                         </div>
                       ) : null}
                       <p className="mt-2 text-[11px] text-muted-foreground">
-                        Notes decide claimability: no notes that month = not claimable (no work). Notes on file =
-                        claimable and the member stays on this table. Blank Claim_Status = Caspio-only (not sent). Rate
-                        used in summary: ${T2038_CLAIM_AUDIT_RATE_USD}/claim.
+                        Claimable months: Preview / Push next to the checkbox opens the Caspio field list, then submit.
+                        After push the month shows <span className="font-medium">pushed</span> and cannot be pushed
+                        again. Use <span className="font-medium">SDS EDI for pushed</span> for Smart Data Solutions
+                        upload. Rate ${T2038_CLAIM_AUDIT_RATE_USD}/claim.
                         {noWorkMonths.length > 0
-                          ? ` · ${noWorkMonths.length} month${noWorkMonths.length === 1 ? '' : 's'} not claimable for this member.`
+                          ? ` · ${noWorkMonths.length} month${noWorkMonths.length === 1 ? '' : 's'} not claimable.`
                           : ''}
                       </p>
                     </div>
@@ -2008,6 +2291,18 @@ export default function KaiserT2038ClaimAuditPage() {
         newNotesCount={memberNotesModal.newNotesCount}
         didSync={memberNotesModal.didSync}
         onSyncNotes={() => void syncMemberNotes()}
+      />
+
+      <ClaimableClaimSubmitModal
+        open={claimSubmitOpen}
+        onOpenChange={setClaimSubmitOpen}
+        targets={claimSubmitTargets}
+        onPushed={markMonthsPushed}
+        getIdToken={async () => {
+          const user = auth.currentUser;
+          if (!user) throw new Error('Not signed in');
+          return user.getIdToken();
+        }}
       />
     </div>
   );
