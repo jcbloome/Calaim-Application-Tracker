@@ -7,7 +7,9 @@ import {
   formatCompactDate,
   formatUsDate,
   parseDateOnly,
+  startOfToday,
   T2038_BILLING_PROVIDER,
+  T2038_CLAIM_DUE_DAYS,
   T2038_CLAIM_SUBMIT_TABLE,
   T2038_PROC_CODE,
   type T2038ClaimSettings,
@@ -59,6 +61,10 @@ export type ConnectionsT2038ClaimPreview = {
   monthLabel: string;
   dateOfService: string;
   dateOfServiceIso: string;
+  /** Prior claimed claim DOS used for the 30-day spacing rule. */
+  lastDateOfService: string;
+  /** True when DOS was moved later to satisfy ≥30 days after last claimed claim. */
+  dosAdjustedForLastClaim: boolean;
   memberName: string;
   blockers: string[];
   /** Human-readable field list for the preview card. */
@@ -79,24 +85,62 @@ const pickFirst = (...values: unknown[]) => {
   return '';
 };
 
-/** PMPM DOS = first day of month, clamped into auth start→end when dates exist. */
+/** New claimable Date_of_Service must be at least this many days after the last claimed claim. */
+export const T2038_MIN_DAYS_AFTER_LAST_DOS = T2038_CLAIM_DUE_DAYS; // 30
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+/**
+ * PMPM DOS for a claimable month:
+ * - prefer the 1st of the month (clamped into auth start)
+ * - never earlier than last *claimed* claim Date_of_Service + 30 days
+ * - must still be on/before Auth_End when Auth_End exists
+ */
 export function dateOfServiceForClaimMonth(
   monthKey: string,
   authStart?: string | Date | null,
-  authEnd?: string | Date | null
-): Date | null {
+  authEnd?: string | Date | null,
+  lastDateOfService?: string | Date | null,
+  minGapDays = T2038_MIN_DAYS_AFTER_LAST_DOS
+): { date: Date | null; blockers: string[]; adjustedForLastDos: boolean; lastDosLabel: string } {
   const match = String(monthKey || '').trim().match(/^(\d{4})-(\d{2})$/);
-  if (!match) return null;
-  let dos = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+  if (!match) {
+    return { date: null, blockers: ['Invalid month key'], adjustedForLastDos: false, lastDosLabel: '' };
+  }
   const start = authStart instanceof Date ? authStart : parseDateOnly(authStart);
   const end = authEnd instanceof Date ? authEnd : parseDateOnly(authEnd);
-  if (start && dos.getTime() < start.getTime()) dos = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  if (end && dos.getTime() > end.getTime()) dos = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-  if (monthKeyFromDate(dos) !== monthKey) {
-    // Clamping moved DOS out of the target month — keep first of month for preview transparency.
-    dos = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+  const last = lastDateOfService instanceof Date ? startOfToday(lastDateOfService) : parseDateOnly(lastDateOfService);
+  const lastDosLabel = last ? formatUsDate(last) : '';
+
+  let dos = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+  if (start && dos.getTime() < start.getTime()) {
+    dos = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   }
-  return dos;
+
+  let adjustedForLastDos = false;
+  if (last) {
+    const minDos = addDays(last, Math.max(1, minGapDays));
+    if (dos.getTime() < minDos.getTime()) {
+      dos = minDos;
+      adjustedForLastDos = true;
+    }
+  }
+
+  const blockers: string[] = [];
+  if (end && dos.getTime() > end.getTime()) {
+    blockers.push(
+      last
+        ? `Date_of_Service must be ≥${minGapDays} days after last claimed claim ${lastDosLabel}, but that falls after Auth_End ${formatUsDate(end)}`
+        : `Date_of_Service falls after Auth_End ${formatUsDate(end)}`
+    );
+    return { date: null, blockers, adjustedForLastDos, lastDosLabel };
+  }
+
+  return { date: dos, blockers, adjustedForLastDos, lastDosLabel };
 }
 
 function formatMonthLabel(monthKey: string) {
@@ -136,6 +180,8 @@ export function buildConnectionsT2038ClaimPreview(opts: {
   monthKey: string;
   submitter: ClaimSubmitSubmitter;
   settings?: T2038ClaimSettings;
+  /** Last claimed claim Date_of_Service — new claimable DOS must be ≥ 30 days after this. */
+  lastDateOfService?: string | Date | null;
 }): ConnectionsT2038ClaimPreview {
   const raw = opts.rawMember || {};
   const settings = opts.settings || DEFAULT_T2038_CLAIM_SETTINGS;
@@ -185,7 +231,13 @@ export function buildConnectionsT2038ClaimPreview(opts: {
   const diagText2 = pickFirst(raw.Diagnostic_CodeText2, raw.Diagnostic_Code_Text2);
   const diagText3 = pickFirst(raw.Diagnostic_CodeText3, raw.Diagnostic_Code_Text3);
 
-  const dos = dateOfServiceForClaimMonth(opts.monthKey, authStart, authEnd);
+  const dosResult = dateOfServiceForClaimMonth(
+    opts.monthKey,
+    authStart,
+    authEnd,
+    opts.lastDateOfService
+  );
+  const dos = dosResult.date;
   const dateOfService = formatUsDate(dos);
   const dateOfServiceIso = dos ? formatCompactDate(dos) : '';
 
@@ -278,10 +330,10 @@ export function buildConnectionsT2038ClaimPreview(opts: {
   caspioBody.Claim_Status = '';
   caspioBody.Connections_or_RCFE_Claim = CONNECTIONS_OR_RCFE_CLAIM_VALUE;
 
-  const blockers: string[] = [];
+  const blockers: string[] = [...dosResult.blockers];
   if (!clientId2) blockers.push('Missing Client_ID2');
   if (!clientFirst || !clientLast) blockers.push('Missing Client_First / Client_Last');
-  if (!dateOfService) blockers.push('Missing Date_of_Service');
+  if (!dateOfService && !dosResult.blockers.length) blockers.push('Missing Date_of_Service');
   if (!mcpCin && !kaiserMrn) blockers.push('Missing MCP_CIN / Kaiser_MRN');
   if (!diag1) blockers.push('Missing Diagnostic_Code1');
   if (!authEnd) blockers.push('Missing Auth_End');
@@ -337,6 +389,16 @@ export function buildConnectionsT2038ClaimPreview(opts: {
     const rawValue = caspioBody[label];
     let value = rawValue === undefined || rawValue === null ? '' : String(rawValue);
     if (label === 'Claim_Status' && !value) value = '';
+    if (
+      label === 'Date_of_Service' &&
+      value &&
+      dosResult.adjustedForLastDos &&
+      dosResult.lastDosLabel
+    ) {
+      value = `${value} (≥${T2038_MIN_DAYS_AFTER_LAST_DOS}d after last claimed ${dosResult.lastDosLabel})`;
+    } else if (label === 'Date_of_Service' && value && dosResult.lastDosLabel) {
+      value = `${value} (last claimed ${dosResult.lastDosLabel})`;
+    }
     return { label, value, source: 'claim' };
   });
 
@@ -347,6 +409,8 @@ export function buildConnectionsT2038ClaimPreview(opts: {
     monthLabel: formatMonthLabel(opts.monthKey),
     dateOfService,
     dateOfServiceIso,
+    lastDateOfService: dosResult.lastDosLabel,
+    dosAdjustedForLastClaim: dosResult.adjustedForLastDos,
     memberName: [clientLast, clientFirst].filter(Boolean).join(', ') || clientId2 || 'Member',
     blockers,
     displayFields,

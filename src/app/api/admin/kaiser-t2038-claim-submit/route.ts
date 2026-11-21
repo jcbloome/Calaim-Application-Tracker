@@ -10,9 +10,14 @@ import {
   type ConnectionsT2038ClaimPreview,
 } from '@/lib/kaiser-t2038-connections-claim-submit';
 import {
+  collectServiceDatesFromClaimRow,
   DEFAULT_NOTES_CLAIMABLE_REASON,
+  isClaimRowSubmitted,
   justificationDocId,
+  KAISER_T2038_CLAIM_AUDIT_CLAIMS_COLLECTION,
   KAISER_T2038_CLAIM_AUDIT_JUSTIFICATIONS_COLLECTION,
+  normalizeClientId2Key,
+  parseClaimServiceDate,
   type MonthJustification,
 } from '@/lib/kaiser-t2038-claim-audit';
 import {
@@ -112,15 +117,87 @@ function submitterFromAuth(authz: { email?: string; name?: string }): ClaimSubmi
   };
 }
 
+function rememberLastDos(map: Map<string, Date>, clientId2: string, date: Date) {
+  const keys = [clientId2, normalizeClientId2(clientId2), normalizeClientId2Key(clientId2)].filter(
+    Boolean
+  );
+  for (const key of keys) {
+    const prev = map.get(key);
+    if (!prev || date.getTime() > prev.getTime()) map.set(key, date);
+  }
+}
+
+/**
+ * Latest Date_of_Service from the member's last *claimed* claim:
+ * - inventory rows with non-blank Claim_Status (submitted / paid — audit "claimed")
+ * - plus claimable months already pushed from this tool (caspioDateOfService)
+ * Unsubmitted Caspio-only rows (blank Claim_Status) do not count.
+ */
+async function loadLastDosByClientId2(
+  adminDb: any,
+  clientId2s: string[]
+): Promise<Map<string, Date>> {
+  const wanted = new Set(
+    clientId2s
+      .map((id) => String(id || '').trim())
+      .filter(Boolean)
+      .flatMap((id) => [id, normalizeClientId2(id), normalizeClientId2Key(id)].filter(Boolean))
+  );
+  const lastByClient = new Map<string, Date>();
+  if (!adminDb || !wanted.size) return lastByClient;
+  try {
+    const [claimsSnap, justSnap] = await Promise.all([
+      adminDb.collection(KAISER_T2038_CLAIM_AUDIT_CLAIMS_COLLECTION).limit(20000).get(),
+      adminDb.collection(KAISER_T2038_CLAIM_AUDIT_JUSTIFICATIONS_COLLECTION).limit(5000).get(),
+    ]);
+    claimsSnap.docs.forEach((doc: { data: () => Record<string, unknown> }) => {
+      const data = doc.data() || {};
+      if (data.deleted === true) return;
+      // Only claimed/submitted rows — same gate as audit month status "claimed".
+      if (!isClaimRowSubmitted(data)) return;
+      const clientId2 = String(data.Client_ID2 || data.client_ID2 || data.clientId2 || '').trim();
+      if (!clientId2 || !wanted.has(clientId2)) return;
+      for (const date of collectServiceDatesFromClaimRow(data)) {
+        rememberLastDos(lastByClient, clientId2, date);
+      }
+    });
+    justSnap.docs.forEach((doc: { data: () => Record<string, unknown> }) => {
+      const data = doc.data() || {};
+      if (!String(data.caspioPushedAt || '').trim()) return;
+      const clientId2 = String(data.clientId2 || '').trim();
+      if (!clientId2 || !wanted.has(clientId2)) return;
+      const dos =
+        parseClaimServiceDate(data.caspioDateOfService) ||
+        parseClaimServiceDate(data.dateOfService);
+      if (dos) rememberLastDos(lastByClient, clientId2, dos);
+    });
+  } catch (err) {
+    console.warn(
+      '[kaiser-t2038-claim-submit] last claimed DOS load failed:',
+      String((err as { message?: string })?.message || err)
+    );
+  }
+  return lastByClient;
+}
+
 function buildPreviewsForTargets(
   targets: ClaimTarget[],
   byId: Map<string, Record<string, unknown>>,
   submitter: ClaimSubmitSubmitter,
-  settings: ReturnType<typeof sanitizeT2038ClaimSettings>
+  settings: ReturnType<typeof sanitizeT2038ClaimSettings>,
+  lastDosByClient: Map<string, Date> = new Map()
 ) {
   const previews: ConnectionsT2038ClaimPreview[] = [];
   const missing: ClaimTarget[] = [];
-  for (const target of targets) {
+  // Process earliest months first so multi-month batches chain the 30-day DOS rule.
+  const ordered = [...targets].sort((a, b) => {
+    const byClient = a.clientId2.localeCompare(b.clientId2);
+    if (byClient) return byClient;
+    return a.monthKey.localeCompare(b.monthKey);
+  });
+  const runningLastDos = new Map<string, Date>(lastDosByClient);
+
+  for (const target of ordered) {
     const raw =
       byId.get(target.clientId2) ||
       byId.get(normalizeClientId2(target.clientId2)) ||
@@ -134,6 +211,8 @@ function buildPreviewsForTargets(
         monthLabel: target.monthKey,
         dateOfService: '',
         dateOfServiceIso: '',
+        lastDateOfService: '',
+        dosAdjustedForLastClaim: false,
         memberName: target.clientId2,
         blockers: [`Member Client_ID2 ${target.clientId2} not found in CalAIM_tbl_Members cache`],
         displayFields: [],
@@ -142,16 +221,40 @@ function buildPreviewsForTargets(
       });
       continue;
     }
-    previews.push(
-      buildConnectionsT2038ClaimPreview({
-        rawMember: raw,
-        monthKey: target.monthKey,
-        submitter,
-        settings,
-      })
-    );
+    const lastDos =
+      runningLastDos.get(target.clientId2) ||
+      runningLastDos.get(normalizeClientId2(target.clientId2)) ||
+      null;
+    const preview = buildConnectionsT2038ClaimPreview({
+      rawMember: raw,
+      monthKey: target.monthKey,
+      submitter,
+      settings,
+      lastDateOfService: lastDos,
+    });
+    previews.push(preview);
+    if (preview.dateOfService) {
+      // Chain: next month for this member must be ≥30 days after this claim's DOS.
+      const parsed = preview.dateOfServiceIso
+        ? new Date(
+            Number(preview.dateOfServiceIso.slice(0, 4)),
+            Number(preview.dateOfServiceIso.slice(4, 6)) - 1,
+            Number(preview.dateOfServiceIso.slice(6, 8))
+          )
+        : null;
+      if (parsed && !Number.isNaN(parsed.getTime())) {
+        runningLastDos.set(target.clientId2, parsed);
+        const normalized = normalizeClientId2(target.clientId2);
+        if (normalized) runningLastDos.set(normalized, parsed);
+      }
+    }
   }
-  return { previews, missing };
+  // Keep response order aligned with request targets when possible.
+  const byKey = new Map(previews.map((preview) => [`${preview.clientId2}__${preview.monthKey}`, preview]));
+  const sortedForResponse = targets
+    .map((target) => byKey.get(`${target.clientId2}__${target.monthKey}`))
+    .filter(Boolean) as ConnectionsT2038ClaimPreview[];
+  return { previews: sortedForResponse.length ? sortedForResponse : previews, missing };
 }
 
 async function insertCaspioClaim(
@@ -206,9 +309,17 @@ export async function POST(request: NextRequest) {
       loadMembersByClientId2(),
       loadClaimSettingsAndEdi(),
     ]);
+    const { adminDb } = await import('@/firebase-admin');
+    const lastDosByClient =
+      targets.length > 0
+        ? await loadLastDosByClientId2(
+            adminDb,
+            targets.map((target) => target.clientId2)
+          )
+        : new Map<string, Date>();
     const { previews, missing } =
       targets.length > 0
-        ? buildPreviewsForTargets(targets, byId, submitter, settings)
+        ? buildPreviewsForTargets(targets, byId, submitter, settings, lastDosByClient)
         : { previews: [] as ConnectionsT2038ClaimPreview[], missing: [] as ClaimTarget[] };
 
     if (action === 'preview') {
@@ -307,6 +418,7 @@ export async function POST(request: NextRequest) {
             updatedAt: caspioPushedAt,
             caspioPushedAt,
             caspioClaimPkId: pkId,
+            caspioDateOfService: preview.dateOfService,
           };
           await ref.set(
             {
@@ -367,23 +479,39 @@ export async function POST(request: NextRequest) {
     if (action === 'edi' || action === 'edi_pushed') {
       let ediPreviews = previews.filter((row) => row.blockers.length === 0);
       if (action === 'edi_pushed') {
-        const { adminDb } = await import('@/firebase-admin');
         const snap = await adminDb
           .collection(KAISER_T2038_CLAIM_AUDIT_JUSTIFICATIONS_COLLECTION)
           .limit(5000)
           .get();
         const pushedTargets: ClaimTarget[] = [];
+        const pushedDosByKey = new Map<string, string>();
         snap.docs.forEach((doc: { data: () => Record<string, unknown> }) => {
           const data = doc.data() || {};
           if (!String(data.caspioPushedAt || '').trim()) return;
-          if (String(data.disposition || '').toLowerCase() !== 'claimable' && !data.caspioPushedAt) return;
           const clientId2 = String(data.clientId2 || '').trim();
           const monthKey = String(data.monthKey || '').trim();
           if (!clientId2 || !/^\d{4}-\d{2}$/.test(monthKey)) return;
           pushedTargets.push({ clientId2, monthKey });
+          const dos = String(data.caspioDateOfService || '').trim();
+          if (dos) pushedDosByKey.set(`${clientId2}__${monthKey}`, dos);
         });
-        const rebuilt = buildPreviewsForTargets(pushedTargets, byId, submitter, settings);
-        ediPreviews = rebuilt.previews.filter((row) => row.blockers.length === 0);
+        const lastDos = await loadLastDosByClientId2(
+          adminDb,
+          pushedTargets.map((target) => target.clientId2)
+        );
+        const rebuilt = buildPreviewsForTargets(pushedTargets, byId, submitter, settings, lastDos);
+        ediPreviews = rebuilt.previews
+          .map((preview) => {
+            const storedDos = pushedDosByKey.get(`${preview.clientId2}__${preview.monthKey}`);
+            if (!storedDos) return preview;
+            return {
+              ...preview,
+              dateOfService: storedDos,
+              caspioBody: { ...preview.caspioBody, Date_of_Service: storedDos },
+              blockers: [],
+            };
+          })
+          .filter((row) => Boolean(row.dateOfService));
       }
       const ediBundle = buildEdiForConnectionsClaimPreviews(ediPreviews, byId, edi, settings);
       return NextResponse.json({

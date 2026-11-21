@@ -17,6 +17,9 @@
 
 ## Changes 2026-11-20
 
+- **Kaiser T2038 claim DOS — ≥30 days after last claimed claim:** Claimable Connections Claim Submission `Date_of_Service` is the 1st of the month (or later) and always **≥30 days after** the member’s last *claimed* claim (submitted `Claim_Status`, or already pushed from this tool). Unsubmitted Caspio-only rows do not count. Multi-month batches chain the rule; blocked if that date falls after Auth_End.
+  - Files: `src/lib/kaiser-t2038-connections-claim-submit.ts`, `src/app/api/admin/kaiser-t2038-claim-submit/route.ts`, `handoff.md`.
+
 - **Kaiser T2038 Claim Audit — single-line month row actions:** Each claim month is one fixed-height row: Month · status · No claim · Claimable · Preview · Push.
   - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
 

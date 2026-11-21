@@ -232,6 +232,8 @@ export type MonthJustification = {
   /** Set after successful Connections Claim Submission insert. */
   caspioPushedAt?: string;
   caspioClaimPkId?: string;
+  /** Date_of_Service that was pushed (MM/DD/YYYY). */
+  caspioDateOfService?: string;
 };
 
 export const DEFAULT_JUSTIFY_REASON = 'No claim — staff review';
