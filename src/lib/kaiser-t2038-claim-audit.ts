@@ -142,6 +142,8 @@ export type MonthStatus = 'claimed' | 'missing' | 'justified' | 'claimable';
 /** Staff disposition for a missing month (persisted for audit / future Caspio batch). */
 export type MonthDisposition = 'justified' | 'claimable';
 
+export type NoteMonthEvidence = 'has_notes' | 'no_notes' | 'unknown';
+
 export type ClaimMonthCell = {
   monthKey: string;
   label: string;
@@ -152,6 +154,9 @@ export type ClaimMonthCell = {
   justificationReason: string;
   justifiedBy: string;
   justifiedAt: string;
+  /** Whether member-notes has an entry dated in this calendar month. */
+  noteEvidence?: NoteMonthEvidence;
+  noteCount?: number;
 };
 
 export type SubmittedClaimRow = {
@@ -194,6 +199,10 @@ export type KaiserT2038ClaimAuditRow = {
   expectedMonthCount: number;
   claimedMonthCount: number;
   justifiedMonthCount: number;
+  /** Months marked claimable (staff or notes evidence). */
+  claimableMonthCount?: number;
+  /** Gap months with no notes that month → not claimable / no work done. */
+  noWorkMonthCount?: number;
   missingMonthCount: number;
   openMissingMonthCount: number;
   claimsComplete: boolean;
@@ -203,6 +212,9 @@ export type KaiserT2038ClaimAuditRow = {
   unsubmittedClaimCount?: number;
   unsubmittedClaimDates?: string[];
 };
+
+/** T2038 room & board rate used for claim-audit dollar summaries. */
+export const T2038_CLAIM_AUDIT_RATE_USD = 432;
 
 export type MonthJustification = {
   clientId2: string;
@@ -217,6 +229,20 @@ export type MonthJustification = {
 
 export const DEFAULT_JUSTIFY_REASON = 'No claim — staff review';
 export const DEFAULT_CLAIMABLE_REASON = 'Claimable — forgotten claim queued for Caspio batch';
+/** Auto when member-notes has no entry in that calendar month. */
+export const DEFAULT_NO_WORK_REASON = 'Not claimable — no notes that month';
+/** Auto when member-notes has at least one entry in that calendar month. */
+export const DEFAULT_NOTES_CLAIMABLE_REASON = 'Claimable — notes entered that month';
+
+export function isNoWorkJustification(reason: unknown): boolean {
+  const value = clean(reason);
+  return value === DEFAULT_NO_WORK_REASON || /^not claimable/i.test(value);
+}
+
+export function isNotesClaimableJustification(reason: unknown): boolean {
+  const value = clean(reason);
+  return value === DEFAULT_NOTES_CLAIMABLE_REASON || value === DEFAULT_CLAIMABLE_REASON;
+}
 
 export function monthKeyFromDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -666,7 +692,11 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
       const justification = opts.justificationsByKey.get(`${base.clientId2}__${monthKey}`);
       let status: MonthStatus = 'missing';
       if (claimDates.length > 0) status = 'claimed';
-      else if (justification?.disposition === 'claimable' || justification?.reason === DEFAULT_CLAIMABLE_REASON) {
+      else if (
+        justification?.disposition === 'claimable' ||
+        justification?.reason === DEFAULT_CLAIMABLE_REASON ||
+        isNotesClaimableJustification(justification?.reason)
+      ) {
         status = 'claimable';
       } else if (justification?.disposition === 'justified' || justification?.reason) {
         status = 'justified';
@@ -680,20 +710,12 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
         justificationReason: justification?.reason || '',
         justifiedBy: justification?.justifiedBy || '',
         justifiedAt: justification?.updatedAt || '',
+        noteEvidence: 'unknown' as NoteMonthEvidence,
+        noteCount: 0,
       };
     });
 
-    // Include any claimed months after first claim that somehow fall outside expectedMonths
-    // (should be rare). Keep grid focused on gap window.
-    const claimedMonthCount = months.filter((m) => m.status === 'claimed').length;
-    const justifiedMonthCount = months.filter((m) => m.status === 'justified').length;
-    const openMissingFromGrid = months.filter((m) => m.status === 'missing').length;
-    const resolvedCount = months.filter(
-      (m) => m.status === 'justified' || m.status === 'claimable'
-    ).length;
-    // New auth with zero claims counts as incomplete (1 open gap) until first claim lands.
-    const openMissingMonthCount = noClaimsYet ? 1 : openMissingFromGrid;
-    const missingMonthCount = noClaimsYet ? 1 : openMissingFromGrid + resolvedCount;
+    const counts = monthCountsFromCells(months, noClaimsYet);
 
     rows.push({
       ...base,
@@ -702,11 +724,7 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
       firstClaimMonthKey,
       gapStartMonthKey,
       expectedMonthCount: months.length,
-      claimedMonthCount,
-      justifiedMonthCount,
-      missingMonthCount,
-      openMissingMonthCount,
-      claimsComplete: !noClaimsYet && months.length > 0 && openMissingFromGrid === 0,
+      ...counts,
       months,
       submittedClaims,
       unsubmittedClaimCount: unsubmittedClaims.length,
@@ -728,20 +746,124 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
   return rows;
 }
 
+function monthCountsFromCells(months: ClaimMonthCell[], noClaimsYet: boolean) {
+  const claimedMonthCount = months.filter((m) => m.status === 'claimed').length;
+  const justifiedMonthCount = months.filter((m) => m.status === 'justified').length;
+  const claimableMonthCount = months.filter((m) => m.status === 'claimable').length;
+  const noWorkMonthCount = months.filter(
+    (m) => m.status === 'justified' && (isNoWorkJustification(m.justificationReason) || m.noteEvidence === 'no_notes')
+  ).length;
+  const openMissingFromGrid = months.filter((m) => m.status === 'missing').length;
+  const resolvedCount = months.filter(
+    (m) => m.status === 'justified' || m.status === 'claimable'
+  ).length;
+  const openMissingMonthCount = noClaimsYet ? 1 : openMissingFromGrid;
+  const missingMonthCount = noClaimsYet ? 1 : openMissingFromGrid + resolvedCount;
+  return {
+    claimedMonthCount,
+    justifiedMonthCount,
+    claimableMonthCount,
+    noWorkMonthCount,
+    missingMonthCount,
+    openMissingMonthCount,
+    claimsComplete: !noClaimsYet && months.length > 0 && openMissingFromGrid === 0,
+  };
+}
+
 export function summarizeKaiserT2038ClaimAudit(rows: KaiserT2038ClaimAuditRow[]) {
+  const h2022Rows = rows.filter((r) => normalize(r.calaimStatus) === 'h2022');
+  const h2022UnsubmittedClaims = h2022Rows.reduce(
+    (sum, r) => sum + Number(r.unsubmittedClaimCount || 0),
+    0
+  );
+  const claimableMonths = rows.reduce((sum, r) => sum + Number(r.claimableMonthCount || 0), 0);
+  const noWorkMonths = rows.reduce((sum, r) => sum + Number(r.noWorkMonthCount || 0), 0);
   return {
     total: rows.length,
     openAuth: rows.filter((r) => r.window === 'in_window' || r.window === 'ending_soon').length,
     authEnded: rows.filter((r) => r.authEnded).length,
     missingDates: rows.filter((r) => r.window === 'missing_dates').length,
     noClaimsYet: rows.filter((r) => r.noClaimsYet).length,
-    incomplete: rows.filter((r) => r.openMissingMonthCount > 0 || r.noClaimsYet).length,
-    complete: rows.filter((r) => r.claimsComplete).length,
+    incomplete: rows.filter(
+      (r) => r.openMissingMonthCount > 0 || r.noClaimsYet || Number(r.claimableMonthCount || 0) > 0
+    ).length,
+    complete: rows.filter((r) => r.claimsComplete && Number(r.claimableMonthCount || 0) === 0).length,
     openMissingMonths: rows.reduce(
       (sum, r) => sum + (r.noClaimsYet ? 0 : r.openMissingMonthCount),
       0
     ),
+    claimableMonths,
+    noWorkMonths,
+    h2022UnsubmittedClaims,
+    h2022MemberCount: h2022Rows.length,
+    claimableAmountUsd: claimableMonths * T2038_CLAIM_AUDIT_RATE_USD,
+    noWorkAmountUsd: noWorkMonths * T2038_CLAIM_AUDIT_RATE_USD,
+    h2022UnsubmittedAmountUsd: h2022UnsubmittedClaims * T2038_CLAIM_AUDIT_RATE_USD,
+    rateUsd: T2038_CLAIM_AUDIT_RATE_USD,
   };
+}
+
+/**
+ * For open (missing) months, use member-notes dates:
+ * - notes in that month → claimable
+ * - no notes → not claimable (no work done)
+ * Staff-saved dispositions are left alone.
+ */
+export function applyMemberNoteEvidenceToAuditRows(
+  rows: KaiserT2038ClaimAuditRow[],
+  noteMonthsByClient: Map<string, Set<string>>,
+  noteCountsByClient?: Map<string, Map<string, number>>
+): KaiserT2038ClaimAuditRow[] {
+  return rows.map((row) => {
+    if (row.noClaimsYet || !row.months?.length) return row;
+    const clientKey = clean(row.clientId2);
+    const noteMonths = noteMonthsByClient.get(clientKey) || new Set<string>();
+    const countsForClient = noteCountsByClient?.get(clientKey);
+    const months = row.months.map((month) => {
+      const noteCount = countsForClient?.get(month.monthKey) || (noteMonths.has(month.monthKey) ? 1 : 0);
+      const noteEvidence: NoteMonthEvidence = noteMonths.has(month.monthKey) ? 'has_notes' : 'no_notes';
+      if (month.status === 'claimed') {
+        return { ...month, noteEvidence, noteCount };
+      }
+      const hasStaffDisposition = Boolean(clean(month.justifiedBy));
+      const wasAutoFromNotes =
+        !hasStaffDisposition &&
+        (month.status === 'missing' ||
+          isNoWorkJustification(month.justificationReason) ||
+          month.justificationReason === DEFAULT_NOTES_CLAIMABLE_REASON);
+      if (!wasAutoFromNotes) {
+        // Staff (or prior manual) disposition wins — only attach note evidence.
+        return { ...month, noteEvidence, noteCount };
+      }
+      if (noteEvidence === 'has_notes') {
+        return {
+          ...month,
+          status: 'claimable' as const,
+          justificationReason: DEFAULT_NOTES_CLAIMABLE_REASON,
+          justifiedBy: '',
+          justifiedAt: '',
+          noteEvidence,
+          noteCount,
+        };
+      }
+      return {
+        ...month,
+        status: 'justified' as const,
+        justificationReason: DEFAULT_NO_WORK_REASON,
+        justifiedBy: '',
+        justifiedAt: '',
+        noteEvidence,
+        noteCount,
+      };
+    });
+    const counts = monthCountsFromCells(months, false);
+    return {
+      ...row,
+      months,
+      expectedMonthCount: months.length,
+      ...counts,
+    };
+  });
 }
 
 /** Drop 2025 / >6-month-old gap months from a saved run without rebuilding from Caspio. */
@@ -754,22 +876,13 @@ export function applyActionableGapMonthPolicy(
     const months = (row.months || []).filter((month) =>
       isActionableClaimAuditMonth(month.monthKey, today)
     );
-    const claimedMonthCount = months.filter((m) => m.status === 'claimed').length;
-    const justifiedMonthCount = months.filter((m) => m.status === 'justified').length;
-    const openMissingFromGrid = months.filter((m) => m.status === 'missing').length;
-    const resolvedCount = months.filter(
-      (m) => m.status === 'justified' || m.status === 'claimable'
-    ).length;
+    const counts = monthCountsFromCells(months, false);
     return {
       ...row,
       months,
       gapStartMonthKey: months[0]?.monthKey || row.gapStartMonthKey,
       expectedMonthCount: months.length,
-      claimedMonthCount,
-      justifiedMonthCount,
-      missingMonthCount: openMissingFromGrid + resolvedCount,
-      openMissingMonthCount: openMissingFromGrid,
-      claimsComplete: months.length > 0 && openMissingFromGrid === 0,
+      ...counts,
     };
   });
 }

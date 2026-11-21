@@ -4,6 +4,7 @@ import { fetchAllCalAIMMembers, getCaspioCredentialsFromEnv, getCaspioToken } fr
 import { isKaiserPlan, T2038_CLAIM_SUBMIT_TABLE } from '@/lib/t2038-claims';
 import {
   applyActionableGapMonthPolicy,
+  applyMemberNoteEvidenceToAuditRows,
   buildKaiserT2038ClaimAuditRows,
   claimDocIdFromRecord,
   compactAuditRowForStorage,
@@ -18,6 +19,7 @@ import {
   KAISER_T2038_CLAIM_AUDIT_STATE_COLLECTION,
   KAISER_T2038_CLAIM_AUDIT_STATE_DOC_ID,
   maxClaimPkFromRecords,
+  monthKeyFromDate,
   normalizeMrnKey,
   findKaiserMrnNonKaiserMcoMembers,
   DEFAULT_CLAIMABLE_REASON,
@@ -29,6 +31,81 @@ import {
   type MonthDisposition,
   type MonthJustification,
 } from '@/lib/kaiser-t2038-claim-audit';
+
+const MEMBER_NOTES_COLLECTION = 'member-notes';
+const NOTE_CLIENT_IN_CHUNK = 10;
+
+/** Load calendar months that have member-notes for the given Client_ID2 values. */
+async function loadNoteMonthEvidenceByClientId2(
+  adminDb: any,
+  clientId2s: string[]
+): Promise<{ months: Map<string, Set<string>>; counts: Map<string, Map<string, number>> }> {
+  const months = new Map<string, Set<string>>();
+  const counts = new Map<string, Map<string, number>>();
+  const unique = [
+    ...new Set(
+      clientId2s
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (!adminDb || unique.length === 0) return { months, counts };
+
+  const bump = (clientId2: string, monthKey: string) => {
+    if (!months.has(clientId2)) months.set(clientId2, new Set());
+    months.get(clientId2)!.add(monthKey);
+    if (!counts.has(clientId2)) counts.set(clientId2, new Map());
+    const byMonth = counts.get(clientId2)!;
+    byMonth.set(monthKey, (byMonth.get(monthKey) || 0) + 1);
+  };
+
+  for (let i = 0; i < unique.length; i += NOTE_CLIENT_IN_CHUNK) {
+    const chunk = unique.slice(i, i + NOTE_CLIENT_IN_CHUNK);
+    try {
+      const snap = await adminDb
+        .collection(MEMBER_NOTES_COLLECTION)
+        .where('clientId2', 'in', chunk)
+        .get();
+      for (const doc of snap.docs as Array<{ data: () => Record<string, unknown> }>) {
+        const data = doc.data() || {};
+        if (data.deleted) continue;
+        const clientId2 = String(data.clientId2 || '').trim();
+        if (!clientId2) continue;
+        const rawCreated = data.createdAt as { toDate?: () => Date } | string | Date | undefined;
+        const createdAt =
+          rawCreated && typeof (rawCreated as { toDate?: () => Date }).toDate === 'function'
+            ? (rawCreated as { toDate: () => Date }).toDate()
+            : rawCreated
+              ? new Date(rawCreated as string | Date)
+              : null;
+        if (!createdAt || Number.isNaN(createdAt.getTime())) continue;
+        bump(clientId2, monthKeyFromDate(createdAt));
+      }
+    } catch (err) {
+      console.warn(
+        `[kaiser-t2038-claim-audit] note-month load failed for chunk ${chunk.join(',')}:`,
+        String((err as { message?: string })?.message || err)
+      );
+    }
+  }
+  return { months, counts };
+}
+
+async function enrichRowsWithMemberNoteEvidence(
+  adminDb: any,
+  rows: KaiserT2038ClaimAuditRow[]
+): Promise<KaiserT2038ClaimAuditRow[]> {
+  const clientIds = rows
+    .filter((row) => !row.noClaimsYet && (row.months || []).some((month) => month.status !== 'claimed'))
+    .map((row) => row.clientId2)
+    .filter(Boolean);
+  if (!clientIds.length) return rows;
+  const { months, counts } = await loadNoteMonthEvidenceByClientId2(adminDb, clientIds);
+  console.log(
+    `[kaiser-t2038-claim-audit] note evidence for ${months.size}/${clientIds.length} member(s) with open months`
+  );
+  return applyMemberNoteEvidenceToAuditRows(rows, months, counts);
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -715,7 +792,8 @@ export async function GET(request: NextRequest) {
           lastCaspioRefreshAt: '',
         });
       }
-      const rows = applyActionableGapMonthPolicy(saved.rows || []);
+      let rows = applyActionableGapMonthPolicy(saved.rows || []);
+      rows = await enrichRowsWithMemberNoteEvidence(adminDb, rows);
       const stateData = (saved.meta || {}) as KaiserT2038ClaimAuditRunMeta & {
         firestoreStoredAt?: string;
         lastCaspioRefreshAt?: string;
@@ -797,6 +875,7 @@ export async function GET(request: NextRequest) {
         justificationsByKey,
       });
       rows = applyActionableGapMonthPolicy(rows);
+      rows = await enrichRowsWithMemberNoteEvidence(adminDb, rows);
 
       const saved = await saveAuditRun({
         adminDb,
@@ -987,6 +1066,7 @@ export async function GET(request: NextRequest) {
     }
 
     rows = applyActionableGapMonthPolicy(rows);
+    rows = await enrichRowsWithMemberNoteEvidence(adminDb, rows);
 
     // Persist only net-new claim rows (not the entire inventory every full rebuild).
     const existingKeys = new Set(baseInventory.map((row) => claimRecordKey(row)));

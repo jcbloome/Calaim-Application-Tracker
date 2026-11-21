@@ -17,6 +17,12 @@
 
 ## Changes 2026-11-20
 
+- **Kaiser T2038 Claim Audit — selectable claimable / no-work queues:** Gap summary lists **Claimable · notes on file**, **Not claimable · no work**, and **H2022 not sent** members (with months + why). Click a row (or a $432 value card) to filter Members and expand that person so staff can see note evidence.
+  - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
+
+- **Kaiser T2038 Claim Audit — notes decide claimability + $432 summary:** Gap months with **no member-notes that month** auto-mark **not claimable (no work)**; months **with notes** auto-mark **claimable**. Members with claimable months stay on the member table (even after other gaps are satisfied) and show which months are claimable. Summary card: **H2022 not sent** (blank Claim_Status), **not claimable / no work**, **claimable / notes on file**, each with count × **$432**.
+  - Files: `src/lib/kaiser-t2038-claim-audit.ts`, `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
+
 - **Kaiser T2038 Claim Audit — member Notes + blue statuses:** Each member row has **Notes** (same `MemberNotesModal` / Caspio sync as Kaiser Tracker). **CalAIM_Status** and **Kaiser_Status** render in blue badges/text.
   - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
 

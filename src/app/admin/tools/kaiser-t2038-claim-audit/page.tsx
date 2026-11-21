@@ -13,8 +13,12 @@ import { useToast } from '@/hooks/use-toast';
 import {
   DEFAULT_CLAIMABLE_REASON,
   DEFAULT_JUSTIFY_REASON,
+  DEFAULT_NO_WORK_REASON,
+  DEFAULT_NOTES_CLAIMABLE_REASON,
   isClaimAuditActiveCalaimStatus,
+  isNoWorkJustification,
   summarizeKaiserT2038ClaimAudit,
+  T2038_CLAIM_AUDIT_RATE_USD,
   type KaiserT2038ClaimAuditRow,
   type KaiserT2038ClaimAuditRunMode,
   type MonthDisposition,
@@ -24,7 +28,14 @@ import { MemberNotesModal } from '@/app/admin/kaiser-tracker/components/MemberNo
 import type { KaiserMember } from '@/app/admin/kaiser-tracker/components/shared';
 import { KaiserMrnMcoMismatchCard } from './KaiserMrnMcoMismatchCard';
 
-type CoverageFilter = 'all' | 'incomplete' | 'gaps_only' | 'no_claims_yet' | 'complete';
+type CoverageFilter =
+  | 'all'
+  | 'incomplete'
+  | 'gaps_only'
+  | 'no_claims_yet'
+  | 'claimable'
+  | 'no_work'
+  | 'complete';
 type AuthFilter = 'all' | 'open' | 'ended' | 'missing_dates';
 /** `all` | `Authorized` | exact CalAIM_Status label from data (e.g. Member Died). */
 type StatusFilter = 'all' | 'Authorized' | string;
@@ -56,7 +67,22 @@ type Summary = {
   incomplete: number;
   complete: number;
   openMissingMonths: number;
+  claimableMonths?: number;
+  noWorkMonths?: number;
+  h2022UnsubmittedClaims?: number;
+  h2022MemberCount?: number;
+  claimableAmountUsd?: number;
+  noWorkAmountUsd?: number;
+  h2022UnsubmittedAmountUsd?: number;
+  rateUsd?: number;
 };
+
+const formatUsd = (amount: number) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(amount);
 
 const clean = (value: unknown) => String(value || '').trim();
 
@@ -176,6 +202,9 @@ export default function KaiserT2038ClaimAuditPage() {
   const [expandedId, setExpandedId] = useState('');
   const [summaryGapsOpen, setSummaryGapsOpen] = useState(false);
   const [summaryNoClaimsOpen, setSummaryNoClaimsOpen] = useState(false);
+  const [summaryClaimableOpen, setSummaryClaimableOpen] = useState(false);
+  const [summaryNoWorkOpen, setSummaryNoWorkOpen] = useState(false);
+  const [summaryH2022UnsentOpen, setSummaryH2022UnsentOpen] = useState(false);
   const [summaryExAuthOpen, setSummaryExAuthOpen] = useState(false);
   const [savingKey, setSavingKey] = useState('');
   const [memberNotesModal, setMemberNotesModal] = useState(EMPTY_NOTES_MODAL);
@@ -452,10 +481,27 @@ export default function KaiserT2038ClaimAuditPage() {
     const mrnNeedle = normalizeMrn(mrnFilter);
     return rows.filter((row) => {
       if (!matchesStatusAndAuth(row)) return false;
-      if (coverageFilter === 'incomplete' && row.openMissingMonthCount <= 0 && !row.noClaimsYet) return false;
-      if (coverageFilter === 'gaps_only' && (row.noClaimsYet || row.openMissingMonthCount <= 0)) return false;
+      const claimableCount = Number(row.claimableMonthCount || 0);
+      const noWorkCount = Number(row.noWorkMonthCount || 0);
+      // Keep members with claimable months visible after gaps are "satisfied".
+      if (
+        coverageFilter === 'incomplete' &&
+        row.openMissingMonthCount <= 0 &&
+        !row.noClaimsYet &&
+        claimableCount <= 0
+      ) {
+        return false;
+      }
+      if (
+        coverageFilter === 'gaps_only' &&
+        (row.noClaimsYet || (row.openMissingMonthCount <= 0 && claimableCount <= 0))
+      ) {
+        return false;
+      }
       if (coverageFilter === 'no_claims_yet' && !row.noClaimsYet) return false;
-      if (coverageFilter === 'complete' && !row.claimsComplete) return false;
+      if (coverageFilter === 'claimable' && claimableCount <= 0) return false;
+      if (coverageFilter === 'no_work' && noWorkCount <= 0) return false;
+      if (coverageFilter === 'complete' && (!row.claimsComplete || claimableCount > 0)) return false;
       if (lastNeedle) {
         const last = String(row.memberLastName || row.memberName.split(',')[0] || '').toLowerCase();
         if (!last.startsWith(lastNeedle) && !last.includes(lastNeedle)) return false;
@@ -484,12 +530,67 @@ export default function KaiserT2038ClaimAuditPage() {
     [rows, matchesStatusAndAuth, summary]
   );
 
+  /** Dollar portions: H2022 not-sent always from H2022 rows; claimable / no-work follow auth + status filters. */
+  const valueSummary = useMemo(() => {
+    const rate = T2038_CLAIM_AUDIT_RATE_USD;
+    const h2022Rows = rows.filter((row) => normalizeStatus(row.calaimStatus) === 'h2022');
+    const h2022UnsubmittedClaims = h2022Rows.reduce(
+      (sum, row) => sum + Number(row.unsubmittedClaimCount || 0),
+      0
+    );
+    const scoped = rows.filter(matchesStatusAndAuth);
+    const claimableMonths = scoped.reduce((sum, row) => sum + Number(row.claimableMonthCount || 0), 0);
+    const noWorkMonths = scoped.reduce((sum, row) => sum + Number(row.noWorkMonthCount || 0), 0);
+    return {
+      rate,
+      h2022MemberCount: h2022Rows.length,
+      h2022UnsubmittedClaims,
+      h2022UnsubmittedAmountUsd: h2022UnsubmittedClaims * rate,
+      claimableMonths,
+      claimableAmountUsd: claimableMonths * rate,
+      noWorkMonths,
+      noWorkAmountUsd: noWorkMonths * rate,
+    };
+  }, [rows, matchesStatusAndAuth]);
+
+  const focusMemberInList = useCallback(
+    (opts: {
+      id: string;
+      clientId2?: string;
+      name?: string;
+      coverage?: CoverageFilter;
+      status?: StatusFilter;
+      auth?: AuthFilter;
+    }) => {
+      if (opts.status) setStatusFilter(opts.status);
+      if (opts.auth) setAuthFilter(opts.auth);
+      setCoverageFilter(opts.coverage || 'incomplete');
+      setQuery(opts.clientId2 || opts.name || '');
+      setExpandedId(opts.id);
+      requestAnimationFrame(() => {
+        document.getElementById('kaiser-t2038-members')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    },
+    []
+  );
+
   const queueSummary = useMemo(() => {
     const scoped = rows.filter(matchesStatusAndAuth);
+    const toMonthList = (
+      row: KaiserT2038ClaimAuditRow,
+      predicate: (month: KaiserT2038ClaimAuditRow['months'][number]) => boolean
+    ) =>
+      (row.months || [])
+        .filter(predicate)
+        .map((month) => ({
+          key: month.monthKey,
+          label: month.label || month.monthKey,
+          noteCount: Number(month.noteCount || 0),
+          noteEvidence: month.noteEvidence || 'unknown',
+          reason: month.justificationReason || '',
+        }));
     const toGapMember = (row: KaiserT2038ClaimAuditRow) => {
-      const months = (row.months || [])
-        .filter((month) => month.status === 'missing')
-        .map((month) => ({ key: month.monthKey, label: month.label || month.monthKey }));
+      const months = toMonthList(row, (month) => month.status === 'missing');
       return {
         id: row.id,
         name: row.memberName || row.clientId2 || 'Member',
@@ -504,6 +605,27 @@ export default function KaiserT2038ClaimAuditPage() {
         months,
       };
     };
+    const toNoteQueueMember = (
+      row: KaiserT2038ClaimAuditRow,
+      months: ReturnType<typeof toMonthList>,
+      kind: 'claimable' | 'no_work'
+    ) => ({
+      id: row.id,
+      name: row.memberName || row.clientId2 || 'Member',
+      clientId2: row.clientId2,
+      calaimStatus: row.calaimStatus,
+      kaiserStatus: row.kaiserStatus,
+      authorizationStart: row.authorizationStart,
+      authorizationEnd: row.authorizationEnd,
+      firstClaimDate: row.firstClaimDate,
+      kind,
+      monthCount: months.length,
+      months,
+      why:
+        kind === 'claimable'
+          ? 'Notes on file that month → claimable'
+          : 'No notes that month → not claimable (no work)',
+    });
     const noClaimsMembers = scoped
       .filter((row) => row.noClaimsYet)
       .map((row) => ({
@@ -517,6 +639,46 @@ export default function KaiserT2038ClaimAuditPage() {
         unsubmittedClaimCount: row.unsubmittedClaimCount || 0,
       }));
     const gapMembers = scoped.filter((row) => !row.noClaimsYet && row.openMissingMonthCount > 0).map(toGapMember);
+    const claimableMembers = scoped
+      .filter((row) => Number(row.claimableMonthCount || 0) > 0)
+      .map((row) =>
+        toNoteQueueMember(
+          row,
+          toMonthList(row, (month) => month.status === 'claimable'),
+          'claimable'
+        )
+      )
+      .sort((a, b) => b.monthCount - a.monthCount || a.name.localeCompare(b.name));
+    const noWorkMembers = scoped
+      .filter((row) => Number(row.noWorkMonthCount || 0) > 0)
+      .map((row) =>
+        toNoteQueueMember(
+          row,
+          toMonthList(
+            row,
+            (month) => month.status === 'justified' && isNoWorkJustification(month.justificationReason)
+          ),
+          'no_work'
+        )
+      )
+      .sort((a, b) => b.monthCount - a.monthCount || a.name.localeCompare(b.name));
+    const h2022UnsentMembers = rows
+      .filter(
+        (row) =>
+          normalizeStatus(row.calaimStatus) === 'h2022' && Number(row.unsubmittedClaimCount || 0) > 0
+      )
+      .map((row) => ({
+        id: row.id,
+        name: row.memberName || row.clientId2 || 'Member',
+        clientId2: row.clientId2,
+        calaimStatus: row.calaimStatus,
+        kaiserStatus: row.kaiserStatus,
+        authorizationStart: row.authorizationStart,
+        authorizationEnd: row.authorizationEnd,
+        unsubmittedClaimCount: Number(row.unsubmittedClaimCount || 0),
+        unsubmittedClaimDates: row.unsubmittedClaimDates || [],
+      }))
+      .sort((a, b) => b.unsubmittedClaimCount - a.unsubmittedClaimCount || a.name.localeCompare(b.name));
     // Members we did bill, now off Authorized/H2022, with gaps inside the 6-month window —
     // ignores the status/auth filters so stopped billing is always visible.
     const exAuthGapMembers = rows
@@ -547,6 +709,11 @@ export default function KaiserT2038ClaimAuditPage() {
       scopedCount: scoped.length,
       noClaimsMembers,
       gapMembers,
+      claimableMembers,
+      noWorkMembers,
+      h2022UnsentMembers,
+      claimableMonthTotal: claimableMembers.reduce((sum, member) => sum + member.monthCount, 0),
+      noWorkMonthTotal: noWorkMembers.reduce((sum, member) => sum + member.monthCount, 0),
       exAuthGapMembers,
       exAuthOpenGapMonths: exAuthGapMembers.reduce((sum, member) => sum + member.openGaps, 0),
       hiddenNoClaims: Array.from(hiddenNoClaimsByStatus.entries()).sort((a, b) => b[1] - a[1]),
@@ -601,9 +768,37 @@ export default function KaiserT2038ClaimAuditPage() {
           const months = item.months.map((month) => {
             if (month.monthKey !== monthKey) return month;
             if (clear) {
+              if (month.claimDates.length > 0) {
+                return {
+                  ...month,
+                  status: 'claimed' as const,
+                  justificationReason: '',
+                  justifiedBy: '',
+                  justifiedAt: '',
+                };
+              }
+              // Fall back to note evidence when staff clears a manual disposition.
+              if (month.noteEvidence === 'has_notes') {
+                return {
+                  ...month,
+                  status: 'claimable' as const,
+                  justificationReason: DEFAULT_NOTES_CLAIMABLE_REASON,
+                  justifiedBy: '',
+                  justifiedAt: '',
+                };
+              }
+              if (month.noteEvidence === 'no_notes') {
+                return {
+                  ...month,
+                  status: 'justified' as const,
+                  justificationReason: DEFAULT_NO_WORK_REASON,
+                  justifiedBy: '',
+                  justifiedAt: '',
+                };
+              }
               return {
                 ...month,
-                status: month.claimDates.length > 0 ? ('claimed' as const) : ('missing' as const),
+                status: 'missing' as const,
                 justificationReason: '',
                 justifiedBy: '',
                 justifiedAt: '',
@@ -620,6 +815,10 @@ export default function KaiserT2038ClaimAuditPage() {
           const openMissingFromGrid = months.filter((m) => m.status === 'missing').length;
           const justifiedMonthCount = months.filter((m) => m.status === 'justified').length;
           const claimedMonthCount = months.filter((m) => m.status === 'claimed').length;
+          const claimableMonthCount = months.filter((m) => m.status === 'claimable').length;
+          const noWorkMonthCount = months.filter(
+            (m) => m.status === 'justified' && isNoWorkJustification(m.justificationReason)
+          ).length;
           const resolvedCount = months.filter(
             (m) => m.status === 'justified' || m.status === 'claimable'
           ).length;
@@ -628,6 +827,8 @@ export default function KaiserT2038ClaimAuditPage() {
             months,
             claimedMonthCount,
             justifiedMonthCount,
+            claimableMonthCount,
+            noWorkMonthCount,
             missingMonthCount: item.noClaimsYet ? 1 : openMissingFromGrid + resolvedCount,
             openMissingMonthCount: item.noClaimsYet ? 1 : openMissingFromGrid,
             claimsComplete: !item.noClaimsYet && months.length > 0 && openMissingFromGrid === 0,
@@ -793,13 +994,95 @@ export default function KaiserT2038ClaimAuditPage() {
             <CardTitle>{cardSummary?.complete ?? '—'}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            Every month from first claim → auth end/today claimed or justified
+            Every month claimed or no-work · claimable months stay in the member table
           </CardContent>
         </Card>
       </div>
 
       {hasSavedRun ? (
-        <Card className="border-amber-200/80">
+        <Card className="border-violet-200/80">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Value at ${T2038_CLAIM_AUDIT_RATE_USD}/claim</CardTitle>
+            <CardDescription>
+              H2022 not-sent is all H2022 members · claimable / no-work follow current CalAIM_Status + auth filters
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <button
+                type="button"
+                className="rounded border border-violet-200 bg-violet-50/40 px-3 py-2 text-left transition hover:bg-violet-100/60"
+                onClick={() => {
+                  setSummaryH2022UnsentOpen(true);
+                  setStatusFilter('H2022');
+                  setCoverageFilter('all');
+                  setQuery('');
+                  document
+                    .getElementById('kaiser-t2038-gap-queues')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
+                <div className="text-xs font-medium text-violet-950">H2022 not sent</div>
+                <div className="text-2xl font-semibold tabular-nums">
+                  {valueSummary.h2022UnsubmittedClaims}
+                </div>
+                <div className="text-sm font-medium text-violet-900">
+                  {formatUsd(valueSummary.h2022UnsubmittedAmountUsd)}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Blank Claim_Status on {valueSummary.h2022MemberCount} H2022 member
+                  {valueSummary.h2022MemberCount === 1 ? '' : 's'} · click for member list
+                </p>
+              </button>
+              <button
+                type="button"
+                className="rounded border border-sky-200 bg-sky-50/40 px-3 py-2 text-left transition hover:bg-sky-100/60"
+                onClick={() => {
+                  setSummaryNoWorkOpen(true);
+                  setCoverageFilter('no_work');
+                  setQuery('');
+                  document
+                    .getElementById('kaiser-t2038-gap-queues')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
+                <div className="text-xs font-medium text-sky-950">Not claimable · no work</div>
+                <div className="text-2xl font-semibold tabular-nums">{valueSummary.noWorkMonths}</div>
+                <div className="text-sm font-medium text-sky-900">
+                  {formatUsd(valueSummary.noWorkAmountUsd)}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  No notes that month · click for members &amp; why
+                </p>
+              </button>
+              <button
+                type="button"
+                className="rounded border border-emerald-200 bg-emerald-50/40 px-3 py-2 text-left transition hover:bg-emerald-100/60"
+                onClick={() => {
+                  setSummaryClaimableOpen(true);
+                  setCoverageFilter('claimable');
+                  setQuery('');
+                  document
+                    .getElementById('kaiser-t2038-gap-queues')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
+                <div className="text-xs font-medium text-emerald-950">Claimable · notes on file</div>
+                <div className="text-2xl font-semibold tabular-nums">{valueSummary.claimableMonths}</div>
+                <div className="text-sm font-medium text-emerald-900">
+                  {formatUsd(valueSummary.claimableAmountUsd)}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Notes that month · click for members &amp; why
+                </p>
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {hasSavedRun ? (
+        <Card id="kaiser-t2038-gap-queues" className="border-amber-200/80">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Gap months &amp; no claims yet</CardTitle>
             <CardDescription>
@@ -807,7 +1090,9 @@ export default function KaiserT2038ClaimAuditPage() {
               {statusFilter !== 'all' ? ` · CalAIM_Status ${statusFilter}` : ''}
               {authFilter !== 'all' ? ` · auth ${authFilter}` : ''} · {queueSummary.scopedCount} members ·{' '}
               {queueSummary.totalOpenGapMonths} open gap month
-              {queueSummary.totalOpenGapMonths === 1 ? '' : 's'} · {queueSummary.noClaimsMembers.length} no claims yet
+              {queueSummary.totalOpenGapMonths === 1 ? '' : 's'} · {queueSummary.noClaimsMembers.length} no
+              claims yet · {queueSummary.claimableMembers.length} claimable ·{' '}
+              {queueSummary.noWorkMembers.length} not claimable
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -856,11 +1141,14 @@ export default function KaiserT2038ClaimAuditPage() {
                         key={member.id}
                         type="button"
                         className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-amber-50"
-                        onClick={() => {
-                          setCoverageFilter('gaps_only');
-                          setQuery(member.clientId2 || member.name);
-                          setExpandedId(member.id);
-                        }}
+                        onClick={() =>
+                          focusMemberInList({
+                            id: member.id,
+                            clientId2: member.clientId2,
+                            name: member.name,
+                            coverage: 'gaps_only',
+                          })
+                        }
                       >
                         <span className="min-w-0 truncate font-medium">{member.name}</span>
                         <span className="hidden shrink-0 text-muted-foreground sm:inline">
@@ -874,6 +1162,182 @@ export default function KaiserT2038ClaimAuditPage() {
                         </span>
                         <span className="ml-auto min-w-0 truncate text-muted-foreground">
                           {member.months.map((month) => month.label).join(', ') || `${member.openGaps} gaps`}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded border border-emerald-200">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-emerald-50/70"
+                onClick={() => setSummaryClaimableOpen((open) => !open)}
+              >
+                {summaryClaimableOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="font-medium text-emerald-950">Claimable · notes on file</span>
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-950 border-emerald-300">
+                  {queueSummary.claimableMembers.length}
+                </Badge>
+                <span className="truncate text-xs text-muted-foreground">
+                  {queueSummary.claimableMonthTotal} month
+                  {queueSummary.claimableMonthTotal === 1 ? '' : 's'} · click member to see why
+                </span>
+              </button>
+              {summaryClaimableOpen ? (
+                <div className="max-h-72 space-y-0.5 overflow-y-auto border-t bg-emerald-50/30 px-2 py-1.5 text-xs">
+                  {queueSummary.claimableMembers.length === 0 ? (
+                    <p className="px-1 py-2 text-muted-foreground">
+                      No claimable months in this filter set (need notes that month).
+                    </p>
+                  ) : (
+                    queueSummary.claimableMembers.map((member) => (
+                      <button
+                        key={`claimable-${member.id}`}
+                        type="button"
+                        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded px-1.5 py-1 text-left hover:bg-emerald-100/70"
+                        onClick={() =>
+                          focusMemberInList({
+                            id: member.id,
+                            clientId2: member.clientId2,
+                            name: member.name,
+                            coverage: 'claimable',
+                          })
+                        }
+                      >
+                        <span className="min-w-0 truncate font-medium">{member.name}</span>
+                        <span className="hidden shrink-0 lg:inline">
+                          {statusLine(member.calaimStatus, member.kaiserStatus)}
+                        </span>
+                        <span className="text-emerald-900">{member.why}</span>
+                        <span className="ml-auto min-w-0 truncate text-emerald-950">
+                          {member.months
+                            .map((month) =>
+                              month.noteCount > 0 ? `${month.label} (${month.noteCount} notes)` : month.label
+                            )
+                            .join(', ')}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded border border-slate-300">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                onClick={() => setSummaryNoWorkOpen((open) => !open)}
+              >
+                {summaryNoWorkOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="font-medium text-slate-900">Not claimable · no work</span>
+                <Badge variant="outline" className="bg-slate-100 text-slate-900 border-slate-300">
+                  {queueSummary.noWorkMembers.length}
+                </Badge>
+                <span className="truncate text-xs text-muted-foreground">
+                  {queueSummary.noWorkMonthTotal} month
+                  {queueSummary.noWorkMonthTotal === 1 ? '' : 's'} · no notes that month · click to view
+                </span>
+              </button>
+              {summaryNoWorkOpen ? (
+                <div className="max-h-72 space-y-0.5 overflow-y-auto border-t bg-slate-50/50 px-2 py-1.5 text-xs">
+                  {queueSummary.noWorkMembers.length === 0 ? (
+                    <p className="px-1 py-2 text-muted-foreground">
+                      No not-claimable (no notes) months in this filter set.
+                    </p>
+                  ) : (
+                    queueSummary.noWorkMembers.map((member) => (
+                      <button
+                        key={`nowork-${member.id}`}
+                        type="button"
+                        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded px-1.5 py-1 text-left hover:bg-slate-100"
+                        onClick={() =>
+                          focusMemberInList({
+                            id: member.id,
+                            clientId2: member.clientId2,
+                            name: member.name,
+                            coverage: 'no_work',
+                          })
+                        }
+                      >
+                        <span className="min-w-0 truncate font-medium">{member.name}</span>
+                        <span className="hidden shrink-0 lg:inline">
+                          {statusLine(member.calaimStatus, member.kaiserStatus)}
+                        </span>
+                        <span className="text-slate-700">{member.why}</span>
+                        <span className="ml-auto min-w-0 truncate text-slate-900">
+                          {member.months.map((month) => month.label).join(', ')}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded border border-violet-200">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-violet-50/70"
+                onClick={() => setSummaryH2022UnsentOpen((open) => !open)}
+              >
+                {summaryH2022UnsentOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="font-medium text-violet-950">H2022 not sent</span>
+                <Badge variant="outline" className="bg-violet-50 text-violet-950 border-violet-300">
+                  {queueSummary.h2022UnsentMembers.length}
+                </Badge>
+                <span className="truncate text-xs text-muted-foreground">
+                  Blank Claim_Status on H2022 · all filters ignored for this list
+                </span>
+              </button>
+              {summaryH2022UnsentOpen ? (
+                <div className="max-h-56 space-y-0.5 overflow-y-auto border-t bg-violet-50/30 px-2 py-1.5 text-xs">
+                  {queueSummary.h2022UnsentMembers.length === 0 ? (
+                    <p className="px-1 py-2 text-muted-foreground">
+                      No H2022 members with blank Claim_Status rows.
+                    </p>
+                  ) : (
+                    queueSummary.h2022UnsentMembers.map((member) => (
+                      <button
+                        key={`h2022-unsent-${member.id}`}
+                        type="button"
+                        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded px-1.5 py-1 text-left hover:bg-violet-100/70"
+                        onClick={() =>
+                          focusMemberInList({
+                            id: member.id,
+                            clientId2: member.clientId2,
+                            name: member.name,
+                            coverage: 'all',
+                            status: 'H2022',
+                          })
+                        }
+                      >
+                        <span className="min-w-0 truncate font-medium">{member.name}</span>
+                        <span className="hidden shrink-0 lg:inline">
+                          {statusLine(member.calaimStatus, member.kaiserStatus)}
+                        </span>
+                        <span className="ml-auto min-w-0 truncate text-violet-950">
+                          {member.unsubmittedClaimCount} not sent
+                          {member.unsubmittedClaimDates.length
+                            ? ` · DOS ${member.unsubmittedClaimDates.slice(0, 4).join(', ')}${
+                                member.unsubmittedClaimDates.length > 4 ? '…' : ''
+                              }`
+                            : ''}
                         </span>
                       </button>
                     ))
@@ -913,11 +1377,14 @@ export default function KaiserT2038ClaimAuditPage() {
                         key={member.id}
                         type="button"
                         className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-sky-100/80"
-                        onClick={() => {
-                          setCoverageFilter('no_claims_yet');
-                          setQuery(member.clientId2 || member.name);
-                          setExpandedId(member.id);
-                        }}
+                        onClick={() =>
+                          focusMemberInList({
+                            id: member.id,
+                            clientId2: member.clientId2,
+                            name: member.name,
+                            coverage: 'no_claims_yet',
+                          })
+                        }
                       >
                         <span className="min-w-0 truncate font-medium">{member.name}</span>
                         <span className="hidden shrink-0 text-muted-foreground sm:inline">
@@ -992,13 +1459,16 @@ export default function KaiserT2038ClaimAuditPage() {
                         key={member.id}
                         type="button"
                         className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded px-1.5 py-1 text-left hover:bg-rose-100/70"
-                        onClick={() => {
-                          setStatusFilter('all');
-                          setAuthFilter('all');
-                          setCoverageFilter('gaps_only');
-                          setQuery(member.clientId2 || member.name);
-                          setExpandedId(member.id);
-                        }}
+                        onClick={() =>
+                          focusMemberInList({
+                            id: member.id,
+                            clientId2: member.clientId2,
+                            name: member.name,
+                            coverage: 'gaps_only',
+                            status: 'all',
+                            auth: 'all',
+                          })
+                        }
                       >
                         <span className="min-w-0 truncate font-medium">{member.name}</span>
                         <Badge variant="outline" className={`${STATUS_BLUE} font-normal`}>
@@ -1068,8 +1538,10 @@ export default function KaiserT2038ClaimAuditPage() {
               value={coverageFilter}
               onChange={(event) => setCoverageFilter(event.target.value as CoverageFilter)}
             >
-              <option value="incomplete">Gaps + no claims yet</option>
+              <option value="incomplete">Gaps + claimable + no claims yet</option>
               <option value="gaps_only">Gaps only</option>
+              <option value="claimable">Claimable (notes that month)</option>
+              <option value="no_work">Not claimable (no notes / no work)</option>
               <option value="no_claims_yet">No claims only</option>
               <option value="complete">Complete / justified</option>
               <option value="all">All members</option>
@@ -1117,7 +1589,7 @@ export default function KaiserT2038ClaimAuditPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="kaiser-t2038-members">
         <CardHeader>
           <CardTitle>Members</CardTitle>
           <CardDescription>
@@ -1142,7 +1614,13 @@ export default function KaiserT2038ClaimAuditPage() {
             const expanded = expandedId === row.id;
             const gapMonths = (row.months || []).filter((month) => month.status === 'missing');
             const gapMonthLabels = gapMonths.map((month) => month.label || month.monthKey);
-            const isCompactQueueRow = row.noClaimsYet || gapMonthLabels.length > 0;
+            const claimableMonths = (row.months || []).filter((month) => month.status === 'claimable');
+            const claimableMonthLabels = claimableMonths.map((month) => month.label || month.monthKey);
+            const noWorkMonths = (row.months || []).filter(
+              (month) => month.status === 'justified' && isNoWorkJustification(month.justificationReason)
+            );
+            const isCompactQueueRow =
+              row.noClaimsYet || gapMonthLabels.length > 0 || claimableMonthLabels.length > 0;
             return (
               <div key={row.id} className="rounded border">
                 <div
@@ -1182,7 +1660,16 @@ export default function KaiserT2038ClaimAuditPage() {
                           <Badge variant="outline" className="bg-amber-50 text-amber-950 border-amber-300">
                             {row.openMissingMonthCount} gap month{row.openMissingMonthCount === 1 ? '' : 's'}
                           </Badge>
-                        ) : row.claimsComplete ? (
+                        ) : null}
+                        {claimableMonthLabels.length > 0 ? (
+                          <Badge variant="outline" className="bg-violet-50 text-violet-950 border-violet-300">
+                            {claimableMonthLabels.length} claimable
+                          </Badge>
+                        ) : null}
+                        {!row.noClaimsYet &&
+                        row.openMissingMonthCount <= 0 &&
+                        claimableMonthLabels.length === 0 &&
+                        row.claimsComplete ? (
                           <Badge variant="outline" className="bg-emerald-50 text-emerald-900 border-emerald-300">
                             Claims complete
                           </Badge>
@@ -1206,9 +1693,17 @@ export default function KaiserT2038ClaimAuditPage() {
                                   ? `No clearinghouse claims · ${row.unsubmittedClaimCount} Caspio-only (blank Claim_Status)`
                                   : 'No claims on file'}
                               </span>
-                            ) : gapMonthLabels.length > 0 ? (
-                              <span className="min-w-0 truncate text-xs text-amber-900">
-                                Gaps {gapMonthLabels.join(' · ')}
+                            ) : gapMonthLabels.length > 0 || claimableMonthLabels.length > 0 ? (
+                              <span className="min-w-0 truncate text-xs">
+                                {gapMonthLabels.length > 0 ? (
+                                  <span className="text-amber-900">Gaps {gapMonthLabels.join(' · ')}</span>
+                                ) : null}
+                                {gapMonthLabels.length > 0 && claimableMonthLabels.length > 0 ? ' · ' : ''}
+                                {claimableMonthLabels.length > 0 ? (
+                                  <span className="text-violet-900">
+                                    Claimable {claimableMonthLabels.join(' · ')}
+                                  </span>
+                                ) : null}
                               </span>
                             ) : null}
                           </>
@@ -1242,18 +1737,37 @@ export default function KaiserT2038ClaimAuditPage() {
                                 row.justifiedMonthCount
                               } · Open gaps ${row.openMissingMonthCount}`}
                         </div>
-                        {!row.noClaimsYet && gapMonthLabels.length > 0 ? (
+                        {!row.noClaimsYet &&
+                        (gapMonthLabels.length > 0 || claimableMonthLabels.length > 0) ? (
                           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                            <span className="text-[11px] font-medium text-amber-900">Gaps:</span>
-                            {gapMonthLabels.map((label) => (
-                              <Badge
-                                key={`${row.id}-${label}`}
-                                variant="outline"
-                                className="bg-amber-50 text-amber-950 border-amber-300 text-[11px] font-normal"
-                              >
-                                {label}
-                              </Badge>
-                            ))}
+                            {gapMonthLabels.length > 0 ? (
+                              <>
+                                <span className="text-[11px] font-medium text-amber-900">Gaps:</span>
+                                {gapMonthLabels.map((label) => (
+                                  <Badge
+                                    key={`${row.id}-gap-${label}`}
+                                    variant="outline"
+                                    className="bg-amber-50 text-amber-950 border-amber-300 text-[11px] font-normal"
+                                  >
+                                    {label}
+                                  </Badge>
+                                ))}
+                              </>
+                            ) : null}
+                            {claimableMonthLabels.length > 0 ? (
+                              <>
+                                <span className="text-[11px] font-medium text-violet-900">Claimable:</span>
+                                {claimableMonthLabels.map((label) => (
+                                  <Badge
+                                    key={`${row.id}-claimable-${label}`}
+                                    variant="outline"
+                                    className="bg-violet-50 text-violet-950 border-violet-300 text-[11px] font-normal"
+                                  >
+                                    {label}
+                                  </Badge>
+                                ))}
+                              </>
+                            ) : null}
                           </div>
                         ) : null}
                         </>
@@ -1342,8 +1856,13 @@ export default function KaiserT2038ClaimAuditPage() {
                             const draftKey = `${row.clientId2}__${month.monthKey}`;
                             const isSaving = savingKey === draftKey;
                             const isClaimed = month.status === 'claimed';
+                            const isNoWork =
+                              month.status === 'justified' && isNoWorkJustification(month.justificationReason);
                             const isJustified = month.status === 'justified';
                             const isClaimable = month.status === 'claimable';
+                            const hasNotes = month.noteEvidence === 'has_notes';
+                            const noNotes = month.noteEvidence === 'no_notes';
+                            const claimableBlocked = noNotes && !isClaimable;
                             return (
                               <div
                                 key={month.monthKey}
@@ -1352,9 +1871,11 @@ export default function KaiserT2038ClaimAuditPage() {
                                     ? 'bg-amber-50/40'
                                     : isClaimable
                                       ? 'bg-violet-50/50'
-                                      : isJustified
-                                        ? 'bg-sky-50/40'
-                                        : ''
+                                      : isNoWork
+                                        ? 'bg-slate-50/70'
+                                        : isJustified
+                                          ? 'bg-sky-50/40'
+                                          : ''
                                 }`}
                               >
                                 <div className="min-w-0">
@@ -1363,6 +1884,10 @@ export default function KaiserT2038ClaimAuditPage() {
                                     {isClaimed ? (
                                       <Badge variant="outline" className="bg-emerald-50 text-emerald-900 text-[10px]">
                                         claimed
+                                      </Badge>
+                                    ) : isNoWork ? (
+                                      <Badge variant="outline" className="bg-slate-100 text-slate-800 text-[10px]">
+                                        not claimable · no notes
                                       </Badge>
                                     ) : isJustified ? (
                                       <Badge variant="outline" className="bg-sky-50 text-sky-900 text-[10px]">
@@ -1380,6 +1905,15 @@ export default function KaiserT2038ClaimAuditPage() {
                                         not claimed
                                       </Badge>
                                     )}
+                                    {hasNotes ? (
+                                      <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200 text-[10px]">
+                                        {month.noteCount || 1} note{(month.noteCount || 1) === 1 ? '' : 's'}
+                                      </Badge>
+                                    ) : noNotes && !isClaimed ? (
+                                      <Badge variant="outline" className="bg-slate-50 text-slate-600 text-[10px]">
+                                        no notes
+                                      </Badge>
+                                    ) : null}
                                     {month.claimDates.length > 0 ? (
                                       <span className="truncate text-xs text-muted-foreground">
                                         DOS {month.claimDates.join(', ')}
@@ -1409,12 +1943,28 @@ export default function KaiserT2038ClaimAuditPage() {
                                   />
                                   <span className="sr-only">No claim</span>
                                 </label>
-                                <label className="flex w-20 cursor-pointer items-center justify-center gap-1.5 text-xs">
+                                <label
+                                  className="flex w-20 cursor-pointer items-center justify-center gap-1.5 text-xs"
+                                  title={
+                                    claimableBlocked
+                                      ? 'Not claimable — no member notes were entered that month'
+                                      : undefined
+                                  }
+                                >
                                   <Checkbox
                                     checked={isClaimable}
-                                    disabled={isSaving || isClaimed}
+                                    disabled={isSaving || isClaimed || claimableBlocked}
                                     onCheckedChange={(checked) => {
                                       if (checked === true) {
+                                        if (noNotes) {
+                                          toast({
+                                            title: 'Not claimable',
+                                            description:
+                                              'No member notes were entered that month, so it cannot be marked claimable.',
+                                            variant: 'destructive',
+                                          });
+                                          return;
+                                        }
                                         void saveMonthDisposition(row, month.monthKey, {
                                           disposition: 'claimable',
                                         });
@@ -1431,9 +1981,12 @@ export default function KaiserT2038ClaimAuditPage() {
                         </div>
                       ) : null}
                       <p className="mt-2 text-[11px] text-muted-foreground">
-                        Not claimed = open gap. No claim = not submitting. Claimable = forgotten claim — queued for a
-                        future Caspio batch submit. Blank Claim_Status = Caspio-only (not sent to clearinghouse).
-                        Submitted = Claim Submitted / Payment Received / other non-blank status.
+                        Notes decide claimability: no notes that month = not claimable (no work). Notes on file =
+                        claimable and the member stays on this table. Blank Claim_Status = Caspio-only (not sent). Rate
+                        used in summary: ${T2038_CLAIM_AUDIT_RATE_USD}/claim.
+                        {noWorkMonths.length > 0
+                          ? ` · ${noWorkMonths.length} month${noWorkMonths.length === 1 ? '' : 's'} not claimable for this member.`
+                          : ''}
                       </p>
                     </div>
                   </div>
