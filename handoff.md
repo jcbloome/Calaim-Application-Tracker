@@ -17,6 +17,9 @@
 
 ## Changes 2026-11-20
 
+- **Kaiser T2038 Claim Audit — single-line month row actions:** Each claim month is one fixed-height row: Month · status · No claim · Claimable · Preview · Push.
+  - Files: `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
+
 - **Kaiser T2038 Claim Audit — per-month Preview/Push + SDS EDI:** Each claimable month row has **Preview** / **Push** beside the checkboxes. Successful push stores `caspioPushedAt` on the justification, toasts, and marks the month **pushed** (not pushable again). **SDS EDI for pushed** builds 837P for all pushed claimable months for Smart Data Solutions manual upload. Connections Claim Submission insert still uses `CalAIM_Claim_Submit_T2038` (Connections_or_RCFE_Claim fixed; payee/service location Connections).
   - Files: `src/lib/kaiser-t2038-claim-audit.ts`, `src/lib/kaiser-t2038-connections-claim-submit.ts`, `src/app/api/admin/kaiser-t2038-claim-submit/route.ts`, `src/app/api/admin/kaiser-t2038-claim-audit/route.ts`, `ClaimableClaimSubmitModal.tsx`, `page.tsx`, `handoff.md`.
 

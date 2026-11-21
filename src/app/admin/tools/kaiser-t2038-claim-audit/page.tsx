@@ -2069,197 +2069,171 @@ export default function KaiserT2038ClaimAuditPage() {
                         </div>
                       ) : null}
                       {!row.noClaimsYet && row.months.length > 0 ? (
-                        <div className="overflow-hidden rounded border bg-white">
-                          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 border-b bg-muted/40 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
-                            <span>Month</span>
-                            <span className="w-16 text-center">No claim</span>
-                            <span className="w-16 text-center">Claimable</span>
-                            <span className="w-[9.5rem] text-center">Caspio</span>
-                          </div>
-                          {row.months.map((month) => {
-                            const draftKey = `${row.clientId2}__${month.monthKey}`;
-                            const isSaving = savingKey === draftKey;
-                            const isClaimed = month.status === 'claimed';
-                            const isNoWork =
-                              month.status === 'justified' && isNoWorkJustification(month.justificationReason);
-                            const isJustified = month.status === 'justified';
-                            const isClaimable = month.status === 'claimable';
-                            const isPushed = Boolean(month.caspioPushedAt);
-                            const hasNotes = month.noteEvidence === 'has_notes';
-                            const noNotes = month.noteEvidence === 'no_notes';
-                            const claimableBlocked = noNotes && !isClaimable;
-                            const canPush = isClaimable && !isPushed && !isClaimed && Boolean(row.clientId2);
-                            return (
-                              <div
-                                key={month.monthKey}
-                                className={`grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 border-t px-3 py-2 text-sm ${
-                                  isPushed
-                                    ? 'bg-emerald-50/50'
-                                    : month.status === 'missing'
-                                      ? 'bg-amber-50/40'
+                        <div className="overflow-x-auto rounded border bg-white">
+                          <div className="min-w-[40rem]">
+                            <div className="flex h-8 items-center gap-3 border-b bg-muted/40 px-3 text-[11px] font-medium text-muted-foreground">
+                              <span className="w-24 shrink-0">Month</span>
+                              <span className="w-20 shrink-0">Status</span>
+                              <span className="ml-auto flex shrink-0 items-center gap-3">
+                                <span className="w-[4.25rem] text-center">No claim</span>
+                                <span className="w-[4.75rem] text-center">Claimable</span>
+                                <span className="w-[7.25rem] text-right">Preview / Push</span>
+                              </span>
+                            </div>
+                            {row.months.map((month) => {
+                              const draftKey = `${row.clientId2}__${month.monthKey}`;
+                              const isSaving = savingKey === draftKey;
+                              const isClaimed = month.status === 'claimed';
+                              const isNoWork =
+                                month.status === 'justified' && isNoWorkJustification(month.justificationReason);
+                              const isJustified = month.status === 'justified';
+                              const isClaimable = month.status === 'claimable';
+                              const isPushed = Boolean(month.caspioPushedAt);
+                              const noNotes = month.noteEvidence === 'no_notes';
+                              const claimableBlocked = noNotes && !isClaimable;
+                              const canPush = isClaimable && !isPushed && !isClaimed && Boolean(row.clientId2);
+                              const statusLabel = isClaimed
+                                ? 'claimed'
+                                : isPushed
+                                  ? 'pushed'
+                                  : isNoWork
+                                    ? 'not claimable'
+                                    : isJustified
+                                      ? 'no claim'
                                       : isClaimable
-                                        ? 'bg-violet-50/50'
-                                        : isNoWork
-                                          ? 'bg-slate-50/70'
-                                          : isJustified
-                                            ? 'bg-sky-50/40'
-                                            : ''
-                                }`}
-                              >
-                                <div className="min-w-0">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-medium">{month.label}</span>
-                                    {isClaimed ? (
-                                      <Badge variant="outline" className="bg-emerald-50 text-emerald-900 text-[10px]">
-                                        claimed
-                                      </Badge>
-                                    ) : isPushed ? (
-                                      <Badge variant="outline" className="bg-emerald-50 text-emerald-900 border-emerald-300 text-[10px]">
-                                        pushed to Caspio
-                                      </Badge>
-                                    ) : isNoWork ? (
-                                      <Badge variant="outline" className="bg-slate-100 text-slate-800 text-[10px]">
-                                        not claimable · no notes
-                                      </Badge>
-                                    ) : isJustified ? (
-                                      <Badge variant="outline" className="bg-sky-50 text-sky-900 text-[10px]">
-                                        no claim
-                                      </Badge>
-                                    ) : isClaimable ? (
-                                      <Badge variant="outline" className="bg-violet-50 text-violet-900 text-[10px]">
-                                        claimable
-                                      </Badge>
-                                    ) : (
-                                      <Badge
-                                        variant="outline"
-                                        className="bg-amber-50 text-amber-950 border-amber-300 text-[10px]"
-                                      >
-                                        not claimed
-                                      </Badge>
-                                    )}
-                                    {hasNotes ? (
-                                      <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200 text-[10px]">
-                                        {month.noteCount || 1} note{(month.noteCount || 1) === 1 ? '' : 's'}
-                                      </Badge>
-                                    ) : noNotes && !isClaimed ? (
-                                      <Badge variant="outline" className="bg-slate-50 text-slate-600 text-[10px]">
-                                        no notes
-                                      </Badge>
-                                    ) : null}
-                                    {month.claimDates.length > 0 ? (
-                                      <span className="truncate text-xs text-muted-foreground">
-                                        DOS {month.claimDates.join(', ')}
-                                      </span>
-                                    ) : null}
-                                    {month.claimDates.length === 0 && (month.unsubmittedDates || []).length > 0 ? (
-                                      <span className="truncate text-xs text-violet-800">
-                                        Caspio only (blank Claim_Status) · DOS{' '}
-                                        {(month.unsubmittedDates || []).join(', ')}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </div>
-                                <label className="flex w-16 cursor-pointer items-center justify-center gap-1.5 text-xs">
-                                  <Checkbox
-                                    checked={isJustified && !isPushed}
-                                    disabled={isSaving || isClaimed || isPushed}
-                                    onCheckedChange={(checked) => {
-                                      if (checked === true) {
-                                        void saveMonthDisposition(row, month.monthKey, {
-                                          disposition: 'justified',
-                                        });
-                                      } else if (isJustified) {
-                                        void saveMonthDisposition(row, month.monthKey, { clear: true });
-                                      }
-                                    }}
-                                  />
-                                  <span className="sr-only">No claim</span>
-                                </label>
-                                <label
-                                  className="flex w-16 cursor-pointer items-center justify-center gap-1.5 text-xs"
-                                  title={
-                                    claimableBlocked
-                                      ? 'Not claimable — no member notes were entered that month'
-                                      : undefined
-                                  }
+                                        ? 'claimable'
+                                        : 'not claimed';
+                              return (
+                                <div
+                                  key={month.monthKey}
+                                  className={`flex h-9 items-center gap-3 border-t px-3 text-sm ${
+                                    isPushed
+                                      ? 'bg-emerald-50/50'
+                                      : month.status === 'missing'
+                                        ? 'bg-amber-50/40'
+                                        : isClaimable
+                                          ? 'bg-violet-50/50'
+                                          : isNoWork
+                                            ? 'bg-slate-50/70'
+                                            : isJustified
+                                              ? 'bg-sky-50/40'
+                                              : ''
+                                  }`}
                                 >
-                                  <Checkbox
-                                    checked={isClaimable}
-                                    disabled={isSaving || isClaimed || claimableBlocked || isPushed}
-                                    onCheckedChange={(checked) => {
-                                      if (checked === true) {
-                                        if (noNotes) {
-                                          toast({
-                                            title: 'Not claimable',
-                                            description:
-                                              'No member notes were entered that month, so it cannot be marked claimable.',
-                                            variant: 'destructive',
-                                          });
-                                          return;
-                                        }
-                                        void saveMonthDisposition(row, month.monthKey, {
-                                          disposition: 'claimable',
-                                        });
-                                      } else if (isClaimable) {
-                                        void saveMonthDisposition(row, month.monthKey, { clear: true });
+                                  <span className="w-24 shrink-0 truncate font-medium">{month.label}</span>
+                                  <Badge
+                                    variant="outline"
+                                    className={`w-20 shrink-0 justify-center text-[10px] ${
+                                      isClaimed || isPushed
+                                        ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                                        : isClaimable
+                                          ? 'bg-violet-50 text-violet-900 border-violet-300'
+                                          : isNoWork
+                                            ? 'bg-slate-100 text-slate-800'
+                                            : isJustified
+                                              ? 'bg-sky-50 text-sky-900'
+                                              : 'bg-amber-50 text-amber-950 border-amber-300'
+                                    }`}
+                                  >
+                                    {statusLabel}
+                                  </Badge>
+                                  <span className="ml-auto flex shrink-0 items-center gap-3">
+                                    <label className="flex w-[4.25rem] cursor-pointer items-center justify-center gap-1 text-[11px]">
+                                      <Checkbox
+                                        checked={isJustified && !isPushed}
+                                        disabled={isSaving || isClaimed || isPushed}
+                                        onCheckedChange={(checked) => {
+                                          if (checked === true) {
+                                            void saveMonthDisposition(row, month.monthKey, {
+                                              disposition: 'justified',
+                                            });
+                                          } else if (isJustified) {
+                                            void saveMonthDisposition(row, month.monthKey, { clear: true });
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                    <label
+                                      className="flex w-[4.75rem] cursor-pointer items-center justify-center gap-1 text-[11px]"
+                                      title={
+                                        claimableBlocked
+                                          ? 'Not claimable — no member notes were entered that month'
+                                          : undefined
                                       }
-                                    }}
-                                  />
-                                  <span className="sr-only">Claimable</span>
-                                </label>
-                                <div className="flex w-[9.5rem] items-center justify-end gap-1">
-                                  {isPushed ? (
-                                    <span className="text-[10px] text-emerald-800" title={month.caspioPushedAt}>
-                                      Pushed
-                                      {month.caspioClaimPkId ? ` · ${month.caspioClaimPkId}` : ''}
+                                    >
+                                      <Checkbox
+                                        checked={isClaimable}
+                                        disabled={isSaving || isClaimed || claimableBlocked || isPushed}
+                                        onCheckedChange={(checked) => {
+                                          if (checked === true) {
+                                            if (noNotes) {
+                                              toast({
+                                                title: 'Not claimable',
+                                                description:
+                                                  'No member notes were entered that month, so it cannot be marked claimable.',
+                                                variant: 'destructive',
+                                              });
+                                              return;
+                                            }
+                                            void saveMonthDisposition(row, month.monthKey, {
+                                              disposition: 'claimable',
+                                            });
+                                          } else if (isClaimable) {
+                                            void saveMonthDisposition(row, month.monthKey, { clear: true });
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                    <span className="flex w-[7.25rem] items-center justify-end gap-1">
+                                      {isPushed ? (
+                                        <span className="text-[11px] text-emerald-800">Pushed</span>
+                                      ) : canPush ? (
+                                        <>
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 px-2 text-[11px]"
+                                            title="Preview Caspio claim fields"
+                                            onClick={() =>
+                                              openClaimableSubmit(undefined, {
+                                                single: {
+                                                  clientId2: row.clientId2,
+                                                  monthKey: month.monthKey,
+                                                  memberName: row.memberName,
+                                                },
+                                              })
+                                            }
+                                          >
+                                            Preview
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            className="h-7 px-2 text-[11px]"
+                                            title="Push this month to Caspio"
+                                            onClick={() =>
+                                              openClaimableSubmit(undefined, {
+                                                single: {
+                                                  clientId2: row.clientId2,
+                                                  monthKey: month.monthKey,
+                                                  memberName: row.memberName,
+                                                },
+                                              })
+                                            }
+                                          >
+                                            Push
+                                          </Button>
+                                        </>
+                                      ) : (
+                                        <span className="text-[11px] text-muted-foreground">—</span>
+                                      )}
                                     </span>
-                                  ) : canPush ? (
-                                    <>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-7 px-2 text-[11px]"
-                                        title="Preview Caspio claim fields"
-                                        onClick={() =>
-                                          openClaimableSubmit(undefined, {
-                                            single: {
-                                              clientId2: row.clientId2,
-                                              monthKey: month.monthKey,
-                                              memberName: row.memberName,
-                                            },
-                                          })
-                                        }
-                                      >
-                                        <Eye className="mr-1 h-3 w-3" />
-                                        Preview
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        className="h-7 px-2 text-[11px]"
-                                        title="Push this month to Caspio Connections Claim Submission"
-                                        onClick={() =>
-                                          openClaimableSubmit(undefined, {
-                                            single: {
-                                              clientId2: row.clientId2,
-                                              monthKey: month.monthKey,
-                                              memberName: row.memberName,
-                                            },
-                                          })
-                                        }
-                                      >
-                                        <Send className="mr-1 h-3 w-3" />
-                                        Push
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <span className="text-[10px] text-muted-foreground">—</span>
-                                  )}
+                                  </span>
                                 </div>
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          </div>
                         </div>
                       ) : null}
                       <p className="mt-2 text-[11px] text-muted-foreground">
