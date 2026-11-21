@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `3296aa0d` (T2038 claimable DOS ≥30 days after last claimed claim)  
+**HEAD:** `4e4343f7` (T2038 claim preview Birth_Date + Medi-Cal CIN)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
