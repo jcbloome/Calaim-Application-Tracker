@@ -1,10 +1,12 @@
 import {
   classifyT2038Window,
+  daysBetween,
   formatUsDate,
   isHealthNetPlan,
   isKaiserPlan,
   parseDateOnly,
   startOfToday,
+  T2038_CLAIM_DUE_DAYS,
   type T2038AuthWindow,
 } from '@/lib/t2038-claims';
 
@@ -198,6 +200,19 @@ export type KaiserT2038ClaimAuditRow = {
   /** First submitted claim DOS (US format), when any claims exist. */
   firstClaimDate: string;
   firstClaimMonthKey: string;
+  /** Latest claimed Date_of_Service (US format) — used for future monthly claim spacing. */
+  lastClaimDate?: string;
+  lastClaimDateIso?: string;
+  /** Days since lastClaimDate (null when no last claim). */
+  daysSinceLastClaim?: number | null;
+  /** Earliest date a new claim may be pushed (last DOS + 30 days / 1 month). */
+  nextClaimEligibleDate?: string;
+  nextClaimMonthKey?: string;
+  /**
+   * Past gaps/claimables cleared, auth open, and ≥30 days since last DOS —
+   * ready for the next ongoing Connections claim push.
+   */
+  futureClaimDue?: boolean;
   /** Month where gap audit begins (first claim month), when claims exist. */
   gapStartMonthKey: string;
   expectedMonthCount: number;
@@ -216,6 +231,9 @@ export type KaiserT2038ClaimAuditRow = {
   unsubmittedClaimCount?: number;
   unsubmittedClaimDates?: string[];
 };
+
+/** Minimum gap before the next future T2038 claim (1 month ≈ 30 days). */
+export const T2038_FUTURE_CLAIM_MIN_DAYS = T2038_CLAIM_DUE_DAYS;
 
 /** T2038 room & board rate used for claim-audit dollar summaries. */
 export const T2038_CLAIM_AUDIT_RATE_USD = 432;
@@ -652,6 +670,30 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
     const firstClaimInAuth = datedClaims[0] || null;
     const firstClaimDate = firstClaimEver?.dateOfService || '';
     const firstClaimMonthKey = firstClaimEver?.monthKey || '';
+    // Latest claimed DOS (submitted). Also consider unsubmitted entered rows so a just-pushed
+    // Connections claim (blank Claim_Status) still spaces the next future claim.
+    const lastSubmitted = datedClaimsAll.length ? datedClaimsAll[datedClaimsAll.length - 1] : null;
+    let lastClaimDateObj =
+      parseClaimServiceDate(lastSubmitted?.dateOfServiceIso || lastSubmitted?.dateOfService) || null;
+    for (const claim of unsubmittedClaims) {
+      const d = parseClaimServiceDate(claim.dateOfServiceIso || claim.dateOfService);
+      if (d && (!lastClaimDateObj || d.getTime() > lastClaimDateObj.getTime())) lastClaimDateObj = d;
+    }
+    const lastClaimDate = lastClaimDateObj ? formatUsDate(lastClaimDateObj) : '';
+    const lastClaimDateIso = lastClaimDateObj
+      ? `${lastClaimDateObj.getFullYear()}${String(lastClaimDateObj.getMonth() + 1).padStart(2, '0')}${String(
+          lastClaimDateObj.getDate()
+        ).padStart(2, '0')}`
+      : '';
+    const daysSinceLastClaim = lastClaimDateObj ? daysBetween(lastClaimDateObj, today) : null;
+    const nextEligibleObj = lastClaimDateObj
+      ? new Date(
+          lastClaimDateObj.getFullYear(),
+          lastClaimDateObj.getMonth(),
+          lastClaimDateObj.getDate() + T2038_FUTURE_CLAIM_MIN_DAYS
+        )
+      : null;
+    const nextClaimEligibleDate = nextEligibleObj ? formatUsDate(nextEligibleObj) : '';
     // "No claims yet": zero clearinghouse-submitted rows on the member (any DOS).
     // Blank Claim_Status does not clear this — counted in unsubmittedClaimCount instead.
     const noClaimsYet =
@@ -727,12 +769,47 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
     });
 
     const counts = monthCountsFromCells(months, noClaimsYet);
+    // Next service month for ongoing claims: not earlier than last DOS + 30 days, and not a month already claimed.
+    let nextClaimMonthKey = '';
+    if (nextEligibleObj) {
+      const anchor = nextEligibleObj.getTime() > today.getTime() ? nextEligibleObj : today;
+      let candidate = monthKeyFromDate(anchor);
+      // Skip months that already have a claimed DOS.
+      for (let i = 0; i < 24; i += 1) {
+        if (!claimsByMonth.has(candidate)) {
+          nextClaimMonthKey = candidate;
+          break;
+        }
+        const [y, m] = candidate.split('-').map(Number);
+        candidate = monthKeyFromDate(new Date(y, m, 1)); // next calendar month
+      }
+    }
+    const pastBacklogClear =
+      !noClaimsYet &&
+      counts.openMissingMonthCount === 0 &&
+      Number(counts.claimableMonthCount || 0) === 0;
+    const authStillOpen =
+      base.window === 'in_window' || base.window === 'ending_soon' || (!base.authEnded && Boolean(authStart));
+    const futureClaimDue = Boolean(
+      pastBacklogClear &&
+        authStillOpen &&
+        lastClaimDateObj &&
+        daysSinceLastClaim != null &&
+        daysSinceLastClaim >= T2038_FUTURE_CLAIM_MIN_DAYS &&
+        nextClaimMonthKey
+    );
 
     rows.push({
       ...base,
       noClaimsYet,
       firstClaimDate,
       firstClaimMonthKey,
+      lastClaimDate,
+      lastClaimDateIso,
+      daysSinceLastClaim,
+      nextClaimEligibleDate,
+      nextClaimMonthKey,
+      futureClaimDue,
       gapStartMonthKey,
       expectedMonthCount: months.length,
       ...counts,
@@ -1143,5 +1220,87 @@ export function compactAuditRowForStorage(row: KaiserT2038ClaimAuditRow) {
       dateOfServiceIso: claim.dateOfServiceIso,
       monthKey: claim.monthKey,
     })),
+  };
+}
+
+/**
+ * Fill last-DOS / future-claim-due fields on older saved audit rows that predate those properties.
+ */
+export function enrichKaiserT2038FutureClaimFields(
+  row: KaiserT2038ClaimAuditRow,
+  today = startOfToday()
+): KaiserT2038ClaimAuditRow {
+  if (row.lastClaimDate !== undefined && row.futureClaimDue !== undefined) return row;
+
+  let lastClaimDateObj: Date | null = null;
+  for (const claim of row.submittedClaims || []) {
+    const d = parseClaimServiceDate(claim.dateOfServiceIso || claim.dateOfService);
+    if (d && (!lastClaimDateObj || d.getTime() > lastClaimDateObj.getTime())) lastClaimDateObj = d;
+  }
+  for (const dos of row.unsubmittedClaimDates || []) {
+    const d = parseClaimServiceDate(dos);
+    if (d && (!lastClaimDateObj || d.getTime() > lastClaimDateObj.getTime())) lastClaimDateObj = d;
+  }
+
+  const lastClaimDate = lastClaimDateObj ? formatUsDate(lastClaimDateObj) : '';
+  const lastClaimDateIso = lastClaimDateObj
+    ? `${lastClaimDateObj.getFullYear()}${String(lastClaimDateObj.getMonth() + 1).padStart(2, '0')}${String(
+        lastClaimDateObj.getDate()
+      ).padStart(2, '0')}`
+    : '';
+  const daysSinceLastClaim = lastClaimDateObj ? daysBetween(lastClaimDateObj, today) : null;
+  const nextEligibleObj = lastClaimDateObj
+    ? new Date(
+        lastClaimDateObj.getFullYear(),
+        lastClaimDateObj.getMonth(),
+        lastClaimDateObj.getDate() + T2038_FUTURE_CLAIM_MIN_DAYS
+      )
+    : null;
+  const nextClaimEligibleDate = nextEligibleObj ? formatUsDate(nextEligibleObj) : '';
+
+  const claimedMonths = new Set(
+    (row.months || []).filter((m) => m.status === 'claimed').map((m) => m.monthKey)
+  );
+  for (const claim of row.submittedClaims || []) {
+    if (claim.monthKey) claimedMonths.add(claim.monthKey);
+  }
+
+  let nextClaimMonthKey = '';
+  if (nextEligibleObj) {
+    const anchor = nextEligibleObj.getTime() > today.getTime() ? nextEligibleObj : today;
+    let candidate = monthKeyFromDate(anchor);
+    for (let i = 0; i < 24; i += 1) {
+      if (!claimedMonths.has(candidate)) {
+        nextClaimMonthKey = candidate;
+        break;
+      }
+      const [y, m] = candidate.split('-').map(Number);
+      candidate = monthKeyFromDate(new Date(y, m, 1));
+    }
+  }
+
+  const pastBacklogClear =
+    !row.noClaimsYet &&
+    row.openMissingMonthCount === 0 &&
+    Number(row.claimableMonthCount || 0) === 0;
+  const authStillOpen =
+    row.window === 'in_window' || row.window === 'ending_soon' || (!row.authEnded && Boolean(row.authorizationStart));
+  const futureClaimDue = Boolean(
+    pastBacklogClear &&
+      authStillOpen &&
+      lastClaimDateObj &&
+      daysSinceLastClaim != null &&
+      daysSinceLastClaim >= T2038_FUTURE_CLAIM_MIN_DAYS &&
+      nextClaimMonthKey
+  );
+
+  return {
+    ...row,
+    lastClaimDate: row.lastClaimDate || lastClaimDate,
+    lastClaimDateIso: row.lastClaimDateIso || lastClaimDateIso,
+    daysSinceLastClaim: row.daysSinceLastClaim ?? daysSinceLastClaim,
+    nextClaimEligibleDate: row.nextClaimEligibleDate || nextClaimEligibleDate,
+    nextClaimMonthKey: row.nextClaimMonthKey || nextClaimMonthKey,
+    futureClaimDue: row.futureClaimDue ?? futureClaimDue,
   };
 }

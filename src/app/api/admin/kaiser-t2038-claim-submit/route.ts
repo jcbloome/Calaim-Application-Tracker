@@ -27,6 +27,7 @@ import {
 } from '@/lib/t2038-claims';
 import { DEFAULT_EDI_270_SETTINGS, EDI_SETTINGS_DOC_ID, type Edi270Settings } from '@/lib/x12-270';
 import { BATCH_ELIGIBILITY_TEMPLATES_COLLECTION } from '@/lib/batch-eligibility';
+import { getAllStaff } from '@/lib/staff-directory';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -95,25 +96,170 @@ async function loadClaimSettingsAndEdi() {
   return { settings, edi };
 }
 
-function submitterFromAuth(authz: { email?: string; name?: string }): ClaimSubmitSubmitter {
-  const email = String(authz.email || '').trim();
-  const name = String(authz.name || '').trim();
-  let firstName = '';
-  let lastName = '';
-  if (name.includes(',')) {
-    const [last, first] = name.split(',').map((part) => part.trim());
-    firstName = first || '';
-    lastName = last || '';
-  } else if (name) {
-    const parts = name.split(/\s+/);
-    firstName = parts[0] || '';
-    lastName = parts.slice(1).join(' ');
+function normalizePersonKey(value: unknown): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function splitPersonName(name: string): { firstName: string; lastName: string } {
+  const cleaned = String(name || '').trim();
+  if (!cleaned) return { firstName: '', lastName: '' };
+  if (cleaned.includes(',')) {
+    const [last, first] = cleaned.split(',').map((part) => part.trim());
+    return { firstName: first || '', lastName: last || '' };
   }
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  return { firstName: parts[0] || '', lastName: parts.slice(1).join(' ') };
+}
+
+function parseUsersRegistrationRow(row: Record<string, unknown>) {
+  const userId = String(
+    row.User_ID || row.user_id || row.ID || row.Table_ID || row.connect_tbl_usersregistration_User_ID || ''
+  ).trim();
+  const firstName = String(
+    row.User_First || row.First_Name || row.FirstName || row.connect_tbl_usersregistration_User_First || ''
+  ).trim();
+  const lastName = String(
+    row.User_Last || row.Last_Name || row.LastName || row.connect_tbl_usersregistration_User_Last || ''
+  ).trim();
+  const email = String(row.Email || row.User_Email || row.email || row.Work_Email || '')
+    .trim()
+    .toLowerCase();
+  const fullName = String(
+    row.User_First_Last ||
+      row.User_Full_Name ||
+      row.connect_tbl_usersregistration_User_First_Last ||
+      `${firstName} ${lastName}`
+  ).trim();
+  return { userId, firstName, lastName, email, fullName };
+}
+
+/** Load connect_tbl_usersregistration rows (Firestore cache first, then Caspio). */
+async function loadUsersRegistrationRows(adminDb: any): Promise<Record<string, unknown>[]> {
+  try {
+    const snap = await adminDb.collection('caspio_usersregistration_cache').limit(1500).get();
+    if (!snap.empty) {
+      return snap.docs.map((doc: { data: () => Record<string, unknown> }) => doc.data() || {});
+    }
+  } catch (err) {
+    console.warn(
+      '[kaiser-t2038-claim-submit] usersregistration cache load failed:',
+      String((err as { message?: string })?.message || err)
+    );
+  }
+  try {
+    const credentials = getCaspioCredentialsFromEnv();
+    const token = await getCaspioToken(credentials);
+    for (const table of [
+      'connect_tbl_usersregistration',
+      'tbl_usersregistration',
+      'usersregistration',
+    ]) {
+      const url = `${credentials.baseUrl}/integrations/rest/v3/tables/${encodeURIComponent(
+        table
+      )}/records?q.pageSize=500&q.pageNumber=1`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      });
+      if (!response.ok) continue;
+      const data = await response.json().catch(() => ({}));
+      const rows = Array.isArray(data?.Result) ? data.Result : [];
+      if (rows.length) return rows as Record<string, unknown>[];
+    }
+  } catch (err) {
+    console.warn(
+      '[kaiser-t2038-claim-submit] usersregistration Caspio load failed:',
+      String((err as { message?: string })?.message || err)
+    );
+  }
+  return [];
+}
+
+/**
+ * Resolve User_First / User_Last / User_IDfk for the Kaiser Staff who is pushing.
+ * Match connect_tbl_usersregistration by email, then by Kaiser Staff name (staff directory / auth name).
+ */
+async function resolveSubmitterFromKaiserStaff(
+  adminDb: any,
+  authz: { email?: string; name?: string; uid?: string }
+): Promise<ClaimSubmitSubmitter> {
+  const email = String(authz.email || '').trim().toLowerCase();
+  let authName = String(authz.name || '').trim();
+
+  // Prefer Firestore user display name when token name is blank.
+  if (!authName && adminDb && authz.uid) {
+    try {
+      const userSnap = await adminDb.collection('users').doc(authz.uid).get();
+      if (userSnap.exists) {
+        const data = userSnap.data() || {};
+        authName = String(data.displayName || data.name || data.fullName || '').trim();
+      }
+    } catch {
+      // keep authName blank
+    }
+  }
+
+  const staffFromEmail = getAllStaff().find((staff) => staff.email.toLowerCase() === email);
+  const kaiserStaffName = String(staffFromEmail?.name || authName || '').trim();
+  const fromAuth = splitPersonName(authName || kaiserStaffName);
+  const fallbackId = resolveConnectionsClaimUserIdFk(email);
+
+  const rows = await loadUsersRegistrationRows(adminDb);
+  const nameKeys = new Set(
+    [
+      normalizePersonKey(kaiserStaffName),
+      normalizePersonKey(authName),
+      normalizePersonKey(`${fromAuth.firstName} ${fromAuth.lastName}`),
+      normalizePersonKey(`${fromAuth.lastName} ${fromAuth.firstName}`),
+      normalizePersonKey(`${fromAuth.lastName}, ${fromAuth.firstName}`),
+    ].filter(Boolean)
+  );
+
+  let match: ReturnType<typeof parseUsersRegistrationRow> | null = null;
+  if (email) {
+    match =
+      rows.map(parseUsersRegistrationRow).find((row) => row.email && row.email === email) || null;
+  }
+  if (!match && nameKeys.size) {
+    match =
+      rows.map(parseUsersRegistrationRow).find((row) => {
+        const candidates = [
+          normalizePersonKey(row.fullName),
+          normalizePersonKey(`${row.firstName} ${row.lastName}`),
+          normalizePersonKey(`${row.lastName} ${row.firstName}`),
+          normalizePersonKey(`${row.lastName}, ${row.firstName}`),
+        ];
+        return candidates.some((key) => key && nameKeys.has(key));
+      }) || null;
+  }
+
+  if (match) {
+    const userIdNum = Number(match.userId);
+    return {
+      email: email || match.email,
+      firstName: match.firstName || fromAuth.firstName,
+      lastName: match.lastName || fromAuth.lastName,
+      userIdFk: match.userId
+        ? Number.isFinite(userIdNum) && userIdNum > 0
+          ? userIdNum
+          : match.userId
+        : fallbackId,
+    };
+  }
+
   return {
     email,
-    firstName,
-    lastName,
-    userIdFk: resolveConnectionsClaimUserIdFk(email),
+    firstName: fromAuth.firstName,
+    lastName: fromAuth.lastName,
+    userIdFk: fallbackId,
   };
 }
 
@@ -262,7 +408,8 @@ async function insertCaspioClaim(
   token: string,
   body: Record<string, string | number>
 ) {
-  const url = `${credentials.baseUrl}/integrations/rest/v3/tables/${CONNECTIONS_CLAIM_SUBMIT_TABLE}/records`;
+  // response=rows returns the inserted record (PK_ID) when the table allows it.
+  const url = `${credentials.baseUrl}/integrations/rest/v3/tables/${CONNECTIONS_CLAIM_SUBMIT_TABLE}/records?response=rows`;
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -279,9 +426,23 @@ async function insertCaspioClaim(
     json = { raw: text.slice(0, 400) };
   }
   if (!response.ok) {
+    console.error('[kaiser-t2038-claim-submit] Caspio insert failed', {
+      status: response.status,
+      bodyKeys: Object.keys(body),
+      response: text.slice(0, 500),
+    });
     throw new Error(
       `Caspio insert failed (HTTP ${response.status}): ${text.slice(0, 280) || response.statusText}`
     );
+  }
+  // Some Caspio apps return 200 with Message / success:false instead of HTTP 4xx.
+  const message = String(json.Message || json.message || json.Error || json.error || '').trim();
+  if (/fail|error|invalid|denied|required/i.test(message) && !json.Result) {
+    console.error('[kaiser-t2038-claim-submit] Caspio insert rejected', {
+      bodyKeys: Object.keys(body),
+      response: text.slice(0, 500),
+    });
+    throw new Error(`Caspio insert rejected: ${message.slice(0, 280)}`);
   }
   const result = Array.isArray(json.Result) ? json.Result[0] : json.Result || json;
   return result as Record<string, unknown>;
@@ -304,12 +465,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const submitter = submitterFromAuth(authz);
-    const [{ byId, credentials }, { settings, edi }] = await Promise.all([
+    const { adminDb } = await import('@/firebase-admin');
+    const [{ byId, credentials }, { settings, edi }, submitter] = await Promise.all([
       loadMembersByClientId2(),
       loadClaimSettingsAndEdi(),
+      resolveSubmitterFromKaiserStaff(adminDb, {
+        email: authz.email,
+        name: authz.name,
+        uid: authz.uid,
+      }),
     ]);
-    const { adminDb } = await import('@/firebase-admin');
     const lastDosByClient =
       targets.length > 0
         ? await loadLastDosByClientId2(
@@ -339,15 +504,29 @@ export async function POST(request: NextRequest) {
     if (action === 'push') {
       // Push one claim at a time when previewId is set; otherwise push all ready claims.
       const previewId = String(body.previewId || '').trim();
-      const toPush = previewId
+      let toPush = previewId
         ? previews.filter((row) => row.id === previewId)
         : previews.filter((row) => row.blockers.length === 0);
+      // Fallback: match target client+month when id string differs after rebuild.
+      if (previewId && !toPush.length && targets.length === 1) {
+        const target = targets[0];
+        toPush = previews.filter(
+          (row) =>
+            row.clientId2 === target.clientId2 &&
+            row.monthKey === target.monthKey &&
+            row.blockers.length === 0
+        );
+      }
       if (!toPush.length) {
         return NextResponse.json(
           {
             success: false,
             error: previewId
-              ? `No ready preview for id ${previewId}.`
+              ? `No ready preview for id ${previewId}${
+                  previews[0]?.blockers?.length
+                    ? ` (${previews.map((row) => row.blockers.join('; ')).filter(Boolean).join(' · ')})`
+                    : ''
+                }.`
               : 'No claimable previews ready to push (all blocked).',
             previews,
           },
@@ -467,12 +646,18 @@ export async function POST(request: NextRequest) {
         edi: ediBundle.edi,
         ediIncluded: ediBundle.included,
         ediSkipped: ediBundle.skipped,
+        error:
+          failed.length > 0
+            ? failed.map((row) => row.error || `${row.clientId2}/${row.monthKey} failed`).join(' · ')
+            : undefined,
         message:
           failed.length === 0
             ? `Pushed ${pushed.length} claim(s) to ${CONNECTIONS_CLAIM_SUBMIT_TABLE}${
                 already.length ? ` · ${already.length} already pushed` : ''
               }. Download EDI for Smart Data Solutions.`
-            : `Pushed ${pushed.length}, failed ${failed.length}.`,
+            : `Pushed ${pushed.length}, failed ${failed.length}: ${failed
+                .map((row) => row.error || 'unknown')
+                .join(' · ')}`,
       });
     }
 

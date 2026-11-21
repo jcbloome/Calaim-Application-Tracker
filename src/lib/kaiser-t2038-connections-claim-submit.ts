@@ -43,7 +43,10 @@ export const CONNECTIONS_CLAIM_FIXED = {
   Payee_Telephone: '800-330-5993',
   Payee_NPI: DEFAULT_T2038_CLAIM_SETTINGS.billNpi,
   Connections_or_RCFE_Claim: CONNECTIONS_OR_RCFE_CLAIM_VALUE,
-  Connections_T2038_Total_Charges: 432,
+  /** Live CalAIM_Claim_Submit_T2038 field (not Connections_T2038_Total_Charges). */
+  Total_Charges: 432,
+  Connections_Monthly_PMPM_Rate: 432,
+  MCO_T2038_Amount: 432,
 } as const;
 
 export type ClaimSubmitSubmitter = {
@@ -84,6 +87,35 @@ const pickFirst = (...values: unknown[]) => {
   }
   return '';
 };
+
+/** Caspio list fields often expect 2-letter state codes. */
+function toUsStateCode(value: unknown): string {
+  const raw = clean(value);
+  if (!raw) return '';
+  if (/^[A-Za-z]{2}$/.test(raw)) return raw.toUpperCase();
+  const key = raw.toLowerCase().replace(/[^a-z]/g, '');
+  const map: Record<string, string> = {
+    california: 'CA',
+    arizona: 'AZ',
+    nevada: 'NV',
+    oregon: 'OR',
+    washington: 'WA',
+    texas: 'TX',
+    florida: 'FL',
+    newyork: 'NY',
+  };
+  return map[key] || raw;
+}
+
+/** Match Connections Claim Submission SNF list values when possible. */
+function normalizeSnfPathway(value: unknown): string {
+  const raw = clean(value);
+  if (!raw) return '';
+  const key = raw.toLowerCase().replace(/[^a-z]/g, '');
+  if (key.includes('diversion')) return 'Diversion';
+  if (key.includes('transition')) return 'Transition';
+  return raw;
+}
 
 /** New claimable Date_of_Service must be at least this many days after the last claimed claim. */
 export const T2038_MIN_DAYS_AFTER_LAST_DOS = T2038_CLAIM_DUE_DAYS; // 30
@@ -164,7 +196,10 @@ function splitDisplayName(full: string): { first: string; last: string } {
   return { first: parts[0], last: parts.slice(1).join(' ') };
 }
 
-/** Known Caspio User_IDfk values for Connections claim submitters. */
+/**
+ * Fallback User_IDfk when connect_tbl_usersregistration lookup misses.
+ * Prefer resolving from usersregistration (User_ID) matched to Kaiser Staff name.
+ */
 export function resolveConnectionsClaimUserIdFk(email: string): number | undefined {
   const key = clean(email).toLowerCase();
   if (key === 'jason@carehomefinders.com') return 25;
@@ -226,7 +261,9 @@ export function buildConnectionsT2038ClaimPreview(opts: {
     if (g.startsWith('F')) return 'F';
     return g.slice(0, 1);
   })();
-  const snf = pickFirst(raw.SNF_Diversion_or_Transition, raw.SNF_Diversion_Transition, raw.Pathway);
+  const snf = normalizeSnfPathway(
+    pickFirst(raw.SNF_Diversion_or_Transition, raw.SNF_Diversion_Transition, raw.Pathway)
+  );
   const mcp = pickFirst(raw.CalAIM_MCO, raw.MCP, raw.memberHealthPlan) || 'Kaiser';
   const locationName = pickFirst(
     raw.Current_Location_Name,
@@ -237,7 +274,7 @@ export function buildConnectionsT2038ClaimPreview(opts: {
   );
   const rcfeAddress = pickFirst(raw.RCFE_Address, raw.RCFE_Street, raw.Normal_Housing_Street);
   const rcfeCity = pickFirst(raw.RCFE_City, raw.Normal_Housing_City);
-  const rcfeState = pickFirst(raw.RCFE_State, raw.Normal_Housing_State, 'CA');
+  const rcfeState = toUsStateCode(pickFirst(raw.RCFE_State, raw.Normal_Housing_State, 'CA')) || 'CA';
   const rcfeZip = pickFirst(raw.RCFE_Zip, raw.Normal_Housing_Zip);
   const mcoName = pickFirst(raw.MCO_Name, raw.CalAIM_MCO, mcp);
   const authEnd = formatUsDate(
@@ -273,6 +310,8 @@ export function buildConnectionsT2038ClaimPreview(opts: {
   const userIdFk =
     opts.submitter.userIdFk ?? resolveConnectionsClaimUserIdFk(opts.submitter.email) ?? '';
 
+  const submitterFull = [submitterFirst, submitterLast].filter(Boolean).join(' ').trim();
+
   const fromMember: Record<string, string> = {
     Client_ID2: clientId2,
     Client_First: clientFirst,
@@ -280,24 +319,27 @@ export function buildConnectionsT2038ClaimPreview(opts: {
     Client_Birthdate: birthdate,
     MCP_CIN: mcpCin,
     Kaiser_MRN: kaiserMrn,
-    Gender: gender,
+    Sex: gender,
     SNF_Diversion_Transition: snf,
     MCP: mcp,
-    Current_Location_Name: locationName,
+    Current_Location_Name_Var: locationName,
+    RCFE_Name: locationName,
     RCFE_Address: rcfeAddress,
     RCFE_City: rcfeCity,
     RCFE_State: rcfeState,
     RCFE_Zip: rcfeZip,
     MCO_Name: mcoName,
     Auth_End: authEnd,
-    Diagnostic_Code1: diag1,
-    Diagnostic_Code2: diag2,
-    Diagnostic_Code3: diag3,
-    Diagnostic_CodeText1: diagText1,
-    Diagnostic_CodeText2: diagText2,
-    Diagnostic_CodeText3: diagText3,
+    Auth_Start: authStart,
+    Diagnostic_Code_1: diag1,
+    Diagnostic_Code_2: diag2,
+    Diagnostic_Code_3: diag3,
+    Diagnostic_Code_Text1: diagText1,
+    Diagnostic_Code_Text2: diagText2,
+    Diagnostic_Code_Text3: diagText3,
   };
 
+  // Field names must match live CalAIM_Claim_Submit_T2038 (Caspio FieldNotFound otherwise).
   const caspioBody: Record<string, string | number> = {
     Client_ID2: clientId2 ? Number(clientId2) || clientId2 : '',
     Client_First: clientFirst,
@@ -305,26 +347,29 @@ export function buildConnectionsT2038ClaimPreview(opts: {
     Client_Birthdate: birthdate,
     MCP_CIN: mcpCin,
     Kaiser_MRN: kaiserMrn,
-    Gender: gender,
+    Sex: gender,
     SNF_Diversion_Transition: snf,
     MCP: mcp.includes('Kaiser') ? 'Kaiser' : mcp,
     Connections_or_RCFE_Claim: CONNECTIONS_OR_RCFE_CLAIM_VALUE,
-    Claim_Status: '',
-    Current_Location_Name: locationName,
+    Current_Location_Name_Var: locationName,
+    RCFE_Name: locationName,
     RCFE_Address: rcfeAddress,
     RCFE_City: rcfeCity,
     RCFE_State: rcfeState,
     RCFE_Zip: rcfeZip,
     MCO_Name: mcoName,
-    Connections_T2038_Total_Charges: CONNECTIONS_CLAIM_FIXED.Connections_T2038_Total_Charges,
+    Total_Charges: CONNECTIONS_CLAIM_FIXED.Total_Charges,
+    Connections_Monthly_PMPM_Rate: CONNECTIONS_CLAIM_FIXED.Connections_Monthly_PMPM_Rate,
+    MCO_T2038_Amount: CONNECTIONS_CLAIM_FIXED.MCO_T2038_Amount,
     Date_of_Service: dateOfService,
     Auth_End: authEnd,
-    Diagnostic_Code1: diag1,
-    Diagnostic_Code2: diag2,
-    Diagnostic_Code3: diag3,
-    Diagnostic_CodeText1: diagText1,
-    Diagnostic_CodeText2: diagText2,
-    Diagnostic_CodeText3: diagText3,
+    Auth_Start: authStart,
+    Diagnostic_Code_1: diag1,
+    Diagnostic_Code_2: diag2,
+    Diagnostic_Code_3: diag3,
+    Diagnostic_Code_Text1: diagText1,
+    Diagnostic_Code_Text2: diagText2,
+    Diagnostic_Code_Text3: diagText3,
     Service_Location_Name: CONNECTIONS_CLAIM_FIXED.Service_Location_Name,
     Service_Location_Address: CONNECTIONS_CLAIM_FIXED.Service_Location_Address,
     Service_Location_City: CONNECTIONS_CLAIM_FIXED.Service_Location_City,
@@ -338,6 +383,7 @@ export function buildConnectionsT2038ClaimPreview(opts: {
     Payee_Telephone: CONNECTIONS_CLAIM_FIXED.Payee_Telephone,
     Payee_NPI: CONNECTIONS_CLAIM_FIXED.Payee_NPI,
     Email_Submitter: clean(opts.submitter.email),
+    Name_of_Submitter: submitterFull,
     User_First: submitterFirst,
     User_Last: submitterLast,
   };
@@ -346,14 +392,12 @@ export function buildConnectionsT2038ClaimPreview(opts: {
   }
 
   // Drop empty optional strings so Caspio required-field errors stay clear.
+  // Omit Claim_Status entirely when blank — some Caspio REST inserts reject "".
   for (const key of Object.keys(caspioBody)) {
     if (caspioBody[key] === '' || caspioBody[key] === undefined || caspioBody[key] === null) {
-      // Keep Claim_Status blank explicitly — means entered, not sent to clearinghouse.
-      if (key === 'Claim_Status') continue;
       delete caspioBody[key];
     }
   }
-  caspioBody.Claim_Status = '';
   caspioBody.Connections_or_RCFE_Claim = CONNECTIONS_OR_RCFE_CLAIM_VALUE;
 
   const blockers: string[] = [...dosResult.blockers];
@@ -361,9 +405,9 @@ export function buildConnectionsT2038ClaimPreview(opts: {
   if (!clientFirst || !clientLast) blockers.push('Missing Client_First / Client_Last');
   if (!dateOfService && !dosResult.blockers.length) blockers.push('Missing Date_of_Service');
   if (!mcpCin && !kaiserMrn) blockers.push('Missing MCP_CIN / Kaiser_MRN');
-  if (!diag1) blockers.push('Missing Diagnostic_Code1');
+  if (!diag1) blockers.push('Missing Diagnostic_Code_1');
   if (!authEnd) blockers.push('Missing Auth_End');
-  if (!locationName) blockers.push('Missing Current_Location_Name / RCFE');
+  if (!locationName) blockers.push('Missing Current_Location_Name_Var / RCFE_Name');
   if (!clean(opts.submitter.email)) blockers.push('Missing Email_Submitter');
 
   // One line per Caspio field name (exact insert keys) — no source badges.
@@ -374,26 +418,29 @@ export function buildConnectionsT2038ClaimPreview(opts: {
     'Client_Birthdate',
     'MCP_CIN',
     'Kaiser_MRN',
-    'Gender',
+    'Sex',
     'SNF_Diversion_Transition',
     'MCP',
     'Connections_or_RCFE_Claim',
-    'Claim_Status',
-    'Current_Location_Name',
+    'Current_Location_Name_Var',
+    'RCFE_Name',
     'RCFE_Address',
     'RCFE_City',
     'RCFE_State',
     'RCFE_Zip',
     'MCO_Name',
-    'Connections_T2038_Total_Charges',
+    'Total_Charges',
+    'Connections_Monthly_PMPM_Rate',
+    'MCO_T2038_Amount',
     'Date_of_Service',
+    'Auth_Start',
     'Auth_End',
-    'Diagnostic_Code1',
-    'Diagnostic_Code2',
-    'Diagnostic_Code3',
-    'Diagnostic_CodeText1',
-    'Diagnostic_CodeText2',
-    'Diagnostic_CodeText3',
+    'Diagnostic_Code_1',
+    'Diagnostic_Code_2',
+    'Diagnostic_Code_3',
+    'Diagnostic_Code_Text1',
+    'Diagnostic_Code_Text2',
+    'Diagnostic_Code_Text3',
     'Service_Location_Name',
     'Service_Location_Address',
     'Service_Location_City',
@@ -407,6 +454,7 @@ export function buildConnectionsT2038ClaimPreview(opts: {
     'Payee_Telephone',
     'Payee_NPI',
     'Email_Submitter',
+    'Name_of_Submitter',
     'User_First',
     'User_Last',
     'User_IDfk',
@@ -471,7 +519,7 @@ export function buildEdiForConnectionsClaimPreviews(
       memberFirstName: String(preview.caspioBody.Client_First || ''),
       memberLastName: String(preview.caspioBody.Client_Last || ''),
       dateOfBirth: String(preview.caspioBody.Client_Birthdate || ''),
-      gender: String(preview.caspioBody.Gender || ''),
+      gender: String(preview.caspioBody.Sex || ''),
       memberId: String(
         preview.caspioBody.Kaiser_MRN || preview.caspioBody.MCP_CIN || ''
       ).replace(/\s+/g, ''),
@@ -488,7 +536,7 @@ export function buildEdiForConnectionsClaimPreviews(
       daysUntilEnd: null,
       window: 'in_window' as const,
       calaimStatus: pickFirst(raw.CalAIM_Status),
-      diagnosisCode: String(preview.caspioBody.Diagnostic_Code1 || settings.diag1 || 'R69'),
+      diagnosisCode: String(preview.caspioBody.Diagnostic_Code_1 || settings.diag1 || 'R69'),
       lastClaimDate: '',
       daysSinceLastClaim: null,
       claimDue: true,
@@ -503,7 +551,7 @@ export function buildEdiForConnectionsClaimPreviews(
     // Prefer member ICD from Caspio claim body for EDI when present; else R69.
     const claimSettings: T2038ClaimSettings = {
       ...settings,
-      diag1: String(preview.caspioBody.Diagnostic_Code1 || settings.diag1 || 'R69'),
+      diag1: String(preview.caspioBody.Diagnostic_Code_1 || settings.diag1 || 'R69'),
     };
     const input = to837ClaimInput(sdsRow, claimSettings, dos);
     if (!input) {

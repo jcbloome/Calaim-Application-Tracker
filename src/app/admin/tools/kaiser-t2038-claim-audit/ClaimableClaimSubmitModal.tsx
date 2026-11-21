@@ -51,7 +51,9 @@ type Props = {
 const PER_CLAIM_FIELDS = new Set([
   'Date_of_Service',
   'Claim_Status',
-  'Connections_T2038_Total_Charges',
+  'Total_Charges',
+  'Connections_Monthly_PMPM_Rate',
+  'MCO_T2038_Amount',
   'Connections_or_RCFE_Claim',
 ]);
 
@@ -170,7 +172,19 @@ export function ClaimableClaimSubmitModal({
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body?.success) {
-        throw new Error(String(body?.error || `HTTP ${response.status}`));
+        const resultErrors = Array.isArray(body?.results)
+          ? (body.results as Array<{ error?: string; ok?: boolean }>)
+              .filter((row) => row && row.ok === false && row.error)
+              .map((row) => String(row.error))
+          : [];
+        throw new Error(
+          String(
+            body?.error ||
+              resultErrors[0] ||
+              body?.message ||
+              `Push failed (HTTP ${response.status})`
+          )
+        );
       }
       setPushedIds((prevSet) => new Set([...prevSet, current.id]));
       if (body.edi) setLastEdi(String(body.edi));
@@ -225,15 +239,18 @@ export function ClaimableClaimSubmitModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-xl overflow-hidden p-0">
-        <DialogHeader className="border-b px-4 py-3">
+      <DialogContent
+        className="!fixed !left-1/2 !top-4 w-[calc(100vw-1rem)] max-w-xl !-translate-x-1/2 !translate-y-0 gap-0 overflow-y-auto overscroll-contain p-0 sm:rounded-lg [-webkit-overflow-scrolling:touch]"
+        style={{ maxHeight: 'calc(100dvh - 2rem)' }}
+      >
+        <DialogHeader className="sticky top-0 z-20 border-b bg-background px-4 py-3 pr-10">
           <DialogTitle className="text-base">Claim preview → Caspio</DialogTitle>
           <DialogDescription className="text-xs">
             One claim at a time · {CONNECTIONS_CLAIM_SUBMIT_TABLE}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="overflow-y-auto px-4 py-3" style={{ maxHeight: 'calc(90vh - 8.5rem)' }}>
+        <div className="px-4 py-3">
           {isLoading ? (
             <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -310,7 +327,7 @@ export function ClaimableClaimSubmitModal({
                       field.label === 'Date_of_Service' ? 'bg-amber-50/80' : ''
                     }`}
                   >
-                    <span className="w-52 shrink-0 font-mono text-[12px] text-muted-foreground">
+                    <span className="w-40 shrink-0 font-mono text-[12px] text-muted-foreground sm:w-52">
                       {field.label}
                     </span>
                     <span className="min-w-0 flex-1 break-words font-medium">
@@ -323,11 +340,11 @@ export function ClaimableClaimSubmitModal({
           )}
         </div>
 
-        <DialogFooter className="gap-2 border-t px-4 py-2.5 sm:justify-between">
+        <DialogFooter className="sticky bottom-0 z-20 flex-row flex-wrap gap-2 border-t bg-background px-4 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] shadow-[0_-4px_12px_rgba(0,0,0,0.06)] sm:justify-between">
           <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Close
           </Button>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button type="button" variant="outline" size="sm" disabled={!lastEdi} onClick={downloadEdi}>
               <Download className="mr-1.5 h-3.5 w-3.5" />
               SDS EDI

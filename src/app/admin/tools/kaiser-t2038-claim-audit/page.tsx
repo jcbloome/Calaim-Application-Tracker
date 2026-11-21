@@ -15,6 +15,7 @@ import {
   DEFAULT_JUSTIFY_REASON,
   DEFAULT_NO_WORK_REASON,
   DEFAULT_NOTES_CLAIMABLE_REASON,
+  enrichKaiserT2038FutureClaimFields,
   isClaimAuditActiveCalaimStatus,
   isNoWorkJustification,
   summarizeKaiserT2038ClaimAudit,
@@ -51,6 +52,7 @@ type CoverageFilter =
   | 'no_claims_yet'
   | 'claimable'
   | 'no_work'
+  | 'next_claim_due'
   | 'complete';
 type AuthFilter = 'all' | 'open' | 'ended' | 'missing_dates';
 /** `all` | `Authorized` | exact CalAIM_Status label from data (e.g. Member Died). */
@@ -103,6 +105,7 @@ const formatUsd = (amount: number) =>
 const clean = (value: unknown) => String(value || '').trim();
 
 const lastClaimDateFor = (row: KaiserT2038ClaimAuditRow) => {
+  if (row.lastClaimDate) return row.lastClaimDate;
   let best: { iso: string; display: string } | null = null;
   for (const claim of row.submittedClaims || []) {
     if (!claim.dateOfServiceIso) continue;
@@ -220,6 +223,7 @@ export default function KaiserT2038ClaimAuditPage() {
   const [summaryNoClaimsOpen, setSummaryNoClaimsOpen] = useState(false);
   const [summaryClaimableOpen, setSummaryClaimableOpen] = useState(false);
   const [summaryNoWorkOpen, setSummaryNoWorkOpen] = useState(false);
+  const [summaryNextClaimOpen, setSummaryNextClaimOpen] = useState(false);
   const [summaryH2022UnsentOpen, setSummaryH2022UnsentOpen] = useState(false);
   const [summaryExAuthOpen, setSummaryExAuthOpen] = useState(false);
   const [savingKey, setSavingKey] = useState('');
@@ -228,7 +232,8 @@ export default function KaiserT2038ClaimAuditPage() {
   const [claimSubmitTargets, setClaimSubmitTargets] = useState<ClaimSubmitTarget[]>([]);
 
   const applyAuditResponse = useCallback((body: Record<string, unknown>) => {
-    setRows(Array.isArray(body.rows) ? (body.rows as KaiserT2038ClaimAuditRow[]) : []);
+    const rawRows = Array.isArray(body.rows) ? (body.rows as KaiserT2038ClaimAuditRow[]) : [];
+    setRows(rawRows.map((row) => enrichKaiserT2038FutureClaimFields(row)));
     setSummary((body.summary as Summary) || null);
     setFetchedAt(String(body.fetchedAt || ''));
     const stored = String(body.firestoreStoredAt || body.snapshotAt || body.fetchedAt || '');
@@ -519,6 +524,7 @@ export default function KaiserT2038ClaimAuditPage() {
       if (coverageFilter === 'no_claims_yet' && !row.noClaimsYet) return false;
       if (coverageFilter === 'claimable' && claimableCount <= 0) return false;
       if (coverageFilter === 'no_work' && noWorkCount <= 0) return false;
+      if (coverageFilter === 'next_claim_due' && !row.futureClaimDue) return false;
       if (coverageFilter === 'complete' && (!row.claimsComplete || claimableCount > 0)) return false;
       if (lastNeedle) {
         const last = String(row.memberLastName || row.memberName.split(',')[0] || '').toLowerCase();
@@ -697,6 +703,27 @@ export default function KaiserT2038ClaimAuditPage() {
         unsubmittedClaimDates: row.unsubmittedClaimDates || [],
       }))
       .sort((a, b) => b.unsubmittedClaimCount - a.unsubmittedClaimCount || a.name.localeCompare(b.name));
+    // Ongoing claims after past claimables are done — last DOS + ≥30 days.
+    const nextClaimDueMembers = scoped
+      .filter((row) => Boolean(row.futureClaimDue))
+      .map((row) => ({
+        id: row.id,
+        name: row.memberName || row.clientId2 || 'Member',
+        clientId2: row.clientId2,
+        calaimStatus: row.calaimStatus,
+        kaiserStatus: row.kaiserStatus,
+        authorizationStart: row.authorizationStart,
+        authorizationEnd: row.authorizationEnd,
+        lastClaimDate: lastClaimDateFor(row),
+        daysSinceLastClaim: row.daysSinceLastClaim ?? null,
+        nextClaimEligibleDate: row.nextClaimEligibleDate || '',
+        nextClaimMonthKey: row.nextClaimMonthKey || '',
+      }))
+      .sort(
+        (a, b) =>
+          Number(b.daysSinceLastClaim || 0) - Number(a.daysSinceLastClaim || 0) ||
+          a.name.localeCompare(b.name)
+      );
     // Members we did bill, now off Authorized/H2022, with gaps inside the 6-month window —
     // ignores the status/auth filters so stopped billing is always visible.
     const exAuthGapMembers = rows
@@ -730,6 +757,7 @@ export default function KaiserT2038ClaimAuditPage() {
       claimableMembers,
       noWorkMembers,
       h2022UnsentMembers,
+      nextClaimDueMembers,
       claimableMonthTotal: claimableMembers.reduce((sum, member) => sum + member.monthCount, 0),
       noWorkMonthTotal: noWorkMembers.reduce((sum, member) => sum + member.monthCount, 0),
       exAuthGapMembers,
@@ -1440,6 +1468,90 @@ export default function KaiserT2038ClaimAuditPage() {
               ) : null}
             </div>
 
+            <div className="rounded border border-sky-200">
+              <div className="flex items-center gap-2 px-3 py-2">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm hover:opacity-90"
+                  onClick={() => setSummaryNextClaimOpen((open) => !open)}
+                >
+                  {summaryNextClaimOpen ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="font-medium text-sky-950">Next claim due · ≥30d since last DOS</span>
+                  <Badge variant="outline" className="bg-sky-50 text-sky-950 border-sky-300">
+                    {queueSummary.nextClaimDueMembers.length}
+                  </Badge>
+                  <span className="truncate text-xs text-muted-foreground">
+                    Past claimables done · show last Date_of_Service · push next month
+                  </span>
+                </button>
+              </div>
+              {summaryNextClaimOpen ? (
+                <div className="max-h-72 space-y-0.5 overflow-y-auto border-t bg-sky-50/40 px-2 py-1.5 text-xs">
+                  {queueSummary.nextClaimDueMembers.length === 0 ? (
+                    <p className="px-1 py-2 text-muted-foreground">
+                      No members ready for a future claim yet (need past gaps/claimables cleared and ≥30 days
+                      since last Date_of_Service).
+                    </p>
+                  ) : (
+                    queueSummary.nextClaimDueMembers.map((member) => (
+                      <div
+                        key={`nextdue-${member.id}`}
+                        className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded px-1.5 py-1 hover:bg-sky-100/70"
+                      >
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-left"
+                          onClick={() =>
+                            focusMemberInList({
+                              id: member.id,
+                              clientId2: member.clientId2,
+                              name: member.name,
+                              coverage: 'next_claim_due',
+                            })
+                          }
+                        >
+                          <span className="min-w-0 truncate font-medium">{member.name}</span>
+                          <span className="shrink-0 text-sky-950">
+                            Last DOS {member.lastClaimDate || '—'}
+                            {member.daysSinceLastClaim != null
+                              ? ` · ${member.daysSinceLastClaim}d ago`
+                              : ''}
+                          </span>
+                          <span className="ml-auto min-w-0 truncate text-muted-foreground">
+                            Eligible {member.nextClaimEligibleDate || '—'} · next{' '}
+                            {member.nextClaimMonthKey || '—'}
+                          </span>
+                        </button>
+                        {member.nextClaimMonthKey ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 shrink-0 px-2 text-[11px]"
+                            onClick={() =>
+                              openClaimableSubmit(undefined, {
+                                single: {
+                                  clientId2: member.clientId2,
+                                  monthKey: member.nextClaimMonthKey,
+                                  memberName: member.name,
+                                },
+                              })
+                            }
+                          >
+                            Preview
+                          </Button>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : null}
+            </div>
+
             <div className="rounded border border-slate-300">
               <button
                 type="button"
@@ -1753,6 +1865,7 @@ export default function KaiserT2038ClaimAuditPage() {
               <option value="claimable">Claimable (notes that month)</option>
               <option value="no_work">Not claimable (no notes / no work)</option>
               <option value="no_claims_yet">No claims only</option>
+              <option value="next_claim_due">Next claim due (≥30d since last DOS)</option>
               <option value="complete">Complete / justified</option>
               <option value="all">All members</option>
             </select>
@@ -1876,10 +1989,16 @@ export default function KaiserT2038ClaimAuditPage() {
                             {claimableMonthLabels.length} claimable
                           </Badge>
                         ) : null}
+                        {row.futureClaimDue ? (
+                          <Badge variant="outline" className="bg-sky-50 text-sky-950 border-sky-300">
+                            Next claim due
+                          </Badge>
+                        ) : null}
                         {!row.noClaimsYet &&
                         row.openMissingMonthCount <= 0 &&
                         claimableMonthLabels.length === 0 &&
-                        row.claimsComplete ? (
+                        row.claimsComplete &&
+                        !row.futureClaimDue ? (
                           <Badge variant="outline" className="bg-emerald-50 text-emerald-900 border-emerald-300">
                             Claims complete
                           </Badge>
@@ -1941,12 +2060,43 @@ export default function KaiserT2038ClaimAuditPage() {
                                   (row.unsubmittedClaimDates || []).join(', ') || '—'
                                 })`
                               : 'No CalAIM_Claim_Submit_T2038 rows on file (Authorized / H2022)'
-                            : `First claim ${row.firstClaimDate || '—'} (${row.firstClaimMonthKey || '—'}) · Gap window ${
-                                row.gapStartMonthKey || '—'
-                              } → auth end/today · Claimed ${row.claimedMonthCount} · Justified ${
-                                row.justifiedMonthCount
-                              } · Open gaps ${row.openMissingMonthCount}`}
+                            : `First ${row.firstClaimDate || '—'} · Last DOS ${
+                                lastClaimDateFor(row) || '—'
+                              }${
+                                row.daysSinceLastClaim != null ? ` (${row.daysSinceLastClaim}d ago)` : ''
+                              }${
+                                row.nextClaimEligibleDate
+                                  ? ` · Next eligible ${row.nextClaimEligibleDate}`
+                                  : ''
+                              } · Gap window ${row.gapStartMonthKey || '—'} → auth end/today · Claimed ${
+                                row.claimedMonthCount
+                              } · Justified ${row.justifiedMonthCount} · Open gaps ${row.openMissingMonthCount}`}
                         </div>
+                        {row.futureClaimDue && row.nextClaimMonthKey ? (
+                          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                            <span className="text-[11px] font-medium text-sky-950">
+                              Future claim ready · {row.nextClaimMonthKey} (last DOS{' '}
+                              {lastClaimDateFor(row) || '—'}, ≥30 days)
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() =>
+                                openClaimableSubmit(undefined, {
+                                  single: {
+                                    clientId2: row.clientId2,
+                                    monthKey: row.nextClaimMonthKey!,
+                                    memberName: row.memberName,
+                                  },
+                                })
+                              }
+                            >
+                              Preview / Push
+                            </Button>
+                          </div>
+                        ) : null}
                         {!row.noClaimsYet &&
                         (gapMonthLabels.length > 0 || claimableMonthLabels.length > 0) ? (
                           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">

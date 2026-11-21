@@ -17,6 +17,21 @@
 
 ## Changes 2026-11-20
 
+- **Kaiser T2038 future claims — last DOS + ≥30 days:** After past claimables are cleared, audit shows **Last DOS**, days since, **Next eligible**, and a **Next claim due** queue/filter. Preview/Push is offered only when ≥30 days (1 month) since last Date_of_Service; Connections push still enforces the same spacing.
+  - Files: `src/lib/kaiser-t2038-claim-audit.ts`, `src/app/admin/tools/kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
+
+- **Kaiser T2038 claim push — match live CalAIM_Claim_Submit_T2038 fields:** Fixed FieldNotFound (`Gender`→`Sex`, `Current_Location_Name`→`Current_Location_Name_Var` + `RCFE_Name`, `Connections_T2038_Total_Charges`→`Total_Charges` / PMPM / `MCO_T2038_Amount`, `Diagnostic_Code1`→`Diagnostic_Code_1`, etc.).
+  - Files: `src/lib/kaiser-t2038-connections-claim-submit.ts`, `ClaimableClaimSubmitModal.tsx`, `handoff.md`.
+
+- **Kaiser T2038 claim push — surface real Caspio errors + harden insert:** Toast no longer shows bare `HTTP 200` when push fails; API returns `error` / `results[].error`. Insert uses `?response=rows`, normalizes `RCFE_State` to CA, omits blank `Claim_Status`.
+  - Files: `ClaimableClaimSubmitModal.tsx`, `src/app/api/admin/kaiser-t2038-claim-submit/route.ts`, `src/lib/kaiser-t2038-connections-claim-submit.ts`, `handoff.md`.
+
+- **Kaiser T2038 claim push — User_First / User_Last / User_IDfk from Kaiser Staff:** Preview/push resolves the logged-in pusher against `connect_tbl_usersregistration` (Firestore `caspio_usersregistration_cache`, else Caspio) by email then Kaiser Staff name (`staff-directory` / auth display name) → `User_First`, `User_Last`, `User_IDfk` (= `User_ID`).
+  - Files: `src/app/api/admin/kaiser-t2038-claim-submit/route.ts`, `handoff.md`.
+
+- **Kaiser T2038 claim preview modal — scrollable + sticky Push:** Dialog anchors to top of viewport (`max-h: 100dvh - 2rem`), scrolls the field list, sticky header/footer so **Push this claim** stays reachable on short screens.
+  - Files: `ClaimableClaimSubmitModal.tsx`, `handoff.md`.
+
 - **Kaiser T2038 claim preview — Birth_Date + Medi-Cal CIN:** `Client_Birthdate` maps from CalAIM_tbl_Members `Birth_Date` (then DOB fallbacks). `MCP_CIN` falls back to `MediCal_Number` / `Medi_Cal_Number` / `Medical_Number` / `CIN` when MCP_CIN is blank.
   - Files: `src/lib/kaiser-t2038-connections-claim-submit.ts`, `handoff.md`.
 
