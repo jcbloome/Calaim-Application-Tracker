@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `1b70bc37` (T2038 claim audit — Firestore load, Notes, blue statuses, Health Net skip)  
+**HEAD:** `5abea8f7` (T2038 claim audit — notes claimability, $432 queues, drill-down members)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
