@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `7c307d45` (T2038 claim month row — single-line Preview/Push)  
+**HEAD:** `3296aa0d` (T2038 claimable DOS ≥30 days after last claimed claim)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
