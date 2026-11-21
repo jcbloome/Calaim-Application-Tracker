@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `4e4343f7` (T2038 claim preview Birth_Date + Medi-Cal CIN)  
+**HEAD:** `94a7540f` (T2038 Caspio field mapping + next-claim-due workflow)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
