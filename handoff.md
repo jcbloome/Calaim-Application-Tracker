@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `f2879031` (T2038 claimable months — Caspio preview/push + SDS EDI)  
+**HEAD:** `7c307d45` (T2038 claim month row — single-line Preview/Push)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
