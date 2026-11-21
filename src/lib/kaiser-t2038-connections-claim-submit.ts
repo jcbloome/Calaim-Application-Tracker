@@ -189,11 +189,37 @@ export function buildConnectionsT2038ClaimPreview(opts: {
   const clientFirst = pickFirst(raw.Senior_First, raw.Client_First, raw.memberFirstName);
   const clientLast = pickFirst(raw.Senior_Last, raw.Client_Last, raw.memberLastName);
   const birthdate = formatUsDate(
-    parseDateOnly(pickFirst(raw.Senior_DOB, raw.Client_Birthdate, raw.DOB, raw.Date_of_Birth, raw.Member_DOB))
+    parseDateOnly(
+      pickFirst(
+        raw.Birth_Date,
+        raw.Senior_DOB,
+        raw.Client_Birthdate,
+        raw.DOB,
+        raw.Date_of_Birth,
+        raw.Member_DOB
+      )
+    )
   );
-  const mcpCin = pickFirst(raw.MCP_CIN, raw.MediCal_Number, raw.MC);
-  // Same fallback chain as claim-audit MRN: Kaiser_MRN → Member_MRN → MRN → MCP_CIN.
-  const kaiserMrn = pickFirst(raw.Kaiser_MRN, raw.Member_MRN, raw.MRN, raw.MCP_CIN, raw.MediCal_Number);
+  // MCP_CIN on CalAIM_tbl_Members is often blank; Medi-Cal Number / Medical_Number holds the CIN.
+  const mcpCin = pickFirst(
+    raw.MCP_CIN,
+    raw.MediCal_Number,
+    raw.Medi_Cal_Number,
+    raw.Medical_Number,
+    raw.CIN,
+    raw.MC
+  );
+  // Same fallback chain as claim-audit MRN: Kaiser_MRN → Member_MRN → MRN → MCP_CIN / Medi-Cal.
+  const kaiserMrn = pickFirst(
+    raw.Kaiser_MRN,
+    raw.Member_MRN,
+    raw.MRN,
+    raw.MCP_CIN,
+    raw.MediCal_Number,
+    raw.Medi_Cal_Number,
+    raw.Medical_Number,
+    raw.CIN
+  );
   const gender = (() => {
     const g = pickFirst(raw.Gender, raw.Sex, raw.Member_Gender, raw.Senior_Gender).toUpperCase();
     if (g.startsWith('M')) return 'M';
