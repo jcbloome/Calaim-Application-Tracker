@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `94a7540f` (T2038 Caspio field mapping + next-claim-due workflow)  
+**HEAD:** `f4b5689f` (Caspio push — flag already-in-Caspio before Confirm)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
