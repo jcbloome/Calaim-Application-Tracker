@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
 import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
-import { evaluateIdentityConflict, extractIdentitySignals } from '@/lib/member-identity';
+import {
+  evaluateIdentityConflict,
+  extractIdentitySignals,
+  identityTokenLookupKeys,
+} from '@/lib/member-identity';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { applyIlsClaimsWorkflowFieldsToMemberData } from '@/lib/caspio-ils-claims-workflow';
@@ -1679,7 +1683,19 @@ export async function POST(request: NextRequest) {
       if (!value) return [];
       const compact = value.replace(/[\s-]/g, '');
       const digits = value.replace(/\D/g, '');
-      return Array.from(new Set([value, compact, digits].filter((item) => item && item.length >= 4)));
+      // Include leading-zero strip/pad keys so Excel-style MRNs still match Caspio.
+      return Array.from(
+        new Set(
+          [
+            value,
+            compact,
+            digits,
+            ...identityTokenLookupKeys(value),
+            ...identityTokenLookupKeys(compact),
+            ...identityTokenLookupKeys(digits),
+          ].filter((item) => item && item.length >= 4)
+        )
+      );
     };
 
     const hintedClientId2 = clean(

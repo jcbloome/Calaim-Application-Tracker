@@ -177,6 +177,24 @@ export function PushToCaspioDialog({
     const [clientId2ClearedLocally, setClientId2ClearedLocally] = useState(false);
     const [updateExistingCaspioOnly, setUpdateExistingCaspioOnly] = useState(false);
     const [confirmOverwriteAck, setConfirmOverwriteAck] = useState(false);
+    const [confirmAlreadyExistsAck, setConfirmAlreadyExistsAck] = useState(false);
+    const [isCheckingAlreadyInCaspio, setIsCheckingAlreadyInCaspio] = useState(false);
+    const [alreadyInCaspioError, setAlreadyInCaspioError] = useState('');
+    const [alreadyInCaspioMatch, setAlreadyInCaspioMatch] = useState<{
+      exists: boolean;
+      matchedBy: string | null;
+      matchedByLabel: string | null;
+      message: string;
+      match: {
+        clientId2?: string;
+        memberName?: string;
+        mrn?: string;
+        mediCal?: string;
+        calaimStatus?: string;
+        kaiserStatus?: string;
+        mco?: string;
+      } | null;
+    } | null>(null);
     const [isLoadingPushOverwritePreview, setIsLoadingPushOverwritePreview] = useState(false);
     const [pushOverwritePreviewError, setPushOverwritePreviewError] = useState('');
     const [pushOverwritePreviewItems, setPushOverwritePreviewItems] = useState<
@@ -1057,6 +1075,15 @@ export function PushToCaspioDialog({
                             caspioSentByName: pushedByName || null,
                             caspioSentByEmail: pushedByEmail || null,
                             caspioSentByUid: pushedByUid || null,
+                            caspioAlreadyExistedAtPush: Boolean(
+                              data?.alreadyExists || alreadyInCaspioMatch?.exists
+                            ),
+                            caspioMatchedByAtPush: String(
+                              data?.matchedBy || alreadyInCaspioMatch?.matchedBy || ''
+                            ).trim() || null,
+                            caspioMatchedClientId2AtPush: String(
+                              data?.clientId2 || alreadyInCaspioMatch?.match?.clientId2 || ''
+                            ).trim() || null,
                             caspioPushLastStatus: 'success',
                             caspioPushLastError: null,
                             caspioPushLastErrorCode: null,
@@ -1195,6 +1222,10 @@ export function PushToCaspioDialog({
     useEffect(() => {
       if (!isOpen) {
         setConfirmOverwriteAck(false);
+        setConfirmAlreadyExistsAck(false);
+        setAlreadyInCaspioMatch(null);
+        setAlreadyInCaspioError('');
+        setIsCheckingAlreadyInCaspio(false);
         setPushOverwritePreviewError('');
         setPushOverwritePreviewItems([]);
         setIsLoadingPushOverwritePreview(false);
@@ -1203,6 +1234,50 @@ export function PushToCaspioDialog({
       if (isAlreadySent || hasExistingClientId2) {
         setUpdateExistingCaspioOnly(true);
       }
+
+      // Pre-push identity check: flag members already in Caspio before first push.
+      if (!isAlreadySent) {
+        let cancelled = false;
+        const checkAlreadyInCaspio = async () => {
+          setIsCheckingAlreadyInCaspio(true);
+          setAlreadyInCaspioError('');
+          setConfirmAlreadyExistsAck(false);
+          try {
+            const response = await fetch('/api/admin/caspio/pre-push-exists', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ applicationData: application }),
+            });
+            const data = (await response.json().catch(() => ({}))) as any;
+            if (!response.ok || !data?.success) {
+              throw new Error(String(data?.error || data?.message || `Lookup failed (HTTP ${response.status})`));
+            }
+            if (cancelled) return;
+            setAlreadyInCaspioMatch({
+              exists: Boolean(data.exists),
+              matchedBy: data.matchedBy || null,
+              matchedByLabel: data.matchedByLabel || null,
+              message: String(data.message || ''),
+              match: data.match || null,
+            });
+            if (data.exists) {
+              setUpdateExistingCaspioOnly(true);
+            }
+          } catch (error: any) {
+            if (!cancelled) {
+              setAlreadyInCaspioMatch(null);
+              setAlreadyInCaspioError(String(error?.message || 'Could not check Caspio for an existing member.'));
+            }
+          } finally {
+            if (!cancelled) setIsCheckingAlreadyInCaspio(false);
+          }
+        };
+        void checkAlreadyInCaspio();
+        return () => {
+          cancelled = true;
+        };
+      }
+
       if (!isAlreadySent) return;
 
       let cancelled = false;
@@ -1682,6 +1757,95 @@ export function PushToCaspioDialog({
                         </AlertDescription>
                     </Alert>
                 )}
+                {!isAlreadySent ? (
+                  <Alert
+                    className={
+                      alreadyInCaspioMatch?.exists
+                        ? 'border-amber-300 bg-amber-50 text-amber-950'
+                        : alreadyInCaspioError
+                          ? 'border-slate-300 bg-slate-50 text-slate-900'
+                          : 'border-slate-200 bg-white'
+                    }
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>
+                      {isCheckingAlreadyInCaspio
+                        ? 'Checking Caspio for an existing member…'
+                        : alreadyInCaspioMatch?.exists
+                          ? 'Already in Caspio — confirm update'
+                          : alreadyInCaspioError
+                            ? 'Could not verify Caspio identity'
+                            : 'Caspio identity check'}
+                    </AlertTitle>
+                    <AlertDescription className="space-y-2 text-xs">
+                      {isCheckingAlreadyInCaspio ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Looking up Client_ID2, MRN, and Medi-Cal Number in CalAIM_tbl_Members…
+                        </div>
+                      ) : alreadyInCaspioMatch?.exists ? (
+                        <>
+                          <div>
+                            This person already has a Caspio profile
+                            {alreadyInCaspioMatch.matchedByLabel
+                              ? ` (matched by ${alreadyInCaspioMatch.matchedByLabel})`
+                              : ''}
+                            . Confirm &amp; Push will <strong>update the existing record</strong> — it will not
+                            create a new member.
+                          </div>
+                          <div className="rounded border border-amber-200 bg-white px-2 py-1.5 text-foreground">
+                            <div>
+                              <span className="font-medium">
+                                {alreadyInCaspioMatch.match?.memberName || 'Existing member'}
+                              </span>
+                              {alreadyInCaspioMatch.match?.clientId2
+                                ? ` · Client_ID2 ${alreadyInCaspioMatch.match.clientId2}`
+                                : ''}
+                            </div>
+                            <div className="text-muted-foreground">
+                              {[
+                                alreadyInCaspioMatch.match?.mrn
+                                  ? `MRN ${alreadyInCaspioMatch.match.mrn}`
+                                  : '',
+                                alreadyInCaspioMatch.match?.calaimStatus
+                                  ? `CalAIM ${alreadyInCaspioMatch.match.calaimStatus}`
+                                  : '',
+                                alreadyInCaspioMatch.match?.kaiserStatus
+                                  ? `Kaiser ${alreadyInCaspioMatch.match.kaiserStatus}`
+                                  : '',
+                                alreadyInCaspioMatch.match?.mco || '',
+                              ]
+                                .filter(Boolean)
+                                .join(' · ') || 'Matched in CalAIM_tbl_Members'}
+                            </div>
+                          </div>
+                          <label className="flex items-start gap-2 rounded border border-amber-200 bg-white px-2 py-1.5 text-amber-950">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={confirmAlreadyExistsAck}
+                              onChange={(e) => setConfirmAlreadyExistsAck(e.target.checked)}
+                            />
+                            <span>
+                              I understand this member is already in Caspio and Confirm &amp; Push will update
+                              that existing profile (no new row).
+                            </span>
+                          </label>
+                        </>
+                      ) : alreadyInCaspioError ? (
+                        <div>
+                          {alreadyInCaspioError} You can still push; Caspio will match or create during
+                          submit. Prefer fixing the lookup before creating a possible duplicate.
+                        </div>
+                      ) : (
+                        <div>
+                          No matching Caspio member found by Client_ID2, MRN, or Medi-Cal Number. Confirm
+                          &amp; Push will create a new profile.
+                        </div>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
                 {!hasExistingClientId2 && clientId2ClearedLocally && !isAlreadySent && (
                     <Alert className="border-green-200 bg-green-50 text-green-900">
                         <CheckCircle2 className="h-4 w-4 text-green-700" />
@@ -1937,10 +2101,12 @@ export function PushToCaspioDialog({
                           isPushingNotesOnly ||
                           isSendingToCaspio ||
                           isLoadingPushOverwritePreview ||
+                          isCheckingAlreadyInCaspio ||
                           (hasExistingClientId2 && !isAlreadySent) ||
                           pushGateBlocked ||
                           !readinessComplete ||
-                          (isAlreadySent && !confirmOverwriteAck)
+                          (isAlreadySent && !confirmOverwriteAck) ||
+                          (Boolean(alreadyInCaspioMatch?.exists) && !isAlreadySent && !confirmAlreadyExistsAck)
                         }
                     >
                         <span className="inline-flex items-center gap-2">

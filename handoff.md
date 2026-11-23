@@ -15,6 +15,11 @@
 
 ---
 
+## Changes 2026-11-23
+
+- **Caspio push — flag “already in Caspio” before Confirm:** Opening Push to Caspio runs `/api/admin/caspio/pre-push-exists` (Client_ID2 → MRN → Medi-Cal, with leading-zero variants). If a match is found, an amber banner shows the existing profile and requires acknowledgement; push is locked to update-existing. Success persists `caspioAlreadyExistedAtPush` / `caspioMatchedByAtPush`; progress card shows **Caspio: Updated existing**. Push MRN lookup also uses `identityTokenLookupKeys`.
+  - Files: `src/app/api/admin/caspio/pre-push-exists/route.ts`, `PushToCaspioDialog.tsx`, `push-cs-summary/route.ts`, `ApplicationProgressSummaryCard.tsx`, `handoff.md`.
+
 ## Changes 2026-11-20
 
 - **Kaiser T2038 future claims — last DOS + ≥30 days:** After past claimables are cleared, audit shows **Last DOS**, days since, **Next eligible**, and a **Next claim due** queue/filter. Preview/Push is offered only when ≥30 days (1 month) since last Date_of_Service; Connections push still enforces the same spacing.

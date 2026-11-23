@@ -146,13 +146,32 @@ export function ApplicationProgressSummaryCard({
             )}
             <span>{eligibilityCompleted ? 'Eligibility Check: Complete' : 'Eligibility Check: Pending'}</span>
           </div>
-          <div className={cn('flex items-center gap-2 text-base font-semibold', caspioPushed ? 'text-green-700' : 'text-amber-700')}>
+          <div
+            className={cn(
+              'flex items-center gap-2 text-base font-semibold',
+              caspioPushed
+                ? Boolean((application as any)?.caspioAlreadyExistedAtPush)
+                  ? 'text-amber-800'
+                  : 'text-green-700'
+                : 'text-amber-700'
+            )}
+          >
             {caspioPushed ? (
               <CheckCircle2 className="h-5 w-5" />
             ) : (
               <XCircle className="h-5 w-5" />
             )}
-            <span>{caspioPushed ? 'Caspio: Pushed' : 'Caspio: Pending'}</span>
+            <span>
+              {caspioPushed
+                ? Boolean((application as any)?.caspioAlreadyExistedAtPush)
+                  ? `Caspio: Updated existing${
+                      String((application as any)?.caspioMatchedByAtPush || '').trim()
+                        ? ` (${String((application as any).caspioMatchedByAtPush)})`
+                        : ''
+                    }`
+                  : 'Caspio: Pushed'
+                : 'Caspio: Pending'}
+            </span>
           </div>
           <div
             className={cn(
