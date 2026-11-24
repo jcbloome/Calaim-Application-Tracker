@@ -559,6 +559,8 @@ export async function POST(request: NextRequest) {
         caspioBody: Record<string, string | number>;
       }> = [];
 
+      const dateOfServiceOverride = String(body.dateOfService || '').trim();
+
       for (const preview of toPush) {
         const docId = justificationDocId(preview.clientId2, preview.monthKey);
         const ref = adminDb.collection(KAISER_T2038_CLAIM_AUDIT_JUSTIFICATIONS_COLLECTION).doc(docId);
@@ -567,20 +569,30 @@ export async function POST(request: NextRequest) {
           const existingData = (existing.exists ? existing.data() : {}) as Record<string, unknown>;
           const alreadyAt = String(existingData?.caspioPushedAt || '').trim();
           if (alreadyAt) {
+            // Hard-block re-push — do not treat as success.
             results.push({
               id: preview.id,
               clientId2: preview.clientId2,
               monthKey: preview.monthKey,
-              ok: true,
+              ok: false,
               alreadyPushed: true,
               pkId: String(existingData?.caspioClaimPkId || ''),
               caspioPushedAt: alreadyAt,
+              error: `Already pushed on ${alreadyAt.slice(0, 10)} — cannot push again.`,
               caspioBody: preview.caspioBody,
             });
             continue;
           }
 
-          const inserted = await insertCaspioClaim(credentials, token, preview.caspioBody);
+          const overrideDos =
+            toPush.length === 1 && dateOfServiceOverride ? dateOfServiceOverride : '';
+          const finalDos = overrideDos || preview.dateOfService;
+          const caspioBody = {
+            ...preview.caspioBody,
+            ...(finalDos ? { Date_of_Service: finalDos } : {}),
+          };
+
+          const inserted = await insertCaspioClaim(credentials, token, caspioBody);
           const pkId = String(
             (inserted as Record<string, unknown>)?.PK_ID ||
               (inserted as Record<string, unknown>)?.Record_ID ||
@@ -597,7 +609,7 @@ export async function POST(request: NextRequest) {
             updatedAt: caspioPushedAt,
             caspioPushedAt,
             caspioClaimPkId: pkId,
-            caspioDateOfService: preview.dateOfService,
+            caspioDateOfService: finalDos,
           };
           await ref.set(
             {
@@ -613,7 +625,7 @@ export async function POST(request: NextRequest) {
             ok: true,
             pkId,
             caspioPushedAt,
-            caspioBody: preview.caspioBody,
+            caspioBody,
           });
         } catch (err: unknown) {
           results.push({

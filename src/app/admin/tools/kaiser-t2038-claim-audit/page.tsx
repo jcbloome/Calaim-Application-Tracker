@@ -774,7 +774,26 @@ export default function KaiserT2038ClaimAuditPage() {
       opts?: { onlyUnpushed?: boolean; single?: { clientId2: string; monthKey: string; memberName?: string } }
     ) => {
       if (opts?.single) {
-        setClaimSubmitTargets([opts.single]);
+        const row = rows.find((item) => item.clientId2 === opts.single!.clientId2);
+        const cell = row?.months?.find((month) => month.monthKey === opts.single!.monthKey);
+        const alreadyPushed = Boolean(cell?.caspioPushedAt);
+        if (alreadyPushed) {
+          toast({
+            title: 'Already pushed',
+            description: `${opts.single.memberName || opts.single.clientId2} · ${
+              opts.single.monthKey
+            } was already pushed and cannot be pushed again.`,
+            variant: 'destructive',
+          });
+          return;
+        }
+        setClaimSubmitTargets([
+          {
+            ...opts.single,
+            alreadyPushed: false,
+            caspioDateOfService: cell?.caspioDateOfService || '',
+          },
+        ]);
         setClaimSubmitOpen(true);
         return;
       }
@@ -790,6 +809,8 @@ export default function KaiserT2038ClaimAuditPage() {
             clientId2: member.clientId2,
             monthKey: month.key,
             memberName: member.name,
+            alreadyPushed: Boolean(cell?.caspioPushedAt),
+            caspioDateOfService: cell?.caspioDateOfService || '',
           });
         }
       }
@@ -825,6 +846,7 @@ export default function KaiserT2038ClaimAuditPage() {
             status: 'claimable' as const,
             caspioPushedAt: hit.caspioPushedAt,
             caspioClaimPkId: hit.caspioClaimPkId || month.caspioClaimPkId || '',
+            caspioDateOfService: hit.caspioDateOfService || month.caspioDateOfService || '',
           };
         });
         return changed ? { ...row, months } : row;

@@ -10,11 +10,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ChevronLeft, ChevronRight, Download, Send } from 'lucide-react';
 import { CONNECTIONS_CLAIM_SUBMIT_TABLE } from '@/lib/kaiser-t2038-connections-claim-submit';
+import { formatUsDate, parseDateOnly } from '@/lib/t2038-claims';
 
-export type ClaimSubmitTarget = { clientId2: string; monthKey: string; memberName?: string };
+export type ClaimSubmitTarget = {
+  clientId2: string;
+  monthKey: string;
+  memberName?: string;
+  /** When set, modal opens read-only for this month (already pushed). */
+  alreadyPushed?: boolean;
+  caspioDateOfService?: string;
+};
 
 type PreviewField = { label: string; value: string };
 
@@ -24,10 +33,13 @@ type ClaimPreview = {
   monthKey: string;
   monthLabel: string;
   dateOfService: string;
+  lastDateOfService?: string;
+  dosAdjustedForLastClaim?: boolean;
   memberName: string;
   blockers: string[];
   displayFields: PreviewField[];
   caspioBody: Record<string, string | number>;
+  alreadyPushed?: boolean;
 };
 
 export type ClaimPushResult = {
@@ -35,6 +47,7 @@ export type ClaimPushResult = {
   monthKey: string;
   caspioPushedAt: string;
   caspioClaimPkId?: string;
+  caspioDateOfService?: string;
   alreadyPushed?: boolean;
 };
 
@@ -67,6 +80,25 @@ function downloadTextFile(filename: string, contents: string) {
   URL.revokeObjectURL(url);
 }
 
+/** HTML date input value (yyyy-mm-dd) from MM/DD/YYYY or Date. */
+function toDateInputValue(value: string): string {
+  const parsed = parseDateOnly(value);
+  if (!parsed) return '';
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function fromDateInputValue(value: string): string {
+  const match = String(value || '')
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return formatUsDate(date);
+}
+
 export function ClaimableClaimSubmitModal({
   open,
   onOpenChange,
@@ -80,8 +112,18 @@ export function ClaimableClaimSubmitModal({
   const [previews, setPreviews] = useState<ClaimPreview[]>([]);
   const [index, setIndex] = useState(0);
   const [pushedIds, setPushedIds] = useState<Set<string>>(new Set());
+  /** Staff-selected DOS overrides keyed by preview id (MM/DD/YYYY). */
+  const [dosOverrides, setDosOverrides] = useState<Record<string, string>>({});
   const [lastEdi, setLastEdi] = useState('');
   const [showAllFields, setShowAllFields] = useState(false);
+
+  const alreadyPushedTargetKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const target of targets) {
+      if (target.alreadyPushed) set.add(`${target.clientId2}__${target.monthKey}`);
+    }
+    return set;
+  }, [targets]);
 
   const loadPreviews = useCallback(async () => {
     if (!targets.length) {
@@ -90,8 +132,14 @@ export function ClaimableClaimSubmitModal({
     }
     setIsLoading(true);
     setLastEdi('');
-    setPushedIds(new Set());
+    setDosOverrides({});
     setShowAllFields(false);
+    // Seed from targets that are already locked as pushed.
+    const seeded = new Set<string>();
+    for (const target of targets) {
+      if (target.alreadyPushed) seeded.add(`${target.clientId2}__${target.monthKey}`);
+    }
+    setPushedIds(seeded);
     try {
       const idToken = await getIdToken();
       const response = await fetch('/api/admin/kaiser-t2038-claim-submit', {
@@ -112,8 +160,37 @@ export function ClaimableClaimSubmitModal({
       if (!response.ok || !body?.success) {
         throw new Error(String(body?.error || `HTTP ${response.status}`));
       }
-      const list = Array.isArray(body.previews) ? (body.previews as ClaimPreview[]) : [];
+      const list = (Array.isArray(body.previews) ? (body.previews as ClaimPreview[]) : []).map(
+        (preview) => {
+          const key = `${preview.clientId2}__${preview.monthKey}`;
+          const target = targets.find(
+            (item) => item.clientId2 === preview.clientId2 && item.monthKey === preview.monthKey
+          );
+          const alreadyPushed = Boolean(target?.alreadyPushed) || alreadyPushedTargetKeys.has(key);
+          const storedDos = String(target?.caspioDateOfService || '').trim();
+          if (alreadyPushed && storedDos) {
+            return {
+              ...preview,
+              alreadyPushed: true,
+              dateOfService: storedDos,
+              caspioBody: { ...preview.caspioBody, Date_of_Service: storedDos },
+              displayFields: (preview.displayFields || []).map((field) =>
+                field.label === 'Date_of_Service' ? { ...field, value: storedDos } : field
+              ),
+              blockers: [],
+            };
+          }
+          return { ...preview, alreadyPushed };
+        }
+      );
       setPreviews(list);
+      setPushedIds((prev) => {
+        const next = new Set(prev);
+        for (const preview of list) {
+          if (preview.alreadyPushed) next.add(preview.id);
+        }
+        return next;
+      });
       setIndex(0);
     } catch (err: unknown) {
       toast({
@@ -125,7 +202,7 @@ export function ClaimableClaimSubmitModal({
     } finally {
       setIsLoading(false);
     }
-  }, [getIdToken, targets, toast]);
+  }, [alreadyPushedTargetKeys, getIdToken, targets, toast]);
 
   useEffect(() => {
     if (open) void loadPreviews();
@@ -136,21 +213,54 @@ export function ClaimableClaimSubmitModal({
   const sameMemberAsPrev = Boolean(
     current && prev && current.clientId2 && current.clientId2 === prev.clientId2
   );
+  const currentIsPushed = Boolean(
+    current && (current.alreadyPushed || pushedIds.has(current.id))
+  );
+  const effectiveDos = current
+    ? String(dosOverrides[current.id] || current.dateOfService || '').trim()
+    : '';
 
   const visibleFields = useMemo(() => {
     if (!current) return [];
     const fields = current.displayFields || [];
-    if (showAllFields || !sameMemberAsPrev) return fields;
-    // Same member as previous claim — only show fields that change (DOS etc.).
-    return fields.filter((field) => PER_CLAIM_FIELDS.has(field.label));
-  }, [current, sameMemberAsPrev, showAllFields]);
+    const withOverride = fields.map((field) => {
+      if (field.label !== 'Date_of_Service') return field;
+      return { ...field, value: effectiveDos || field.value };
+    });
+    if (showAllFields || !sameMemberAsPrev) return withOverride;
+    return withOverride.filter((field) => PER_CLAIM_FIELDS.has(field.label));
+  }, [current, effectiveDos, sameMemberAsPrev, showAllFields]);
+
+  const setDosForCurrent = (isoDate: string) => {
+    if (!current || currentIsPushed) return;
+    const us = fromDateInputValue(isoDate);
+    if (!us) return;
+    setDosOverrides((prevMap) => ({ ...prevMap, [current.id]: us }));
+  };
 
   const pushCurrent = async () => {
     if (!current) return;
+    if (currentIsPushed) {
+      toast({
+        title: 'Already pushed',
+        description: `${current.memberName} · ${current.monthLabel} was already pushed and cannot be pushed again.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     if (current.blockers.length) {
       toast({
         title: 'Claim blocked',
         description: current.blockers.join('; '),
+        variant: 'destructive',
+      });
+      return;
+    }
+    const dateOfService = effectiveDos || current.dateOfService;
+    if (!dateOfService) {
+      toast({
+        title: 'Date_of_Service required',
+        description: 'Select a Date of Service before pushing.',
         variant: 'destructive',
       });
       return;
@@ -167,6 +277,7 @@ export function ClaimableClaimSubmitModal({
         body: JSON.stringify({
           action: 'push',
           previewId: current.id,
+          dateOfService,
           targets: [{ clientId2: current.clientId2, monthKey: current.monthKey }],
         }),
       });
@@ -186,10 +297,39 @@ export function ClaimableClaimSubmitModal({
           )
         );
       }
+      // Treat alreadyPushed API response as a hard lock (should not happen with new API).
+      if (body.results?.[0]?.alreadyPushed) {
+        setPushedIds((prevSet) => new Set([...prevSet, current.id]));
+        toast({
+          title: 'Already pushed',
+          description: `${current.memberName} · ${current.monthLabel} was already in Caspio. Push is locked.`,
+          variant: 'destructive',
+        });
+        onPushed?.(
+          (Array.isArray(body.results) ? body.results : [])
+            .filter((row: { ok?: boolean }) => row?.ok)
+            .map(
+              (row: {
+                clientId2: string;
+                monthKey: string;
+                caspioPushedAt?: string;
+                pkId?: string;
+                alreadyPushed?: boolean;
+              }) => ({
+                clientId2: String(row.clientId2 || ''),
+                monthKey: String(row.monthKey || ''),
+                caspioPushedAt: String(row.caspioPushedAt || new Date().toISOString()),
+                caspioClaimPkId: String(row.pkId || ''),
+                alreadyPushed: true,
+              })
+            )
+        );
+        return;
+      }
       setPushedIds((prevSet) => new Set([...prevSet, current.id]));
       if (body.edi) setLastEdi(String(body.edi));
       const pushResults: ClaimPushResult[] = (Array.isArray(body.results) ? body.results : [])
-        .filter((row: { ok?: boolean }) => row?.ok)
+        .filter((row: { ok?: boolean; alreadyPushed?: boolean }) => row?.ok && !row?.alreadyPushed)
         .map(
           (row: {
             clientId2: string;
@@ -197,19 +337,20 @@ export function ClaimableClaimSubmitModal({
             caspioPushedAt?: string;
             pkId?: string;
             alreadyPushed?: boolean;
+            caspioBody?: Record<string, string | number>;
           }) => ({
             clientId2: String(row.clientId2 || ''),
             monthKey: String(row.monthKey || ''),
             caspioPushedAt: String(row.caspioPushedAt || new Date().toISOString()),
             caspioClaimPkId: String(row.pkId || ''),
+            caspioDateOfService: String(row.caspioBody?.Date_of_Service || dateOfService || ''),
             alreadyPushed: Boolean(row.alreadyPushed),
           })
         );
       if (pushResults.length) onPushed?.(pushResults);
-      const already = Boolean(body.results?.[0]?.alreadyPushed);
       toast({
-        title: already ? 'Already pushed' : 'Claim pushed to Caspio',
-        description: `${current.memberName} · ${current.monthLabel} → ${CONNECTIONS_CLAIM_SUBMIT_TABLE}${
+        title: 'Claim pushed to Caspio',
+        description: `${current.memberName} · ${current.monthLabel} · DOS ${dateOfService} → ${CONNECTIONS_CLAIM_SUBMIT_TABLE}${
           body.results?.[0]?.pkId ? ` · PK_ID ${body.results[0].pkId}` : ''
         }. No longer pushable.`,
       });
@@ -264,8 +405,8 @@ export function ClaimableClaimSubmitModal({
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">{current.memberName}</div>
                   <div className="text-xs text-muted-foreground">
-                    {current.clientId2} · {current.monthLabel} · DOS {current.dateOfService || '—'}
-                    {pushedIds.has(current.id) ? ' · pushed' : ''}
+                    {current.clientId2} · {current.monthLabel} · DOS {effectiveDos || '—'}
+                    {currentIsPushed ? ' · pushed (locked)' : ''}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -295,11 +436,37 @@ export function ClaimableClaimSubmitModal({
                 </div>
               </div>
 
+              {currentIsPushed ? (
+                <div className="rounded border border-emerald-300 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-950">
+                  Already pushed to Caspio — Date_of_Service and Push are locked for this month.
+                </div>
+              ) : null}
+
               {current.blockers.length > 0 ? (
                 <div className="rounded border border-rose-300 bg-rose-50 px-2.5 py-2 text-xs text-rose-950">
                   {current.blockers.join(' · ')}
                 </div>
               ) : null}
+
+              <div className="rounded border border-amber-200 bg-amber-50/80 px-2.5 py-2">
+                <label className="flex flex-col gap-1.5 text-sm sm:flex-row sm:items-center sm:gap-3">
+                  <span className="shrink-0 font-mono text-[12px] text-muted-foreground">
+                    Date_of_Service
+                  </span>
+                  <Input
+                    type="date"
+                    className="h-8 w-full max-w-[11rem] bg-white"
+                    value={toDateInputValue(effectiveDos)}
+                    disabled={currentIsPushed || isPushing}
+                    onChange={(event) => setDosForCurrent(event.target.value)}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {current.lastDateOfService
+                      ? `Suggested ${current.dateOfService || '—'} · last claimed ${current.lastDateOfService}`
+                      : `Suggested ${current.dateOfService || '—'}`}
+                  </span>
+                </label>
+              </div>
 
               {sameMemberAsPrev && !showAllFields ? (
                 <button
@@ -353,7 +520,12 @@ export function ClaimableClaimSubmitModal({
               type="button"
               size="sm"
               disabled={
-                !current || isLoading || isPushing || current.blockers.length > 0 || pushedIds.has(current.id)
+                !current ||
+                isLoading ||
+                isPushing ||
+                currentIsPushed ||
+                current.blockers.length > 0 ||
+                !effectiveDos
               }
               onClick={() => void pushCurrent()}
             >
@@ -362,7 +534,7 @@ export function ClaimableClaimSubmitModal({
               ) : (
                 <Send className="mr-1.5 h-3.5 w-3.5" />
               )}
-              Push this claim
+              {currentIsPushed ? 'Already pushed' : 'Push this claim'}
             </Button>
           </div>
         </DialogFooter>

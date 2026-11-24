@@ -163,6 +163,8 @@ export type ClaimMonthCell = {
   caspioPushedAt?: string;
   /** Caspio PK_ID from the insert, when known. */
   caspioClaimPkId?: string;
+  /** Date_of_Service that was pushed (MM/DD/YYYY). */
+  caspioDateOfService?: string;
 };
 
 export type SubmittedClaimRow = {
@@ -765,6 +767,7 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
         noteCount: 0,
         caspioPushedAt: justification?.caspioPushedAt || '',
         caspioClaimPkId: justification?.caspioClaimPkId || '',
+        caspioDateOfService: justification?.caspioDateOfService || '',
       };
     });
 
