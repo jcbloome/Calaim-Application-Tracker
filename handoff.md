@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `f4b5689f` (Caspio push — flag already-in-Caspio before Confirm)  
+**HEAD:** `ad95ac16` (T2038 claim push — lock after push + selectable DOS)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
@@ -17,7 +17,7 @@
 
 ## Changes 2026-11-23
 
-- **Kaiser T2038 claim push — lock after push + selectable DOS:** Already-pushed months cannot be opened/pushed again (API hard-blocks re-push). Claim preview includes a **Date_of_Service** date picker; staff can change DOS before Confirm, and the selected value is written to Caspio / stored on the justification.
+- **Kaiser T2038 claim push — lock after push + selectable DOS** (`ad95ac16`): Already-pushed months cannot be opened/pushed again (API hard-blocks re-push). Claim preview includes a **Date_of_Service** date picker; staff can change DOS before Confirm, and the selected value is written to Caspio / stored on the justification.
   - Files: `ClaimableClaimSubmitModal.tsx`, `kaiser-t2038-claim-submit/route.ts`, `kaiser-t2038-claim-audit.ts`, `page.tsx`, `handoff.md`.
 
 - **Caspio push — flag “already in Caspio” before Confirm:** Opening Push to Caspio runs `/api/admin/caspio/pre-push-exists` (Client_ID2 → MRN → Medi-Cal, with leading-zero variants). If a match is found, an amber banner shows the existing profile and requires acknowledgement; push is locked to update-existing. Success persists `caspioAlreadyExistedAtPush` / `caspioMatchedByAtPush`; progress card shows **Caspio: Updated existing**. Push MRN lookup also uses `identityTokenLookupKeys`.
