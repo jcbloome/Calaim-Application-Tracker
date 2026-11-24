@@ -10,6 +10,7 @@ import {
   type ConnectionsT2038ClaimPreview,
 } from '@/lib/kaiser-t2038-connections-claim-submit';
 import {
+  appendClaimAuditActivity,
   collectServiceDatesFromClaimRow,
   DEFAULT_NOTES_CLAIMABLE_REASON,
   isClaimRowSubmitted,
@@ -618,6 +619,24 @@ export async function POST(request: NextRequest) {
             },
             { merge: true }
           );
+          await appendClaimAuditActivity(adminDb, {
+            clientId2: preview.clientId2,
+            monthKey: preview.monthKey,
+            memberName: preview.memberName || '',
+            action: 'claim_pushed',
+            summary: `Pushed ${preview.monthLabel || preview.monthKey} to Caspio${
+              finalDos ? ` · DOS ${finalDos}` : ''
+            }${pkId ? ` · PK_ID ${pkId}` : ''}`,
+            actorName: String(authz.name || authz.email || authz.uid || 'Admin').trim(),
+            actorEmail: String(authz.email || '').trim(),
+            actorUid: String(authz.uid || ''),
+            createdAt: caspioPushedAt,
+            meta: {
+              caspioClaimPkId: pkId,
+              caspioDateOfService: finalDos || '',
+              table: CONNECTIONS_CLAIM_SUBMIT_TABLE,
+            },
+          });
           results.push({
             id: preview.id,
             clientId2: preview.clientId2,

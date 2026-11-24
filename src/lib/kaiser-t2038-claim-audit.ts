@@ -13,6 +13,29 @@ import {
 export const KAISER_T2038_CLAIM_AUDIT_JUSTIFICATIONS_COLLECTION =
   'kaiser_t2038_claim_month_justifications';
 
+/** Append-only staff/system activity for the claim-audit page (push, dispositions, etc.). */
+export const KAISER_T2038_CLAIM_AUDIT_ACTIVITY_COLLECTION = 'kaiser_t2038_claim_audit_activity';
+
+export type ClaimAuditActivityAction =
+  | 'marked_claimable'
+  | 'marked_no_claim'
+  | 'cleared'
+  | 'claim_pushed';
+
+export type ClaimAuditActivityEntry = {
+  id: string;
+  clientId2: string;
+  monthKey: string;
+  memberName?: string;
+  action: ClaimAuditActivityAction;
+  summary: string;
+  actorName: string;
+  actorEmail: string;
+  actorUid: string;
+  createdAt: string;
+  meta?: Record<string, string>;
+};
+
 const clean = (value: unknown) => String(value ?? '').trim();
 
 const pickFirst = (...values: unknown[]) => {
@@ -258,6 +281,9 @@ export type MonthJustification = {
 
 export const DEFAULT_JUSTIFY_REASON = 'No claim — staff review';
 export const DEFAULT_CLAIMABLE_REASON = 'Claimable — forgotten claim queued for Caspio batch';
+/** Staff override when member-notes has no entry that calendar month. */
+export const DEFAULT_CLAIMABLE_OVERRIDE_REASON =
+  'Claimable — staff override (no notes that month)';
 /** Auto when member-notes has no entry in that calendar month. */
 export const DEFAULT_NO_WORK_REASON = 'Not claimable — no notes that month';
 /** Auto when member-notes has at least one entry in that calendar month. */
@@ -270,7 +296,42 @@ export function isNoWorkJustification(reason: unknown): boolean {
 
 export function isNotesClaimableJustification(reason: unknown): boolean {
   const value = clean(reason);
-  return value === DEFAULT_NOTES_CLAIMABLE_REASON || value === DEFAULT_CLAIMABLE_REASON;
+  return (
+    value === DEFAULT_NOTES_CLAIMABLE_REASON ||
+    value === DEFAULT_CLAIMABLE_REASON ||
+    value === DEFAULT_CLAIMABLE_OVERRIDE_REASON ||
+    /^claimable/i.test(value)
+  );
+}
+
+/** Staff explicitly overrode “no notes → not claimable”. */
+export function isClaimableStaffOverride(reason: unknown): boolean {
+  return clean(reason) === DEFAULT_CLAIMABLE_OVERRIDE_REASON;
+}
+
+export async function appendClaimAuditActivity(
+  adminDb: { collection: (name: string) => { add: (data: Record<string, unknown>) => Promise<unknown> } },
+  entry: Omit<ClaimAuditActivityEntry, 'id'>
+): Promise<void> {
+  try {
+    await adminDb.collection(KAISER_T2038_CLAIM_AUDIT_ACTIVITY_COLLECTION).add({
+      clientId2: entry.clientId2,
+      monthKey: entry.monthKey,
+      memberName: entry.memberName || '',
+      action: entry.action,
+      summary: entry.summary,
+      actorName: entry.actorName,
+      actorEmail: entry.actorEmail,
+      actorUid: entry.actorUid,
+      createdAt: entry.createdAt,
+      meta: entry.meta || {},
+    });
+  } catch (err) {
+    console.warn(
+      '[kaiser-t2038-claim-audit] activity log write failed:',
+      String((err as { message?: string })?.message || err)
+    );
+  }
 }
 
 export function monthKeyFromDate(date: Date): string {
@@ -298,12 +359,16 @@ export function listMonthKeysInclusive(start: Date, end: Date): string[] {
   return keys;
 }
 
-/** Open gaps older than this many calendar months are ignored. */
-export const CLAIM_AUDIT_GAP_MAX_AGE_MONTHS = 6;
+/**
+ * Open gaps / claimable months older than this many calendar months before
+ * today's month are excluded from the T2038 audit (not claimable, not shown).
+ */
+export const CLAIM_AUDIT_GAP_MAX_AGE_MONTHS = 3;
 
 /**
- * Actionable gap months only: drop calendar year 2025 (and earlier),
- * and anything more than six months before today's month.
+ * Actionable audit months only: drop calendar year 2025 (and earlier),
+ * and anything more than 3 months before today's month.
+ * Example (today Nov 2026): keep Aug–Nov 2026; drop Jul 2026 and earlier.
  */
 export function isActionableClaimAuditMonth(monthKey: string, today = startOfToday()): boolean {
   const match = String(monthKey || '').trim().match(/^(\d{4})-(\d{2})$/);
@@ -672,8 +737,8 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
     const firstClaimInAuth = datedClaims[0] || null;
     const firstClaimDate = firstClaimEver?.dateOfService || '';
     const firstClaimMonthKey = firstClaimEver?.monthKey || '';
-    // Latest claimed DOS (submitted). Also consider unsubmitted entered rows so a just-pushed
-    // Connections claim (blank Claim_Status) still spaces the next future claim.
+    // Latest claimed DOS (submitted). Also consider unsubmitted entered rows + Connections
+    // pushes (justification caspioDateOfService) so a just-pushed claim spaces the next one.
     const lastSubmitted = datedClaimsAll.length ? datedClaimsAll[datedClaimsAll.length - 1] : null;
     let lastClaimDateObj =
       parseClaimServiceDate(lastSubmitted?.dateOfServiceIso || lastSubmitted?.dateOfService) || null;
@@ -681,21 +746,6 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
       const d = parseClaimServiceDate(claim.dateOfServiceIso || claim.dateOfService);
       if (d && (!lastClaimDateObj || d.getTime() > lastClaimDateObj.getTime())) lastClaimDateObj = d;
     }
-    const lastClaimDate = lastClaimDateObj ? formatUsDate(lastClaimDateObj) : '';
-    const lastClaimDateIso = lastClaimDateObj
-      ? `${lastClaimDateObj.getFullYear()}${String(lastClaimDateObj.getMonth() + 1).padStart(2, '0')}${String(
-          lastClaimDateObj.getDate()
-        ).padStart(2, '0')}`
-      : '';
-    const daysSinceLastClaim = lastClaimDateObj ? daysBetween(lastClaimDateObj, today) : null;
-    const nextEligibleObj = lastClaimDateObj
-      ? new Date(
-          lastClaimDateObj.getFullYear(),
-          lastClaimDateObj.getMonth(),
-          lastClaimDateObj.getDate() + T2038_FUTURE_CLAIM_MIN_DAYS
-        )
-      : null;
-    const nextClaimEligibleDate = nextEligibleObj ? formatUsDate(nextEligibleObj) : '';
     // "No claims yet": zero clearinghouse-submitted rows on the member (any DOS).
     // Blank Claim_Status does not clear this — counted in unsubmittedClaimCount instead.
     const noClaimsYet =
@@ -771,15 +821,53 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
       };
     });
 
+    // Connections pushes (any month key, including next-claim months not yet in the grid).
+    const pushedMonthKeys = new Set<string>();
+    for (const [key, justification] of opts.justificationsByKey.entries()) {
+      if (!clean(justification?.caspioPushedAt)) continue;
+      const prefix = `${base.clientId2}__`;
+      if (!key.startsWith(prefix)) continue;
+      const monthKey = key.slice(prefix.length);
+      if (monthKey) pushedMonthKeys.add(monthKey);
+      const d =
+        parseClaimServiceDate(justification?.caspioDateOfService) ||
+        parseClaimServiceDate(justification?.updatedAt);
+      if (d && (!lastClaimDateObj || d.getTime() > lastClaimDateObj.getTime())) lastClaimDateObj = d;
+    }
+    for (const month of months) {
+      if (clean(month.caspioPushedAt)) pushedMonthKeys.add(month.monthKey);
+      const d = parseClaimServiceDate(month.caspioDateOfService);
+      if (d && (!lastClaimDateObj || d.getTime() > lastClaimDateObj.getTime())) lastClaimDateObj = d;
+    }
+
+    const lastClaimDate = lastClaimDateObj ? formatUsDate(lastClaimDateObj) : '';
+    const lastClaimDateIso = lastClaimDateObj
+      ? `${lastClaimDateObj.getFullYear()}${String(lastClaimDateObj.getMonth() + 1).padStart(2, '0')}${String(
+          lastClaimDateObj.getDate()
+        ).padStart(2, '0')}`
+      : '';
+    const daysSinceLastClaim = lastClaimDateObj ? daysBetween(lastClaimDateObj, today) : null;
+    const nextEligibleObj = lastClaimDateObj
+      ? new Date(
+          lastClaimDateObj.getFullYear(),
+          lastClaimDateObj.getMonth(),
+          lastClaimDateObj.getDate() + T2038_FUTURE_CLAIM_MIN_DAYS
+        )
+      : null;
+    const nextClaimEligibleDate = nextEligibleObj ? formatUsDate(nextEligibleObj) : '';
+
     const counts = monthCountsFromCells(months, noClaimsYet);
-    // Next service month for ongoing claims: not earlier than last DOS + 30 days, and not a month already claimed.
+    // Next service month: ≥ last DOS + 30 days; skip claimed, pushed, or >3-month-old months.
     let nextClaimMonthKey = '';
     if (nextEligibleObj) {
       const anchor = nextEligibleObj.getTime() > today.getTime() ? nextEligibleObj : today;
       let candidate = monthKeyFromDate(anchor);
-      // Skip months that already have a claimed DOS.
       for (let i = 0; i < 24; i += 1) {
-        if (!claimsByMonth.has(candidate)) {
+        if (
+          isActionableClaimAuditMonth(candidate, today) &&
+          !claimsByMonth.has(candidate) &&
+          !pushedMonthKeys.has(candidate)
+        ) {
           nextClaimMonthKey = candidate;
           break;
         }
@@ -799,7 +887,8 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
         lastClaimDateObj &&
         daysSinceLastClaim != null &&
         daysSinceLastClaim >= T2038_FUTURE_CLAIM_MIN_DAYS &&
-        nextClaimMonthKey
+        nextClaimMonthKey &&
+        !pushedMonthKeys.has(nextClaimMonthKey)
     );
 
     rows.push({
@@ -837,10 +926,16 @@ export function buildKaiserT2038ClaimAuditRows(opts: {
   return rows;
 }
 
+/** Unpushed claimable months only — Connections-pushed months stay labeled claimable but leave the queue. */
+export function isUnpushedClaimableMonth(month: ClaimMonthCell): boolean {
+  return month.status === 'claimable' && !clean(month.caspioPushedAt);
+}
+
 function monthCountsFromCells(months: ClaimMonthCell[], noClaimsYet: boolean) {
   const claimedMonthCount = months.filter((m) => m.status === 'claimed').length;
   const justifiedMonthCount = months.filter((m) => m.status === 'justified').length;
-  const claimableMonthCount = months.filter((m) => m.status === 'claimable').length;
+  // Pushed months are done for the claimable queue / past-backlog gate.
+  const claimableMonthCount = months.filter((m) => isUnpushedClaimableMonth(m)).length;
   const noWorkMonthCount = months.filter(
     (m) => m.status === 'justified' && (isNoWorkJustification(m.justificationReason) || m.noteEvidence === 'no_notes')
   ).length;
@@ -898,7 +993,8 @@ export function summarizeKaiserT2038ClaimAudit(rows: KaiserT2038ClaimAuditRow[])
  * For open (missing) months, use member-notes dates:
  * - notes in that month → claimable
  * - no notes → not claimable (no work done)
- * Staff-saved dispositions are left alone.
+ * - no notes + claimable only if staff saved an explicit override reason
+ * Staff "no claim" dispositions are left alone.
  */
 export function applyMemberNoteEvidenceToAuditRows(
   rows: KaiserT2038ClaimAuditRow[],
@@ -925,31 +1021,54 @@ export function applyMemberNoteEvidenceToAuditRows(
           noteCount,
         };
       }
+
       const hasStaffDisposition = Boolean(clean(month.justifiedBy));
-      const wasAutoFromNotes =
-        !hasStaffDisposition &&
-        (month.status === 'missing' ||
-          isNoWorkJustification(month.justificationReason) ||
-          month.justificationReason === DEFAULT_NOTES_CLAIMABLE_REASON);
-      if (!wasAutoFromNotes) {
-        // Staff (or prior manual) disposition wins — only attach note evidence.
-        return { ...month, noteEvidence, noteCount };
-      }
-      if (noteEvidence === 'has_notes') {
+      const staffNoClaim =
+        hasStaffDisposition &&
+        month.status === 'justified' &&
+        !isNoWorkJustification(month.justificationReason) &&
+        !isNotesClaimableJustification(month.justificationReason);
+      const staffOverrideClaimable =
+        hasStaffDisposition &&
+        (month.status === 'claimable' || isNotesClaimableJustification(month.justificationReason)) &&
+        isClaimableStaffOverride(month.justificationReason);
+
+      // No notes → not claimable unless staff explicitly overrode.
+      if (noteEvidence === 'no_notes') {
+        if (staffOverrideClaimable) {
+          return {
+            ...month,
+            status: 'claimable' as const,
+            justificationReason: DEFAULT_CLAIMABLE_OVERRIDE_REASON,
+            noteEvidence,
+            noteCount,
+          };
+        }
+        if (staffNoClaim) {
+          return { ...month, noteEvidence, noteCount };
+        }
         return {
           ...month,
-          status: 'claimable' as const,
-          justificationReason: DEFAULT_NOTES_CLAIMABLE_REASON,
+          status: 'justified' as const,
+          justificationReason: DEFAULT_NO_WORK_REASON,
           justifiedBy: '',
           justifiedAt: '',
           noteEvidence,
           noteCount,
         };
       }
+
+      // Has notes → claimable unless staff marked no claim.
+      if (staffNoClaim) {
+        return { ...month, noteEvidence, noteCount };
+      }
+      if (staffOverrideClaimable || (hasStaffDisposition && month.status === 'claimable')) {
+        return { ...month, noteEvidence, noteCount };
+      }
       return {
         ...month,
-        status: 'justified' as const,
-        justificationReason: DEFAULT_NO_WORK_REASON,
+        status: 'claimable' as const,
+        justificationReason: DEFAULT_NOTES_CLAIMABLE_REASON,
         justifiedBy: '',
         justifiedAt: '',
         noteEvidence,
@@ -966,7 +1085,7 @@ export function applyMemberNoteEvidenceToAuditRows(
   });
 }
 
-/** Drop 2025 / >6-month-old gap months from a saved run without rebuilding from Caspio. */
+/** Drop 2025 / >3-month-old gap months from a saved run without rebuilding from Caspio. */
 export function applyActionableGapMonthPolicy(
   rows: KaiserT2038ClaimAuditRow[],
   today = startOfToday()
@@ -1229,12 +1348,14 @@ export function compactAuditRowForStorage(row: KaiserT2038ClaimAuditRow) {
 /**
  * Fill last-DOS / future-claim-due fields on older saved audit rows that predate those properties.
  */
-export function enrichKaiserT2038FutureClaimFields(
+/**
+ * Recompute last-DOS / next-claim-due from submitted claims + Connections pushes on month cells.
+ * Used after a push so the same month does not stay in the Next claim due queue.
+ */
+export function recomputeKaiserT2038FutureClaimFields(
   row: KaiserT2038ClaimAuditRow,
   today = startOfToday()
 ): KaiserT2038ClaimAuditRow {
-  if (row.lastClaimDate !== undefined && row.futureClaimDue !== undefined) return row;
-
   let lastClaimDateObj: Date | null = null;
   for (const claim of row.submittedClaims || []) {
     const d = parseClaimServiceDate(claim.dateOfServiceIso || claim.dateOfService);
@@ -1242,6 +1363,19 @@ export function enrichKaiserT2038FutureClaimFields(
   }
   for (const dos of row.unsubmittedClaimDates || []) {
     const d = parseClaimServiceDate(dos);
+    if (d && (!lastClaimDateObj || d.getTime() > lastClaimDateObj.getTime())) lastClaimDateObj = d;
+  }
+
+  const claimedMonths = new Set(
+    (row.months || []).filter((m) => m.status === 'claimed').map((m) => m.monthKey)
+  );
+  for (const claim of row.submittedClaims || []) {
+    if (claim.monthKey) claimedMonths.add(claim.monthKey);
+  }
+  const pushedMonthKeys = new Set<string>();
+  for (const month of row.months || []) {
+    if (clean(month.caspioPushedAt)) pushedMonthKeys.add(month.monthKey);
+    const d = parseClaimServiceDate(month.caspioDateOfService);
     if (d && (!lastClaimDateObj || d.getTime() > lastClaimDateObj.getTime())) lastClaimDateObj = d;
   }
 
@@ -1261,19 +1395,16 @@ export function enrichKaiserT2038FutureClaimFields(
     : null;
   const nextClaimEligibleDate = nextEligibleObj ? formatUsDate(nextEligibleObj) : '';
 
-  const claimedMonths = new Set(
-    (row.months || []).filter((m) => m.status === 'claimed').map((m) => m.monthKey)
-  );
-  for (const claim of row.submittedClaims || []) {
-    if (claim.monthKey) claimedMonths.add(claim.monthKey);
-  }
-
   let nextClaimMonthKey = '';
   if (nextEligibleObj) {
     const anchor = nextEligibleObj.getTime() > today.getTime() ? nextEligibleObj : today;
     let candidate = monthKeyFromDate(anchor);
     for (let i = 0; i < 24; i += 1) {
-      if (!claimedMonths.has(candidate)) {
+      if (
+        isActionableClaimAuditMonth(candidate, today) &&
+        !claimedMonths.has(candidate) &&
+        !pushedMonthKeys.has(candidate)
+      ) {
         nextClaimMonthKey = candidate;
         break;
       }
@@ -1282,28 +1413,44 @@ export function enrichKaiserT2038FutureClaimFields(
     }
   }
 
+  const unpushedClaimable = (row.months || []).filter((m) => isUnpushedClaimableMonth(m)).length;
   const pastBacklogClear =
-    !row.noClaimsYet &&
-    row.openMissingMonthCount === 0 &&
-    Number(row.claimableMonthCount || 0) === 0;
+    !row.noClaimsYet && row.openMissingMonthCount === 0 && unpushedClaimable === 0;
   const authStillOpen =
-    row.window === 'in_window' || row.window === 'ending_soon' || (!row.authEnded && Boolean(row.authorizationStart));
+    row.window === 'in_window' ||
+    row.window === 'ending_soon' ||
+    (!row.authEnded && Boolean(row.authorizationStart));
   const futureClaimDue = Boolean(
     pastBacklogClear &&
       authStillOpen &&
       lastClaimDateObj &&
       daysSinceLastClaim != null &&
       daysSinceLastClaim >= T2038_FUTURE_CLAIM_MIN_DAYS &&
-      nextClaimMonthKey
+      nextClaimMonthKey &&
+      !pushedMonthKeys.has(nextClaimMonthKey)
   );
 
   return {
     ...row,
-    lastClaimDate: row.lastClaimDate || lastClaimDate,
-    lastClaimDateIso: row.lastClaimDateIso || lastClaimDateIso,
-    daysSinceLastClaim: row.daysSinceLastClaim ?? daysSinceLastClaim,
-    nextClaimEligibleDate: row.nextClaimEligibleDate || nextClaimEligibleDate,
-    nextClaimMonthKey: row.nextClaimMonthKey || nextClaimMonthKey,
-    futureClaimDue: row.futureClaimDue ?? futureClaimDue,
+    lastClaimDate,
+    lastClaimDateIso,
+    daysSinceLastClaim,
+    nextClaimEligibleDate,
+    nextClaimMonthKey,
+    futureClaimDue,
+    claimableMonthCount: unpushedClaimable,
   };
+}
+
+export function enrichKaiserT2038FutureClaimFields(
+  row: KaiserT2038ClaimAuditRow,
+  today = startOfToday()
+): KaiserT2038ClaimAuditRow {
+  if (row.lastClaimDate !== undefined && row.futureClaimDue !== undefined) {
+    // Still refresh when a Connections push may have landed on an older saved row.
+    const hasPush = (row.months || []).some((m) => clean(m.caspioPushedAt));
+    if (!hasPush) return row;
+    return recomputeKaiserT2038FutureClaimFields(row, today);
+  }
+  return recomputeKaiserT2038FutureClaimFields(row, today);
 }

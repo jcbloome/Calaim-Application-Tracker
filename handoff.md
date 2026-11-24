@@ -17,6 +17,15 @@
 
 ## Changes 2026-11-23
 
+- **Kaiser T2038 — drop months older than 3 months:** Audit gap/claimable window is **3 calendar months** before today’s month (was 6). Older months are not shown and not claimable; push preview blocks them too.
+  - Files: `kaiser-t2038-claim-audit.ts`, `kaiser-t2038-connections-claim-submit.ts`, `page.tsx`, `handoff.md`.
+
+- **Kaiser T2038 — Sep “not claimable” + activity log:** No notes → **not claimable** unless staff confirms an override (confirm dialog; reason `Claimable — staff override…`). Row shows **Why not claimable** / **Staff override** text. Expandable **Activity log** per member.
+  - Files: `kaiser-t2038-claim-audit.ts`, `activity/route.ts`, `kaiser-t2038-claim-audit/route.ts`, `kaiser-t2038-claim-submit/route.ts`, `page.tsx`, `handoff.md`.
+
+- **Kaiser T2038 — pushed claims leave the queue:** Connections push now advances last DOS from `caspioDateOfService`, skips that month for **Next claim due**, and drops pushed months from the claimable queue/counts (they stay visible as **pushed**, not re-pushable). Fixes claims “appearing again” after push.
+  - Files: `kaiser-t2038-claim-audit.ts`, `page.tsx`, `handoff.md`.
+
 - **Kaiser T2038 claim push — lock after push + selectable DOS** (`ad95ac16`): Already-pushed months cannot be opened/pushed again (API hard-blocks re-push). Claim preview includes a **Date_of_Service** date picker; staff can change DOS before Confirm, and the selected value is written to Caspio / stored on the justification.
   - Files: `ClaimableClaimSubmitModal.tsx`, `kaiser-t2038-claim-submit/route.ts`, `kaiser-t2038-claim-audit.ts`, `page.tsx`, `handoff.md`.
 

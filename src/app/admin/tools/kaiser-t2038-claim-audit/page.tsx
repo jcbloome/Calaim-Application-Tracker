@@ -11,15 +11,21 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import {
+  DEFAULT_CLAIMABLE_OVERRIDE_REASON,
   DEFAULT_CLAIMABLE_REASON,
   DEFAULT_JUSTIFY_REASON,
   DEFAULT_NO_WORK_REASON,
   DEFAULT_NOTES_CLAIMABLE_REASON,
   enrichKaiserT2038FutureClaimFields,
+  formatMonthLabel,
+  isClaimableStaffOverride,
   isClaimAuditActiveCalaimStatus,
   isNoWorkJustification,
+  isUnpushedClaimableMonth,
+  recomputeKaiserT2038FutureClaimFields,
   summarizeKaiserT2038ClaimAudit,
   T2038_CLAIM_AUDIT_RATE_USD,
+  type ClaimAuditActivityEntry,
   type KaiserT2038ClaimAuditRow,
   type KaiserT2038ClaimAuditRunMode,
   type MonthDisposition,
@@ -230,6 +236,56 @@ export default function KaiserT2038ClaimAuditPage() {
   const [memberNotesModal, setMemberNotesModal] = useState(EMPTY_NOTES_MODAL);
   const [claimSubmitOpen, setClaimSubmitOpen] = useState(false);
   const [claimSubmitTargets, setClaimSubmitTargets] = useState<ClaimSubmitTarget[]>([]);
+  const [activityOpenId, setActivityOpenId] = useState('');
+  const [activityByClient, setActivityByClient] = useState<Record<string, ClaimAuditActivityEntry[]>>({});
+  const [activityLoadingId, setActivityLoadingId] = useState('');
+
+  const loadMemberActivity = useCallback(
+    async (clientId2: string, opts?: { force?: boolean }) => {
+      const key = clean(clientId2);
+      if (!key) return;
+      if (!opts?.force && activityByClient[key]) return;
+      const user = auth.currentUser;
+      if (!user) return;
+      setActivityLoadingId(key);
+      try {
+        const idToken = await user.getIdToken();
+        const response = await fetch(
+          `/api/admin/kaiser-t2038-claim-audit/activity?clientId2=${encodeURIComponent(key)}`,
+          { headers: { Authorization: `Bearer ${idToken}` } }
+        );
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body?.success) {
+          throw new Error(String(body?.error || `HTTP ${response.status}`));
+        }
+        const entries = Array.isArray(body.entries) ? (body.entries as ClaimAuditActivityEntry[]) : [];
+        setActivityByClient((prev) => ({ ...prev, [key]: entries }));
+      } catch (err: unknown) {
+        toast({
+          title: 'Activity log failed',
+          description: String((err as { message?: string })?.message || err),
+          variant: 'destructive',
+        });
+      } finally {
+        setActivityLoadingId('');
+      }
+    },
+    [activityByClient, auth.currentUser, toast]
+  );
+
+  const toggleMemberActivity = useCallback(
+    (clientId2: string) => {
+      const key = clean(clientId2);
+      if (!key) return;
+      if (activityOpenId === key) {
+        setActivityOpenId('');
+        return;
+      }
+      setActivityOpenId(key);
+      void loadMemberActivity(key);
+    },
+    [activityOpenId, loadMemberActivity]
+  );
 
   const applyAuditResponse = useCallback((body: Record<string, unknown>) => {
     const rawRows = Array.isArray(body.rows) ? (body.rows as KaiserT2038ClaimAuditRow[]) : [];
@@ -668,7 +724,7 @@ export default function KaiserT2038ClaimAuditPage() {
       .map((row) =>
         toNoteQueueMember(
           row,
-          toMonthList(row, (month) => month.status === 'claimable'),
+          toMonthList(row, (month) => isUnpushedClaimableMonth(month)),
           'claimable'
         )
       )
@@ -724,7 +780,7 @@ export default function KaiserT2038ClaimAuditPage() {
           Number(b.daysSinceLastClaim || 0) - Number(a.daysSinceLastClaim || 0) ||
           a.name.localeCompare(b.name)
       );
-    // Members we did bill, now off Authorized/H2022, with gaps inside the 6-month window —
+    // Members we did bill, now off Authorized/H2022, with gaps inside the 3-month window —
     // ignores the status/auth filters so stopped billing is always visible.
     const exAuthGapMembers = rows
       .filter(
@@ -830,29 +886,56 @@ export default function KaiserT2038ClaimAuditPage() {
     [queueSummary.claimableMembers, rows, toast]
   );
 
-  const markMonthsPushed = useCallback((results: ClaimPushResult[]) => {
-    if (!results.length) return;
-    setRows((prev) =>
-      prev.map((row) => {
-        let changed = false;
-        const months = row.months.map((month) => {
-          const hit = results.find(
-            (result) => result.clientId2 === row.clientId2 && result.monthKey === month.monthKey
-          );
-          if (!hit) return month;
-          changed = true;
-          return {
-            ...month,
-            status: 'claimable' as const,
-            caspioPushedAt: hit.caspioPushedAt,
-            caspioClaimPkId: hit.caspioClaimPkId || month.caspioClaimPkId || '',
-            caspioDateOfService: hit.caspioDateOfService || month.caspioDateOfService || '',
-          };
-        });
-        return changed ? { ...row, months } : row;
-      })
-    );
-  }, []);
+  const markMonthsPushed = useCallback(
+    (results: ClaimPushResult[]) => {
+      if (!results.length) return;
+      const clientIds = [...new Set(results.map((result) => clean(result.clientId2)).filter(Boolean))];
+      for (const clientId2 of clientIds) {
+        void loadMemberActivity(clientId2, { force: true });
+      }
+      setRows((prev) =>
+        prev.map((row) => {
+          const hits = results.filter((result) => result.clientId2 === row.clientId2);
+          if (!hits.length) return row;
+          let months = row.months.map((month) => {
+            const hit = hits.find((result) => result.monthKey === month.monthKey);
+            if (!hit) return month;
+            return {
+              ...month,
+              status: 'claimable' as const,
+              caspioPushedAt: hit.caspioPushedAt,
+              caspioClaimPkId: hit.caspioClaimPkId || month.caspioClaimPkId || '',
+              caspioDateOfService: hit.caspioDateOfService || month.caspioDateOfService || '',
+            };
+          });
+          // Next-claim months may not be in the gap grid — keep a cell so re-push stays locked.
+          for (const hit of hits) {
+            if (months.some((month) => month.monthKey === hit.monthKey)) continue;
+            months = [
+              ...months,
+              {
+                monthKey: hit.monthKey,
+                label: formatMonthLabel(hit.monthKey),
+                status: 'claimable' as const,
+                claimDates: [],
+                unsubmittedDates: [],
+                justificationReason: '',
+                justifiedBy: '',
+                justifiedAt: '',
+                noteEvidence: 'unknown' as const,
+                noteCount: 0,
+                caspioPushedAt: hit.caspioPushedAt,
+                caspioClaimPkId: hit.caspioClaimPkId || '',
+                caspioDateOfService: hit.caspioDateOfService || '',
+              },
+            ];
+          }
+          return recomputeKaiserT2038FutureClaimFields({ ...row, months });
+        })
+      );
+    },
+    [loadMemberActivity]
+  );
 
   const pushedClaimTargets = useMemo(() => {
     const targets: ClaimSubmitTarget[] = [];
@@ -940,7 +1023,14 @@ export default function KaiserT2038ClaimAuditPage() {
     const draftKey = `${row.clientId2}__${monthKey}`;
     const clear = Boolean(opts.clear);
     const disposition: MonthDisposition = opts.disposition || 'justified';
-    const reason = disposition === 'claimable' ? DEFAULT_CLAIMABLE_REASON : DEFAULT_JUSTIFY_REASON;
+    const cell = row.months?.find((month) => month.monthKey === monthKey);
+    const noNotes = cell?.noteEvidence === 'no_notes';
+    const reason =
+      disposition === 'claimable'
+        ? noNotes
+          ? DEFAULT_CLAIMABLE_OVERRIDE_REASON
+          : DEFAULT_CLAIMABLE_REASON
+        : DEFAULT_JUSTIFY_REASON;
     setSavingKey(draftKey);
     try {
       const idToken = await user.getIdToken();
@@ -966,10 +1056,15 @@ export default function KaiserT2038ClaimAuditPage() {
         title: clear
           ? 'Cleared'
           : disposition === 'claimable'
-            ? 'Marked claimable'
+            ? noNotes
+              ? 'Marked claimable (staff override)'
+              : 'Marked claimable'
             : 'Marked no-claim',
-        description: `${row.memberName} · ${monthKey}`,
+        description: `${row.memberName} · ${monthKey}${
+          disposition === 'claimable' && noNotes ? ' · no notes that month' : ''
+        }`,
       });
+      void loadMemberActivity(row.clientId2, { force: true });
       setRows((prev) => {
         const next = prev.map((item) => {
           if (item.clientId2 !== row.clientId2) return item;
@@ -1023,7 +1118,7 @@ export default function KaiserT2038ClaimAuditPage() {
           const openMissingFromGrid = months.filter((m) => m.status === 'missing').length;
           const justifiedMonthCount = months.filter((m) => m.status === 'justified').length;
           const claimedMonthCount = months.filter((m) => m.status === 'claimed').length;
-          const claimableMonthCount = months.filter((m) => m.status === 'claimable').length;
+          const claimableMonthCount = months.filter((m) => isUnpushedClaimableMonth(m)).length;
           const noWorkMonthCount = months.filter(
             (m) => m.status === 'justified' && isNoWorkJustification(m.justificationReason)
           ).length;
@@ -1087,7 +1182,7 @@ export default function KaiserT2038ClaimAuditPage() {
             (entered in Caspio, not sent to clearinghouse).{' '}
             <span className="font-medium">No claims yet</span> = no clearinghouse-submitted rows on the member (prior
             auths count). Gap months start at the first claim on/after the current auth start through auth end / today;
-            gaps from <span className="font-medium">2025</span> or <span className="font-medium">older than 6 months</span>{' '}
+            gaps from <span className="font-medium">2025</span> or <span className="font-medium">older than 3 months</span>{' '}
             are ignored.
           </p>
           <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
@@ -1788,7 +1883,7 @@ export default function KaiserT2038ClaimAuditPage() {
                 </Badge>
                 <span className="truncate text-xs text-muted-foreground">
                   Billed before, CalAIM_Status not Authorized · {queueSummary.exAuthOpenGapMonths} gap month
-                  {queueSummary.exAuthOpenGapMonths === 1 ? '' : 's'} (last 6 months, all filters ignored)
+                  {queueSummary.exAuthOpenGapMonths === 1 ? '' : 's'} (last 3 months, all filters ignored)
                 </span>
               </button>
               {summaryExAuthOpen ? (
@@ -1959,7 +2054,7 @@ export default function KaiserT2038ClaimAuditPage() {
             const expanded = expandedId === row.id;
             const gapMonths = (row.months || []).filter((month) => month.status === 'missing');
             const gapMonthLabels = gapMonths.map((month) => month.label || month.monthKey);
-            const claimableMonths = (row.months || []).filter((month) => month.status === 'claimable');
+            const claimableMonths = (row.months || []).filter((month) => isUnpushedClaimableMonth(month));
             const claimableMonthLabels = claimableMonths.map((month) => month.label || month.monthKey);
             const noWorkMonths = (row.months || []).filter(
               (month) => month.status === 'justified' && isNoWorkJustification(month.justificationReason)
@@ -2259,10 +2354,10 @@ export default function KaiserT2038ClaimAuditPage() {
                               const isNoWork =
                                 month.status === 'justified' && isNoWorkJustification(month.justificationReason);
                               const isJustified = month.status === 'justified';
+                              const isStaffNoClaim = isJustified && !isNoWork;
                               const isClaimable = month.status === 'claimable';
                               const isPushed = Boolean(month.caspioPushedAt);
                               const noNotes = month.noteEvidence === 'no_notes';
-                              const claimableBlocked = noNotes && !isClaimable;
                               const canPush = isClaimable && !isPushed && !isClaimed && Boolean(row.clientId2);
                               const statusLabel = isClaimed
                                 ? 'claimed'
@@ -2278,7 +2373,7 @@ export default function KaiserT2038ClaimAuditPage() {
                               return (
                                 <div
                                   key={month.monthKey}
-                                  className={`flex h-9 items-center gap-3 border-t px-3 text-sm ${
+                                  className={`flex min-h-9 flex-col gap-0.5 border-t px-3 py-1.5 text-sm ${
                                     isPushed
                                       ? 'bg-emerald-50/50'
                                       : month.status === 'missing'
@@ -2292,6 +2387,7 @@ export default function KaiserT2038ClaimAuditPage() {
                                               : ''
                                   }`}
                                 >
+                                  <div className="flex items-center gap-3">
                                   <span className="w-24 shrink-0 truncate font-medium">{month.label}</span>
                                   <Badge
                                     variant="outline"
@@ -2310,9 +2406,12 @@ export default function KaiserT2038ClaimAuditPage() {
                                     {statusLabel}
                                   </Badge>
                                   <span className="ml-auto flex shrink-0 items-center gap-3">
-                                    <label className="flex w-[4.25rem] cursor-pointer items-center justify-center gap-1 text-[11px]">
+                                    <label
+                                      className="flex w-[4.25rem] cursor-pointer items-center justify-center gap-1 text-[11px]"
+                                      title="Staff: no claim this month"
+                                    >
                                       <Checkbox
-                                        checked={isJustified && !isPushed}
+                                        checked={isStaffNoClaim && !isPushed}
                                         disabled={isSaving || isClaimed || isPushed}
                                         onCheckedChange={(checked) => {
                                           if (checked === true) {
@@ -2328,24 +2427,21 @@ export default function KaiserT2038ClaimAuditPage() {
                                     <label
                                       className="flex w-[4.75rem] cursor-pointer items-center justify-center gap-1 text-[11px]"
                                       title={
-                                        claimableBlocked
-                                          ? 'Not claimable — no member notes were entered that month'
+                                        noNotes && !isClaimable
+                                          ? 'No member notes that month — check to mark claimable as staff override'
                                           : undefined
                                       }
                                     >
                                       <Checkbox
                                         checked={isClaimable}
-                                        disabled={isSaving || isClaimed || claimableBlocked || isPushed}
+                                        disabled={isSaving || isClaimed || isPushed}
                                         onCheckedChange={(checked) => {
                                           if (checked === true) {
                                             if (noNotes) {
-                                              toast({
-                                                title: 'Not claimable',
-                                                description:
-                                                  'No member notes were entered that month, so it cannot be marked claimable.',
-                                                variant: 'destructive',
-                                              });
-                                              return;
+                                              const ok = window.confirm(
+                                                `${month.label || month.monthKey} has no member notes, so it is not claimable by default.\n\nOverride and mark claimable anyway?`
+                                              );
+                                              if (!ok) return;
                                             }
                                             void saveMonthDisposition(row, month.monthKey, {
                                               disposition: 'claimable',
@@ -2402,19 +2498,88 @@ export default function KaiserT2038ClaimAuditPage() {
                                       )}
                                     </span>
                                   </span>
+                                  </div>
+                                  {isNoWork || (noNotes && !isClaimed && !isPushed && !isClaimable) ? (
+                                    <div className="pl-0 text-[10px] leading-snug text-slate-600 sm:pl-[7.5rem]">
+                                      <span className="font-medium text-slate-800">Why not claimable:</span>{' '}
+                                      no member notes were entered in {month.label || month.monthKey}, so
+                                      there is no work evidence to bill that month. Stays not claimable
+                                      unless staff confirms an override.
+                                    </div>
+                                  ) : null}
+                                  {isClaimable &&
+                                  noNotes &&
+                                  !isPushed &&
+                                  isClaimableStaffOverride(month.justificationReason) ? (
+                                    <div className="pl-0 text-[10px] leading-snug text-amber-900 sm:pl-[7.5rem]">
+                                      <span className="font-medium">Staff override:</span> claimable despite
+                                      no member notes in {month.label || month.monthKey}.
+                                    </div>
+                                  ) : null}
                                 </div>
                               );
                             })}
                           </div>
                         </div>
                       ) : null}
+                      <div className="mt-2 border-t pt-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-[12px] font-medium text-sky-800 hover:underline"
+                          onClick={() => toggleMemberActivity(row.clientId2)}
+                        >
+                          {activityOpenId === clean(row.clientId2) ? (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          )}
+                          Activity log
+                          {activityByClient[clean(row.clientId2)]
+                            ? ` (${activityByClient[clean(row.clientId2)].length})`
+                            : ''}
+                        </button>
+                        {activityOpenId === clean(row.clientId2) ? (
+                          <div className="mt-1.5 max-h-48 overflow-auto rounded border bg-white px-2 py-1.5 text-[11px]">
+                            {activityLoadingId === clean(row.clientId2) ? (
+                              <div className="flex items-center gap-1.5 text-muted-foreground py-1">
+                                <Loader2 className="h-3 w-3 animate-spin" /> Loading activity…
+                              </div>
+                            ) : (activityByClient[clean(row.clientId2)] || []).length === 0 ? (
+                              <div className="py-1 text-muted-foreground">
+                                No logged activity yet for this member (pushes and disposition changes appear here).
+                              </div>
+                            ) : (
+                              <ul className="divide-y">
+                                {(activityByClient[clean(row.clientId2)] || []).map((entry) => (
+                                  <li key={entry.id} className="py-1.5">
+                                    <div className="font-medium text-slate-900">{entry.summary || entry.action}</div>
+                                    <div className="text-muted-foreground">
+                                      {[
+                                        entry.createdAt
+                                          ? new Date(entry.createdAt).toLocaleString()
+                                          : '',
+                                        entry.actorName || entry.actorEmail || '',
+                                        entry.monthKey || '',
+                                      ]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
                       <p className="mt-2 text-[11px] text-muted-foreground">
                         Claimable months: Preview / Push next to the checkbox opens the Caspio field list, then submit.
                         After push the month shows <span className="font-medium">pushed</span> and cannot be pushed
                         again. Use <span className="font-medium">SDS EDI for pushed</span> for Smart Data Solutions
                         upload. Rate ${T2038_CLAIM_AUDIT_RATE_USD}/claim.
                         {noWorkMonths.length > 0
-                          ? ` · ${noWorkMonths.length} month${noWorkMonths.length === 1 ? '' : 's'} not claimable.`
+                          ? ` · ${noWorkMonths.length} month${
+                              noWorkMonths.length === 1 ? '' : 's'
+                            } not claimable because no member notes that month.`
                           : ''}
                       </p>
                     </div>

@@ -22,7 +22,11 @@ import {
 } from '@/lib/kaiser-sds-t2038-claims';
 import { build837P } from '@/lib/x12-837p';
 import type { Edi270Settings } from '@/lib/x12-270';
-import { monthKeyFromDate } from '@/lib/kaiser-t2038-claim-audit';
+import {
+  CLAIM_AUDIT_GAP_MAX_AGE_MONTHS,
+  isActionableClaimAuditMonth,
+  monthKeyFromDate,
+} from '@/lib/kaiser-t2038-claim-audit';
 
 export const CONNECTIONS_CLAIM_SUBMIT_TABLE = T2038_CLAIM_SUBMIT_TABLE;
 export const CONNECTIONS_OR_RCFE_CLAIM_VALUE = 'Connections Claim Submission';
@@ -401,6 +405,11 @@ export function buildConnectionsT2038ClaimPreview(opts: {
   caspioBody.Connections_or_RCFE_Claim = CONNECTIONS_OR_RCFE_CLAIM_VALUE;
 
   const blockers: string[] = [...dosResult.blockers];
+  if (!isActionableClaimAuditMonth(opts.monthKey)) {
+    blockers.push(
+      `Month older than ${CLAIM_AUDIT_GAP_MAX_AGE_MONTHS} months — not claimable on T2038 audit`
+    );
+  }
   if (!clientId2) blockers.push('Missing Client_ID2');
   if (!clientFirst || !clientLast) blockers.push('Missing Client_First / Client_Last');
   if (!dateOfService && !dosResult.blockers.length) blockers.push('Missing Date_of_Service');

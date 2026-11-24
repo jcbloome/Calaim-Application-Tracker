@@ -22,6 +22,7 @@ import {
   monthKeyFromDate,
   normalizeMrnKey,
   findKaiserMrnNonKaiserMcoMembers,
+  appendClaimAuditActivity,
   DEFAULT_CLAIMABLE_REASON,
   DEFAULT_JUSTIFY_REASON,
   isNotesClaimableJustification,
@@ -559,6 +560,7 @@ async function loadJustifications(adminDb: any) {
       updatedAt: String(data.updatedAt || '').trim(),
       caspioPushedAt: String(data.caspioPushedAt || '').trim(),
       caspioClaimPkId: String(data.caspioClaimPkId || '').trim(),
+      caspioDateOfService: String(data.caspioDateOfService || '').trim(),
     });
   });
   return byKey;
@@ -1164,9 +1166,23 @@ export async function POST(request: NextRequest) {
     const docId = justificationDocId(clientId2, monthKey);
     const ref = adminDb.collection(KAISER_T2038_CLAIM_AUDIT_JUSTIFICATIONS_COLLECTION).doc(docId);
 
+    const actorName = String(authz.name || authz.email || authz.uid || 'Admin').trim();
+    const actorEmail = String(authz.email || '').trim();
+    const nowIso = new Date().toISOString();
+
     if (clear) {
       await ref.delete().catch(async () => {
-        await ref.set({ deleted: true, updatedAt: new Date().toISOString() }, { merge: true });
+        await ref.set({ deleted: true, updatedAt: nowIso }, { merge: true });
+      });
+      await appendClaimAuditActivity(adminDb, {
+        clientId2,
+        monthKey,
+        action: 'cleared',
+        summary: `Cleared disposition for ${monthKey}`,
+        actorName,
+        actorEmail,
+        actorUid: String(authz.uid || ''),
+        createdAt: nowIso,
       });
       return NextResponse.json({ success: true, cleared: true, clientId2, monthKey });
     }
@@ -1176,9 +1192,9 @@ export async function POST(request: NextRequest) {
       monthKey,
       disposition,
       reason,
-      justifiedBy: String(authz.name || authz.email || authz.uid || 'Admin').trim(),
-      justifiedByEmail: String(authz.email || '').trim(),
-      updatedAt: new Date().toISOString(),
+      justifiedBy: actorName,
+      justifiedByEmail: actorEmail,
+      updatedAt: nowIso,
     };
     await ref.set(
       {
@@ -1187,6 +1203,21 @@ export async function POST(request: NextRequest) {
       },
       { merge: true }
     );
+
+    await appendClaimAuditActivity(adminDb, {
+      clientId2,
+      monthKey,
+      action: disposition === 'claimable' ? 'marked_claimable' : 'marked_no_claim',
+      summary:
+        disposition === 'claimable'
+          ? `Marked ${monthKey} claimable${reason ? ` (${reason})` : ''}`
+          : `Marked ${monthKey} no claim${reason ? ` (${reason})` : ''}`,
+      actorName,
+      actorEmail,
+      actorUid: String(authz.uid || ''),
+      createdAt: nowIso,
+      meta: { reason, disposition },
+    });
 
     return NextResponse.json({ success: true, justification: payload });
   } catch (error: unknown) {
