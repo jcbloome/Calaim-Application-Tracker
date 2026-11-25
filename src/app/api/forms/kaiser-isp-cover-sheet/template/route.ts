@@ -38,6 +38,7 @@ import {
   KAISER_COVER_YES_NO_OPTIONS,
 } from '@/lib/kaiser-cover-sheet-tier-rates';
 import { KAISER_COVER_TEMPLATE_SETTINGS_DOC } from '@/lib/kaiser-isp-cover-sheet-template';
+import { findCountyByCityAndZip } from '@/lib/california-cities';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -430,6 +431,29 @@ function normalizeCountyForDropdown(value: string): string {
   return raw.replace(/\s+county$/i, '').trim();
 }
 
+/** Compare county names ignoring punctuation and the template typo San Juaquin ↔ San Joaquin. */
+function countyMatchKey(value: string): string {
+  return normalizeCountyForDropdown(value)
+    .toLowerCase()
+    .replace(/juaquin/g, 'joaquin')
+    .replace(/[^a-z]/g, '');
+}
+
+function findCountyDropdownOption(options: string[], countyValue: string): string | null {
+  const wanted = countyMatchKey(countyValue);
+  if (!wanted || !Array.isArray(options) || options.length === 0) return null;
+  const nonPlaceholder = options.filter((option) => !isPlaceholderDropdownOption(option));
+  const exact =
+    nonPlaceholder.find((option) => countyMatchKey(String(option || '')) === wanted) || null;
+  if (exact) return exact;
+  return (
+    nonPlaceholder.find((option) => {
+      const key = countyMatchKey(String(option || ''));
+      return Boolean(key) && (key.includes(wanted) || wanted.includes(key));
+    }) || null
+  );
+}
+
 function toNcalscal(value: string): string {
   const raw = clean(value).toLowerCase();
   if (!raw) return '';
@@ -635,6 +659,11 @@ export async function GET(req: NextRequest) {
         if (isDropdownFieldLike(field)) {
           const options = field.getOptions();
           if (!Array.isArray(options) || options.length === 0) return;
+          const countyHit = findCountyDropdownOption(options, trimmed);
+          if (countyHit) {
+            field.select(countyHit);
+            return;
+          }
           const normalized = trimmed.toLowerCase();
           const normalizedNoCounty = normalized.replace(/\s+county$/i, '').trim();
           const preferred =
@@ -848,11 +877,6 @@ export async function GET(req: NextRequest) {
     const memberMrn = clean(params.get('memberMrn'));
     const memberDob = asDisplayDate(clean(params.get('memberDob')));
     const memberPhone = normalizePhone(clean(params.get('memberPhone')));
-    const memberCounty = normalizeCountyForDropdown(
-      clean(params.get('ALW_Counties')) ||
-        clean(params.get('ALW_County')) ||
-        clean(params.get('memberCounty'))
-    );
     const regionNcalScal = toNcalscal(clean(params.get('Kaiser_North_or_South')));
     const livingSituationRaw = clean(params.get('Describe_Member_Living_Situation'));
     const assessmentDate = asDisplayDate(clean(params.get('ISP_Assessment_Date')));
@@ -865,7 +889,7 @@ export async function GET(req: NextRequest) {
     const assessmentAdmin = assessmentDoneByRn
       ? ensureRnTitle(assessmentAdminRaw)
       : ensureMswTitle(assessmentAdminRaw);
-    const atAlw = toYesNo(clean(params.get('At_ALW_Facility')));
+    let atAlw = toYesNo(clean(params.get('At_ALW_Facility')));
     const alwSubmitted = normalizeSubmittedOption(clean(params.get('Did_Submit_ALW_Application')));
     const alwWaitlist = toYesNo(clean(params.get('On_ALW_Waitlist')));
     const changeOfCondition = clean(params.get('Change_of_Condition'));
@@ -878,6 +902,8 @@ export async function GET(req: NextRequest) {
     const facilityName = clean(params.get('Facility_Name'));
     const facilityAddress = clean(params.get('Facility_Address'));
     const facilityType = clean(params.get('Facility_Type')) || 'RCFE';
+    const facilityCity = clean(params.get('RCFE_City') || params.get('Facility_City'));
+    const facilityZip = clean(params.get('RCFE_Zip') || params.get('Facility_Zip'));
     const moveInDate = asDisplayDate(clean(params.get('Verified_Move_In_Date') || params.get('Move_In_Date')));
     // Initial authorization + reauthorization: always Yes (RCFE vetted / SCA contracted with ILS).
     const facilityVettedContracted = 'Yes';
@@ -892,6 +918,25 @@ export async function GET(req: NextRequest) {
 
     const isAuthorization = coverPageType === 'authorization';
     const isReauthorization = coverPageType === 'reauthorization';
+    // County: Caspio ALW_Counties first; else RCFE / facility city+ZIP (reauth often lacks ALW_Counties).
+    const countyFromFacility =
+      normalizeCountyForDropdown(
+        clean(params.get('RCFE_County')) ||
+          findCountyByCityAndZip(facilityCity, facilityZip) ||
+          (() => {
+            const cityMatch = facilityAddress.match(/,\s*([^,]+),\s*[A-Z]{2}\s+(\d{5})/i);
+            if (!cityMatch) return '';
+            return findCountyByCityAndZip(cityMatch[1], cityMatch[2]) || '';
+          })()
+      ) || '';
+    const memberCounty = normalizeCountyForDropdown(
+      clean(params.get('ALW_Counties')) ||
+        clean(params.get('ALW_County')) ||
+        clean(params.get('memberCounty')) ||
+        countyFromFacility
+    );
+    // Reauth members are already in RCFE; blank At_ALW_Facility → No (ALW ≠ RCFE).
+    if (isReauthorization && !atAlw) atAlw = 'No';
     // Reassessment/reauthorization members are already in RCFE.
     const livingSituation = isReauthorization ? 'RCFE' : livingSituationRaw;
     if (isReauthorization && !moveInDate) {
@@ -1312,6 +1357,17 @@ export async function GET(req: NextRequest) {
       for (const vettedName of KAISER_COVER_VETTED_DROPDOWN_NAMES) {
         setDropdownByPredicate(vettedName, (opt) => opt === 'yes');
         setFieldValue(vettedName, 'Yes');
+      }
+      // Re-assert county + At ALW after Yes/No option repair (repair can reset to placeholder).
+      if (isAuthorization) {
+        if (memberCounty) setFieldValue('County', memberCounty);
+        if (atAlw) setFieldValue('Dropdown4', atAlw);
+        if (inAlwCounty) setFieldValue('Dropdown9', inAlwCounty);
+      }
+      if (isReauthorization) {
+        if (memberCounty) setFieldValue('Dropdown17', memberCounty);
+        if (atAlw) setFieldValue('Dropdown18', atAlw);
+        if (inAlwCounty) setFieldValue('Dropdown21', inAlwCounty);
       }
       for (const kpName of KP_ONLY_DROPDOWN_NAMES) {
         const kpField = getFieldMaybe(kpName);

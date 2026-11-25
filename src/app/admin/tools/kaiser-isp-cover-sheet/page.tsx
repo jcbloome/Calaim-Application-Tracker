@@ -18,6 +18,7 @@ import {
   invalidateKaiserMembersCache,
   KAISER_MEMBERS_SESSION_MAX_AGE_MS,
 } from '@/lib/fetch-kaiser-members';
+import { findCountyByCityAndZip } from '@/lib/california-cities';
 import { TemplateUploaderCard } from './template-uploader-card';
 
 type KaiserMember = {
@@ -282,7 +283,10 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
     value:
       getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) ||
       clean(member.memberCounty) ||
-      getValue(member, ['Member_County', 'memberCounty']),
+      getValue(member, ['Member_County', 'memberCounty', 'RCFE_County']) ||
+      clean(
+        findCountyByCityAndZip(getValue(member, ['RCFE_City']), getValue(member, ['RCFE_Zip'])) || ''
+      ),
   },
   { label: 'ISP Assessment Date', value: getValue(member, [
     'ISP_Assessment_Date',
@@ -311,7 +315,10 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
 ];
 
 const getOptionalFieldStatuses = (member: KaiserMember): OptionalFieldStatus[] => [
-  { label: 'At ALW Facility', value: getValue(member, ['At_ALW_Facility']) },
+  {
+    label: 'At ALW Facility',
+    value: toYesNo(getValue(member, ['At_ALW_Facility'])) || 'No (default when blank)',
+  },
   { label: 'On ALW Waitlist', value: getValue(member, ['On_ALW_Waitlist']) },
   { label: 'Client Financial Responsibility', value: normalizeMoneyAmount(getValue(member, ['Room_and_Board_Amount', 'Client_Financial_Responsibility', 'Financial_Responsibility'])) },
   { label: 'Requested Tier Level', value: getValue(member, ['Requested_Tier_Level']) },
@@ -328,11 +335,17 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   const query = new URLSearchParams();
   const today = format(new Date(), 'yyyy-MM-dd');
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
-  // ISP cover sheet "Which county does the Member currently live in?" comes from Caspio ALW_Counties (or ALW_County).
+  // County: Caspio ALW_Counties first; else RCFE city/ZIP (reauth members often lack ALW_Counties).
+  const rcfeCity = getValue(member, ['RCFE_City']);
+  const rcfeZip = getValue(member, ['RCFE_Zip']);
+  const countyFromFacility =
+    getValue(member, ['RCFE_County']) ||
+    clean(findCountyByCityAndZip(rcfeCity, rcfeZip) || '');
   const memberCounty =
     getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) ||
     clean(member.memberCounty) ||
-    getValue(member, ['Member_County', 'memberCounty', 'RCFE_County']);
+    getValue(member, ['Member_County', 'memberCounty']) ||
+    countyFromFacility;
   const kaiserRegion =
     getValue(member, ['Kaiser_North_or_South']) || resolveKaiserRegion(memberCounty) || 'Kaiser South';
 
@@ -359,12 +372,18 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
     'ALW_County',
     getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) || memberCounty
   );
-  query.set('ALW_Counties', getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) || memberCounty);
+  query.set(
+    'ALW_Counties',
+    getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) || memberCounty
+  );
   query.set('Kaiser_North_or_South', kaiserRegion);
   query.set('Date_Prepared', today);
   query.set('Facility_Name', getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']));
   query.set('Facility_Address', getRcfeFullAddress(member));
   query.set('Facility_Type', 'RCFE');
+  if (rcfeCity) query.set('RCFE_City', rcfeCity);
+  if (rcfeZip) query.set('RCFE_Zip', rcfeZip);
+  if (countyFromFacility) query.set('RCFE_County', countyFromFacility);
   query.set(
     'Move_In_Date',
     asDisplayDate(
@@ -373,6 +392,9 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   );
   query.set('Facility_Vetted_Contracted', 'Yes');
   query.set('In_ALW_County', toYesNo(getValue(member, ['In_ALW_County'])));
+  // Blank At_ALW_Facility is filled as No on reauth PDF (RCFE ≠ ALW); still pass when Caspio has a value.
+  const atAlwFacility = toYesNo(getValue(member, ['At_ALW_Facility']));
+  if (atAlwFacility) query.set('At_ALW_Facility', atAlwFacility);
   const livingSituationSource = getValue(member, [
     'Where_Living',
     'Describe_Member_Living_Situation',
