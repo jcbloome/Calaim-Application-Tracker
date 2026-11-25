@@ -471,7 +471,6 @@ export function buildConnectionsT2038ClaimPreview(opts: {
   const displayFields: ConnectionsT2038ClaimPreview['displayFields'] = fieldOrder.map((label) => {
     const rawValue = caspioBody[label];
     let value = rawValue === undefined || rawValue === null ? '' : String(rawValue);
-    if (label === 'Claim_Status' && !value) value = '';
     if (
       label === 'Date_of_Service' &&
       value &&

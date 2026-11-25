@@ -114,7 +114,9 @@ async function synthesizeFromJustifications(
 export async function GET(request: NextRequest) {
   try {
     const authz = await requireAdminApiAuth(request);
-    if (!authz.ok) return authz.response;
+    if (!authz.ok) {
+      return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+    }
 
     const clientId2 = String(request.nextUrl.searchParams.get('clientId2') || '').trim();
     if (!clientId2) {

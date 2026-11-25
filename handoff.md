@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `334f55b6` (Kaiser ISP cover sheet — ALW_Counties fill, San Joaquin spelling, tier mismatch gate)  
+**HEAD:** (pending) Fix App Hosting `next build` type errors blocking rollouts since Nov 20  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
@@ -16,6 +16,9 @@
 ---
 
 ## Changes 2026-11-24
+
+- **Fix App Hosting builds failing since Nov 20:** `next build` typecheck failed on (1) `authz.response` (does not exist on `AdminApiAuthFailure`) in T2038 claim-audit activity route, (2) dead `Claim_Status` compare in Connections claim submit. Local `npm run build` now passes.
+  - Files: `kaiser-t2038-claim-audit/activity/route.ts`, `kaiser-t2038-connections-claim-submit.ts`, `handoff.md`.
 
 - **Kaiser ISP cover sheet county = Caspio `ALW_Counties` (hard fix):** Pulls `ALW_Counties` only; auto-refreshes on open; repairs County/Dropdown17 options. Corrects Kaiser PDF typo **San Juaquin → San Joaquin** so the cover sheet matches Caspio spelling.
   - Files: `kaiser-cover-sheet-tier-rates.ts`, `kaiser-isp-cover-sheet/page.tsx`, `printable/page.tsx`, `template/route.ts`, `kaiser-members/route.ts`, `handoff.md`.
