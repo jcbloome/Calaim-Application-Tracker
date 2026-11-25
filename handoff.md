@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `264e9105` (Fix App Hosting next build type errors)  
+**HEAD:** `87b0be39` (Surface Currently Health Net on MIF compare and member files)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
@@ -16,6 +16,8 @@
 ---
 
 ## Changes 2026-11-25
+
+- **Commit `87b0be39`:** Currently Health Net on MIF compare + member file cards; MCP_CIN resolve; SDS/ours-only Excel polish.
 
 - **MIF compare — Health Net status (orange + list):** Portal Kaiser rows still on Caspio Health Net show orange **Currently Health Net**. Card count includes Member Died / Non-Active; opening the Health Net list forces status filter to **all** so card count matches rows shown. Name match when portal CIN ≠ Caspio `MCP_CIN` warns to verify.
   - Files: `resolve-cin/route.ts`, `kaiser-mif-compare.ts`, `kaiser-mif-compare/members/route.ts`, `kaiser-mif-compare/page.tsx`, `handoff.md`.
