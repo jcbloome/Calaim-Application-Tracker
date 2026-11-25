@@ -46,6 +46,11 @@ import {
   buildWaiversPdfSectionsFromApplication,
 } from '@/lib/waivers-pdf-sections';
 import {
+  getFormerlyHealthNetLabel,
+  getHealthNetTransitionBadgeText,
+  isFormerlyHealthNet,
+} from '@/lib/formerly-health-net';
+import {
   isProofOfIncomeFormName,
   uniquifyProofOfIncomeDisplayTitles,
 } from '@/lib/proof-of-income-file-names';
@@ -1609,6 +1614,15 @@ export const AdminApplicationsTable = ({
                     <div className="space-y-1 min-w-[240px]">
                       <div className="font-medium leading-snug">{app.healthPlan || '—'}</div>
                       <div className="text-xs text-muted-foreground leading-snug">{app.pathway || '—'}</div>
+                      {isFormerlyHealthNet(app as any) ? (
+                        <Badge
+                          variant="outline"
+                          className="w-fit bg-violet-50 text-violet-900 border-violet-200 text-[10px] px-2 py-0.5 whitespace-nowrap"
+                          title={getFormerlyHealthNetLabel(app as any)}
+                        >
+                          {getHealthNetTransitionBadgeText(app as any)}
+                        </Badge>
+                      ) : null}
                       {String(app.healthPlan || '').toLowerCase().includes('kaiser') ? (
                         <div className="text-xs text-muted-foreground mt-1 leading-snug">
                           Kaiser Status:{' '}
@@ -1878,8 +1892,17 @@ export const AdminApplicationsTable = ({
                     <div className="text-xs text-muted-foreground mt-1">
                       Latest Status: <span className="font-medium text-foreground">{latestStatusLabel}</span>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                    <div className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-2">
                       <span>{app.healthPlan}</span>
+                      {isFormerlyHealthNet(app as any) ? (
+                        <Badge
+                          variant="outline"
+                          className="bg-violet-50 text-violet-900 border-violet-200 text-[10px] px-2 py-0.5 whitespace-nowrap"
+                          title={getFormerlyHealthNetLabel(app as any)}
+                        >
+                          {getHealthNetTransitionBadgeText(app as any)}
+                        </Badge>
+                      ) : null}
                     </div>
                     {String(app.healthPlan || '').toLowerCase().includes('kaiser') ? (
                       <div className="text-xs text-muted-foreground mt-1">

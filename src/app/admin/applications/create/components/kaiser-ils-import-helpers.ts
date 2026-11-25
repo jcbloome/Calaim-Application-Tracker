@@ -57,8 +57,10 @@ export type KaiserIlsImportRow = {
   caspioExists: boolean;
   caspioMatchLabel: string;
   caspioMatchedClientId2: string;
-  caspioMatchedBy: 'mrn' | 'medi_cal' | 'name' | '';
+  caspioMatchedBy: 'mrn' | 'medi_cal' | 'name' | 'client_id2' | '';
   caspioCalAIMStatus?: string;
+  /** Caspio CalAIM_MCO for the CIN/Client_ID2 match (often still Health Net during Kaiser auth). */
+  caspioCalAIM_MCO?: string;
   needsAuthorizedUpdate?: boolean;
   mifMasterExists: boolean;
   mifMasterMatchLabel: string;

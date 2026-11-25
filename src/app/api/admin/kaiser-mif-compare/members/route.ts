@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { fetchAllCalAIMMembers, getCaspioCredentialsFromEnv } from '@/lib/caspio-api-utils';
+import {
+  fetchAllCalAIMMembers,
+  fetchCaspioRecords,
+  getCaspioCredentialsFromEnv,
+  getCaspioToken,
+} from '@/lib/caspio-api-utils';
 import {
   collectAuthorizedKaiserMembers,
   preferKaiserMrnIdentifier,
@@ -78,17 +83,16 @@ export async function GET(request: NextRequest) {
   try {
     const forceRefresh = String(request.nextUrl.searchParams.get('refresh') || '').trim() === 'true';
     const credentials = getCaspioCredentialsFromEnv();
-    const [result, cacheSnap] = await Promise.all([
+    const cacheCollection = authz.adminDb.collection('caspio_members_cache');
+    const [result, kaiserCacheSnap, healthNetCacheSnap, healthNetAltCacheSnap] = await Promise.all([
       fetchAllCalAIMMembers(credentials, {
         includeRawData: true,
         forceRefresh,
       }),
-      authz.adminDb
-        .collection('caspio_members_cache')
-        .where('CalAIM_MCO', '==', 'Kaiser')
-        .limit(10000)
-        .get()
-        .catch(() => null),
+      cacheCollection.where('CalAIM_MCO', '==', 'Kaiser').limit(10000).get().catch(() => null),
+      // CIN crosswalk for portal-only Kaiser rows (e.g. Richard Nelson) uses Health Net MCP_CIN.
+      cacheCollection.where('CalAIM_MCO', '==', 'Health Net').limit(10000).get().catch(() => null),
+      cacheCollection.where('CalAIM_MCO', '==', 'HealthNet').limit(5000).get().catch(() => null),
     ]);
 
     const rawMembers = Array.isArray(result.rawMembers)
@@ -96,8 +100,9 @@ export async function GET(request: NextRequest) {
       : ((result.members || []) as Array<Record<string, unknown>>);
 
     const cacheMembers: Array<Record<string, unknown>> = [];
-    if (cacheSnap?.docs) {
-      for (const doc of cacheSnap.docs) {
+    const pushCacheDocs = (snap: { docs?: Array<{ id: string; data: () => Record<string, unknown> }> } | null) => {
+      if (!snap?.docs) return;
+      for (const doc of snap.docs) {
         const data = doc.data() as Record<string, unknown>;
         if (data?.deletedFromCaspio === true) continue;
         cacheMembers.push({
@@ -105,20 +110,57 @@ export async function GET(request: NextRequest) {
           Client_ID2: data.Client_ID2 || data.client_ID2 || doc.id,
         });
       }
+    };
+    pushCacheDocs(kaiserCacheSnap);
+    pushCacheDocs(healthNetCacheSnap);
+    pushCacheDocs(healthNetAltCacheSnap);
+
+    // Dedicated Health Net identity pull so MCP_CIN is present for portal CIN crosswalk
+    // (bulk fetch / cache can miss the field or truncate the partition).
+    let healthNetLive = 0;
+    let healthNetLiveWithCin = 0;
+    try {
+      const token = await getCaspioToken(credentials);
+      const hnWhere = "CalAIM_MCO='Health Net' OR CalAIM_MCO='HealthNet'";
+      const hnRows = await fetchCaspioRecords(credentials, token, 'CalAIM_tbl_Members', hnWhere, 1000);
+      healthNetLive = hnRows.length;
+      hnRows.forEach((row) => {
+        const raw = (row || {}) as Record<string, unknown>;
+        if (String(raw.MCP_CIN || raw.MediCal_Number || '').trim()) healthNetLiveWithCin += 1;
+        cacheMembers.push(raw);
+      });
+    } catch (error) {
+      console.warn('[kaiser-mif-compare/members] Health Net MCP_CIN pull failed', error);
     }
 
     const merged = mergeMemberRecords(rawMembers, cacheMembers);
-    const { authorized, allKaiser } = collectAuthorizedKaiserMembers(merged);
+    const { authorized, allKaiser, otherMco } = collectAuthorizedKaiserMembers(merged);
+    const otherMcoWithCin = otherMco.filter((m) => Boolean(m.cin)).length;
+    const healthNetWithCin = otherMco.filter(
+      (m) =>
+        Boolean(m.cin) &&
+        String(m.calaimMco || '')
+          .toLowerCase()
+          .includes('health')
+    ).length;
 
     return NextResponse.json({
       success: true,
       authorized,
       allKaiser,
+      otherMco,
       summary: {
         authorized: authorized.length,
         allKaiser: allKaiser.length,
+        otherMco: otherMco.length,
+        otherMcoWithCin,
+        healthNetWithCin,
+        healthNetLive,
+        healthNetLiveWithCin,
         liveCaspio: rawMembers.length,
-        cacheKaiser: cacheMembers.length,
+        cacheKaiser: kaiserCacheSnap?.size || 0,
+        cacheHealthNet: (healthNetCacheSnap?.size || 0) + (healthNetAltCacheSnap?.size || 0),
+        cacheMerged: cacheMembers.length,
         merged: merged.length,
       },
       fetchedAt: new Date().toISOString(),

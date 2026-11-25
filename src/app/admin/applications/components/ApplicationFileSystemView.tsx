@@ -18,6 +18,11 @@ import {
   type FileSystemActiveBucket,
 } from '@/lib/application-file-system';
 import {
+  getFormerlyHealthNetLabel,
+  getHealthNetTransitionBadgeText,
+  isFormerlyHealthNet,
+} from '@/lib/formerly-health-net';
+import {
   buildAdminApplicationHref,
   getDisplayMemberName,
 } from './AdminApplicationsTable';
@@ -203,6 +208,15 @@ export function ApplicationFileSystemView({
 
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                             <Badge variant="outline">{PLAN_LABEL[placement.plan]}</Badge>
+                            {isFormerlyHealthNet(app as any) ? (
+                              <Badge
+                                variant="outline"
+                                className="bg-violet-50 border-violet-200 text-violet-900"
+                                title={getFormerlyHealthNetLabel(app as any)}
+                              >
+                                {getHealthNetTransitionBadgeText(app as any)}
+                              </Badge>
+                            ) : null}
                             <span>{processStatus}</span>
                           </div>
                           {manualAuditLabel ? (

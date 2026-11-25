@@ -164,6 +164,12 @@ import {
 } from '@/lib/inactive-calaim-status';
 import { collectPrimaryContactCcEmails } from '@/lib/portal-access';
 import {
+  buildFormerlyHealthNetPersistPatch,
+  getFormerlyHealthNetLabel,
+  getHealthNetTransitionBadgeText,
+  isFormerlyHealthNet,
+} from '@/lib/formerly-health-net';
+import {
   DEFAULT_SOCIAL_WORKER_HOLD_VALUE,
   normalizeStatusToken,
   isRequiredPrePushKaiserStatus,
@@ -8521,6 +8527,11 @@ function ApplicationDetailPageContent() {
       }
       const retrievedClientId2 = String(data?.member?.clientId2 || '').trim();
       const retrievedKaiserStatus = String(data?.member?.kaiserStatus || '').trim();
+      const retrievedCalaimMco = String(data?.member?.calaimMco || '').trim();
+      const formerlyHnFromConfirm = buildFormerlyHealthNetPersistPatch({
+        caspioMco: retrievedCalaimMco,
+        calaimStatus: (application as any)?.caspioCalAIMStatus,
+      });
       if (!data?.found) {
         if (existingClientId2 && alreadyMarkedPushed) {
           const patch = {
@@ -8611,6 +8622,7 @@ function ApplicationDetailPageContent() {
         client_ID2: retrievedClientId2,
         caspioClientId2: retrievedClientId2,
         ...(retrievedKaiserStatus ? { kaiserStatus: retrievedKaiserStatus, Kaiser_Status: retrievedKaiserStatus } : {}),
+        ...(formerlyHnFromConfirm || {}),
         kaiserStatusManualLockUntilMs: manualLockUntilMs,
         kaiserStatusSyncSource: 'manual-confirm-refresh',
         ...(shouldMarkComplete ? { status: 'Completed & Submitted' } : {}),
@@ -8726,6 +8738,7 @@ function ApplicationDetailPageContent() {
         return;
       }
       const retrievedClientId2 = String(data?.member?.clientId2 || '').trim();
+      const retrievedCalaimMco = String(data?.member?.calaimMco || '').trim();
       if (!retrievedClientId2) {
         toast({
           variant: 'destructive',
@@ -8735,7 +8748,15 @@ function ApplicationDetailPageContent() {
         });
         return;
       }
+      const formerlyHnPatch = buildFormerlyHealthNetPersistPatch({
+        caspioMco: retrievedCalaimMco,
+        calaimStatus: (application as any)?.caspioCalAIMStatus,
+      });
       if (existingClientId2 && existingClientId2 === retrievedClientId2) {
+        if (formerlyHnPatch) {
+          await setDoc(docRef, { ...formerlyHnPatch, lastUpdated: serverTimestamp() }, { merge: true });
+          setApplication((prev) => (prev ? ({ ...prev, ...formerlyHnPatch } as any) : prev));
+        }
         toast({
           title: 'Client_ID2 already set',
           description: `This application already has Client_ID2 ${retrievedClientId2}.`,
@@ -8750,6 +8771,7 @@ function ApplicationDetailPageContent() {
         caspioClientId2: retrievedClientId2,
         caspioSent: true,
         caspioPushLastStatus: 'client-id2-only',
+        ...(formerlyHnPatch || {}),
         lastUpdated: serverTimestamp(),
       } as Record<string, any>;
       await setDoc(docRef, patch, { merge: true });
@@ -10985,6 +11007,15 @@ function ApplicationDetailPageContent() {
                     <Badge variant="outline" className={badgeClass}>
                       {pathwayLabel || 'Pathway not set'}
                     </Badge>
+                    {isFormerlyHealthNet(application as any) ? (
+                      <Badge
+                        variant="outline"
+                        className="bg-violet-50 border-violet-200 text-violet-900"
+                        title={getFormerlyHealthNetLabel(application as any)}
+                      >
+                        {getHealthNetTransitionBadgeText(application as any)}
+                      </Badge>
+                    ) : null}
                     {showPathwayPicker ? (
                       <Select
                         value={isDiversion ? 'SNF Diversion' : isTransition ? 'SNF Transition' : ''}

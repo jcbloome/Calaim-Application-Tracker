@@ -15,6 +15,26 @@
 
 ---
 
+## Changes 2026-11-25
+
+- **MIF compare — Health Net status (orange + list):** Portal Kaiser rows still on Caspio Health Net show orange **Currently Health Net**. Card count includes Member Died / Non-Active; opening the Health Net list forces status filter to **all** so card count matches rows shown. Name match when portal CIN ≠ Caspio `MCP_CIN` warns to verify.
+  - Files: `resolve-cin/route.ts`, `kaiser-mif-compare.ts`, `kaiser-mif-compare/members/route.ts`, `kaiser-mif-compare/page.tsx`, `handoff.md`.
+
+- **Currently Health Net (Kaiser authorized, Caspio MCO still HN):** Badge/stats say **Currently Health Net** while Caspio `CalAIM_MCO` is still Health Net (MCP_CIN match); **Formerly Health Net** only after MCO flips. MIF compare loads Health Net from members cache, maps `MCP_CIN` as `cin`, and shows the flag on the stats card + portal-only line item.
+  - Files: `formerly-health-net.ts`, `kaiser-mif-compare.ts`, `kaiser-mif-compare/members/route.ts`, `kaiser-mif-compare/page.tsx`, applications file cards/table/record, `handoff.md`.
+
+- **Ours-only Excel — auto-expand columns:** `ILS-Kaiser-ours-only-missing-from-portal-*.xlsx` sets SheetJS `!cols` widths from content so Excel opens with readable columns (not collapsed).
+  - Files: `kaiser-mif-compare.ts`, `handoff.md`.
+
+- **Kaiser auth + Caspio MCO still HN badge:** Persist `formerlyHealthNet` + `caspioCalAIM_MCO` from ILS create (CIN match), Client_ID2 confirm/pull, and members-cache sync; show on file cards / list / record.
+  - Files: `formerly-health-net.ts`, `members-cache/sync/route.ts`, `applications/create/page.tsx`, `kaiser-ils-import-helpers.ts`, UI cards/table/record, `handoff.md`.
+
+- **Kaiser MIF compare — CIN crosswalk to Health Net / other MCO:** Portal-only rows now also match Caspio members under non-Kaiser `CalAIM_MCO` by **CIN** (then name+DOB). UI shows the existing Client_ID2 and prompts to **add the portal Kaiser MRN** to that record instead of creating a duplicate. Excel export includes MCO + reuse hint.
+  - Files: `kaiser-mif-compare.ts`, `kaiser-mif-compare/members/route.ts`, `kaiser-mif-compare/page.tsx`, `handoff.md`.
+
+- **SDS batch claims (837P) — manual portal upload:** Staff download `.edi` from Kaiser SDS Claims / T2038 audit and **upload manually in the SDS claims portal** (FTP not needed). **Sender ID / Receiver ID not required** yet; files must still be valid 837. App no longer blocks 837 download on missing Sender/Receiver (uses tax ID/NPI + `SDS` placeholders in ISA/GS).
+  - Files: `x12-837p.ts`, `kaiser-sds-claims/page.tsx`, `kaiser-t2038-claim-audit/page.tsx`, `handoff.md`.
+
 ## Changes 2026-11-24
 
 - **Fix App Hosting builds failing since Nov 20:** `next build` typecheck failed on (1) `authz.response` (does not exist on `AdminApiAuthFailure`) in T2038 claim-audit activity route, (2) dead `Claim_Status` compare in Connections claim submit. Local `npm run build` now passes.

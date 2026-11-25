@@ -157,13 +157,9 @@ export default function KaiserSdsClaimsPage() {
   );
 
   const missing = missingKaiserSdsClaimSettings(edi, settings);
+  // SDS (Nov 2026): dedicated Sender/Receiver IDs are not required yet for 837 claim files.
   const ediReady = !missing.some(
-    (m) =>
-      m.includes('Sender') ||
-      m.includes('Receiver') ||
-      m.includes('Kaiser payer') ||
-      m.includes('Provider') ||
-      m.includes('NPI')
+    (m) => m.includes('Kaiser payer') || m.includes('Provider') || m.includes('NPI') || m.includes('Billing')
   );
 
   const saveSettings = async () => {
@@ -229,7 +225,7 @@ export default function KaiserSdsClaimsPage() {
       title: '837P downloaded',
       description: `${built.included} claim${built.included === 1 ? '' : 's'}${
         built.skipped.length ? `, ${built.skipped.length} skipped` : ''
-      }. Upload this file in the Smart Data Solutions claims portal.`,
+      }. Upload this `.edi` manually in the Smart Data Solutions claims portal (Sender/Receiver IDs not required yet).`,
     });
 
     setIsLogging(true);
@@ -278,7 +274,8 @@ export default function KaiserSdsClaimsPage() {
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
             Authorized Kaiser members with open T2038 authorizations. Shows Caspio RCFE_Name — filter to
             placed members for claims (already placed = no new auth request). Download an X12 837P EDI
-            for the SDS claims portal (T2038 / U4 / R69 / POS 13 / payer 81397).
+            for SDS 837P batch claims (T2038 / U4 / R69 / POS 13 / payer 81397). Download the `.edi` and
+            upload it manually in the SDS claims portal.
           </p>
         </div>
         <Button variant="outline" onClick={() => void loadAll(true)} disabled={isLoading}>
@@ -337,22 +334,25 @@ export default function KaiserSdsClaimsPage() {
         <CardHeader>
           <CardTitle>1. Smart Data Solutions EDI envelope</CardTitle>
           <CardDescription>
-            Uses the same sender/receiver and Kaiser North/South payer IDs as the Batch Eligibility 270.
+            SDS confirmed Sender/Receiver IDs are not required for claim files right now. Files must still be
+            valid 837P. Workflow: download the `.edi` here, then upload it manually in the SDS claims portal
+            (FTP is not needed).
             {edi.senderId
-              ? ` Sender ${edi.senderId} → receiver ${edi.receiverId} · NPI ${edi.providerNpi || '—'} · ${
-                  edi.usage === 'P' ? 'production' : 'test'
-                }.`
-              : ' Not configured yet.'}
+              ? ` Optional envelope: Sender ${edi.senderId} → receiver ${edi.receiverId} · NPI ${
+                  edi.providerNpi || '—'
+                } · ${edi.usage === 'P' ? 'production' : 'test'}.`
+              : ' Envelope IDs blank — 837 uses billing tax ID/NPI + SDS placeholders until SDS assigns IDs.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           {ediReady ? (
             <p className="text-muted-foreground">
-              Envelope looks ready. Change IDs on the{' '}
+              Billing envelope looks ready for 837P download. Optional SDS Sender/Receiver IDs (and 270
+              settings) can still be edited on the{' '}
               <Link href="/admin/tools/batch-eligibility-checker" className="underline">
                 Batch Eligibility Checker
-              </Link>{' '}
-              (Kaiser SDS settings).
+              </Link>
+              .
             </p>
           ) : (
             <Alert>
@@ -430,9 +430,8 @@ export default function KaiserSdsClaimsPage() {
           <div>
             <CardTitle>3. Download 837P for {serviceDate}</CardTitle>
             <CardDescription>
-              One professional claim per selected (or all billable) member whose T2038 authorization
-              covers this date of service. Upload the downloaded file in the Smart Data Solutions claims
-              portal.
+              One professional claim per selected (or all billable) member whose T2038 authorization covers
+              this date of service. Download the `.edi`, then upload it manually in the SDS claims portal.
               {lastRefreshedAt ? ` Loaded ${format(lastRefreshedAt, 'M/d/yyyy h:mm a')}.` : ''}
             </CardDescription>
           </div>

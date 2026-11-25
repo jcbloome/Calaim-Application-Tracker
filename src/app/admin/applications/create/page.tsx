@@ -126,6 +126,7 @@ import { SingleAuthPdfPanel } from './components/SingleAuthPdfPanel';
 import { PrimaryContactSection } from './components/PrimaryContactSection';
 import { CreateApplicationSubmitBar } from './components/CreateApplicationSubmitBar';
 import { MifPullPanel } from './components/MifPullPanel';
+import { buildFormerlyHealthNetPersistPatch } from '@/lib/formerly-health-net';
 
 export default function CreateApplicationPage() {
   const router = useRouter();
@@ -1347,10 +1348,22 @@ export default function CreateApplicationPage() {
         throw new Error(data?.error || `Failed to check existing Caspio members (HTTP ${response.status})`);
       }
 
-      const byMrn = new Map<string, { label: string; clientId2: string; calAimStatus: string }>();
-      const byMediCal = new Map<string, { label: string; clientId2: string; calAimStatus: string }>();
-      const byName = new Map<string, { label: string; clientId2: string; calAimStatus: string }>();
-      const byClientId2 = new Map<string, { label: string; clientId2: string; calAimStatus: string }>();
+      const byMrn = new Map<
+        string,
+        { label: string; clientId2: string; calAimStatus: string; calaimMco: string; authorizationEndT2038?: string }
+      >();
+      const byMediCal = new Map<
+        string,
+        { label: string; clientId2: string; calAimStatus: string; calaimMco: string; authorizationEndT2038?: string }
+      >();
+      const byName = new Map<
+        string,
+        { label: string; clientId2: string; calAimStatus: string; calaimMco: string; authorizationEndT2038?: string }
+      >();
+      const byClientId2 = new Map<
+        string,
+        { label: string; clientId2: string; calAimStatus: string; calaimMco: string; authorizationEndT2038?: string }
+      >();
 
       (data.members as any[]).forEach((member) => {
         const raw = (member?.caspioRaw || {}) as Record<string, unknown>;
@@ -1366,11 +1379,15 @@ export default function CreateApplicationPage() {
             raw?.calaimStatus ||
             ''
         );
+        const calaimMco = String(
+          member?.CalAIM_MCO || member?.calaimMco || raw?.CalAIM_MCO || raw?.calaimMco || ''
+        ).trim();
         const caspioAuthDates = pickIlsMifCaspioAuthorizationDates(member);
         const matchPayload = {
           label,
           clientId2,
           calAimStatus,
+          calaimMco,
           authorizationEndT2038: caspioAuthDates.authorizationEndT2038,
         };
         const signals = extractIdentitySignals(
@@ -1467,6 +1484,7 @@ export default function CreateApplicationPage() {
             caspioMatchedClientId2: '',
             caspioMatchedBy: '' as const,
             caspioCalAIMStatus: '',
+            caspioCalAIM_MCO: '',
             needsAuthorizedUpdate: false,
             statusNote: nameHint
               ? `Name-only Caspio hint (not In Caspio): ${nameHint.label} — confirm MRN/CIN`
@@ -1479,6 +1497,7 @@ export default function CreateApplicationPage() {
             ? 'mrn'
             : 'medi_cal';
         const calAimStatus = normalizeIlsMifCalAimStatus(match.calAimStatus);
+        const calaimMco = String((match as any).calaimMco || '').trim();
         const needsAuthorizedUpdate = resolveIlsMifNeedsAuthorizedUpdate(calAimStatus, true, {
           fallback: isIlsMifCaspioPendingStatus(calAimStatus),
           mifAuthorizationEnd: (row as any).authorizationEndT2038,
@@ -1492,6 +1511,7 @@ export default function CreateApplicationPage() {
           caspioMatchedClientId2: match.clientId2,
           caspioMatchedBy: matchedBy as KaiserIlsImportRow['caspioMatchedBy'],
           caspioCalAIMStatus: calAimStatus,
+          caspioCalAIM_MCO: calaimMco,
           needsAuthorizedUpdate,
           statusNote: needsAuthorizedUpdate
             ? `In Caspio · CalAIM_Status Pending — MIF auth extends past current Caspio auth`
@@ -1514,6 +1534,7 @@ export default function CreateApplicationPage() {
         caspioMatchedClientId2: '',
         caspioMatchedBy: '' as const,
         caspioCalAIMStatus: '',
+        caspioCalAIM_MCO: '',
         needsAuthorizedUpdate: false,
       }));
     } finally {
@@ -4033,6 +4054,25 @@ export default function CreateApplicationPage() {
         }
       }
 
+      const pickedIlsRowForCreate = isKaiserAuthReceived
+        ? ilsImportRows.find((row) => row.rowId === pickedIlsRowId) ||
+          ilsImportRows.find((row) => Boolean(ilsImportSelected[row.rowId])) ||
+          null
+        : null;
+      const formerlyHealthNetPatch = isKaiserAuthReceived
+        ? buildFormerlyHealthNetPersistPatch({
+            caspioMco:
+              pickedIlsRowForCreate?.caspioCalAIM_MCO ||
+              (memberData as any)?.caspioCalAIM_MCO ||
+              (memberData as any)?.CalAIM_MCO ||
+              '',
+            calaimStatus:
+              pickedIlsRowForCreate?.caspioCalAIMStatus ||
+              (memberData as any)?.caspioCalAIMStatus ||
+              '',
+          })
+        : null;
+
       await setDoc(applicationRef, {
         ...baseApplication,
         healthPlan: isKaiserAuthReceived ? 'Kaiser' : '',
@@ -4049,6 +4089,7 @@ export default function CreateApplicationPage() {
               ilsMifDedupeKey: ilsMifDedupeKeyForApp || null,
             }
           : {}),
+        ...(formerlyHealthNetPatch || {}),
         forms: isKaiserAuthReceived ? currentAuthForms : [],
         ...(generatedServiceDeliveryFormUrl
           ? {

@@ -51,9 +51,16 @@ const clean = (value: string, max: number) =>
 
 const pad = (value: string, length: number) => clean(value, length).padEnd(length, ' ');
 
-/** Envelope + billing fields required before building an 837P. */
+/**
+ * Billing fields required before building an 837P.
+ * SDS (Nov 2026): Sender ID / Receiver ID are not required yet for claim files;
+ * ISA/GS still get safe placeholders when those fields are blank.
+ */
 export function missing837Settings(edi: Edi270Settings, billing: X12_837P_Billing, charge: string): string[] {
-  const missing = [...missingEdiSettings(edi)];
+  // Keep provider NPI from eligibility EDI settings when billing NPI is empty.
+  const missing = missingEdiSettings(edi).filter(
+    (item) => !item.includes('Sender') && !item.includes('Receiver')
+  );
   if (!billing.billName.trim()) missing.push('Billing name');
   if (!billing.billAddress.trim()) missing.push('Billing address');
   if (!billing.billCity.trim()) missing.push('Billing city');
@@ -65,6 +72,20 @@ export function missing837Settings(edi: Edi270Settings, billing: X12_837P_Billin
   const amount = Number(charge);
   if (!Number.isFinite(amount) || amount <= 0) missing.push('T2038 charge amount');
   return missing;
+}
+
+/** SDS said dedicated Sender/Receiver IDs are optional for now — fill ISA/GS with NPI/tax ID + SDS. */
+function resolve837EnvelopeIds(edi: Edi270Settings, billing: X12_837P_Billing) {
+  const taxId = billing.billTaxId.replace(/\D/g, '').slice(0, 9);
+  const npi = billing.billNpi.trim() || edi.providerNpi.trim();
+  const senderId = clean(edi.senderId || taxId || npi || 'CONNECTIONS', 15);
+  const receiverId = clean(edi.receiverId || 'SDS', 15);
+  return {
+    senderId,
+    receiverId,
+    gsSenderId: clean(edi.gsSenderId || senderId, 15),
+    gsReceiverId: clean(edi.gsReceiverId || receiverId, 15),
+  };
 }
 
 /**
@@ -82,6 +103,7 @@ export function build837P(
   const control = String(Math.floor(now.getTime() / 1000) % 1_000_000_000).padStart(9, '0');
   const npi = billing.billNpi.trim() || edi.providerNpi.trim();
   const taxId = billing.billTaxId.replace(/\D/g, '').slice(0, 9);
+  const envelope = resolve837EnvelopeIds(edi, billing);
   const terminator = edi.segmentPerLine ? '~\r\n' : '~';
   const out: string[] = [];
 
@@ -93,9 +115,9 @@ export function build837P(
       '00',
       pad('', 10),
       pad(edi.senderQualifier || 'ZZ', 2),
-      pad(edi.senderId, 15),
+      pad(envelope.senderId, 15),
       pad(edi.receiverQualifier || 'ZZ', 2),
-      pad(edi.receiverId, 15),
+      pad(envelope.receiverId, 15),
       yyyymmdd.slice(2),
       hhmm,
       '^',
@@ -110,8 +132,8 @@ export function build837P(
     [
       'GS',
       'HC',
-      clean(edi.gsSenderId || edi.senderId, 15),
-      clean(edi.gsReceiverId || edi.receiverId, 15),
+      envelope.gsSenderId,
+      envelope.gsReceiverId,
       yyyymmdd,
       hhmm,
       '1',
@@ -145,8 +167,10 @@ export function build837P(
       const seg: string[] = [];
       seg.push(`ST*837*${stControl}*005010X222A1`);
       seg.push(`BHT*0019*00*${batchId}*${yyyymmdd}*${hhmm}*CH`);
-      seg.push(`NM1*41*2*${billName}*****46*${clean(edi.senderId, 80)}`);
-      seg.push(`NM1*40*2*${clean(edi.payerName || 'SMART DATA SOLUTIONS', 60)}*****46*${clean(edi.receiverId, 80)}`);
+      seg.push(`NM1*41*2*${billName}*****46*${clean(envelope.senderId, 80)}`);
+      seg.push(
+        `NM1*40*2*${clean(edi.payerName || 'SMART DATA SOLUTIONS', 60)}*****46*${clean(envelope.receiverId, 80)}`
+      );
       seg.push('HL*1**20*1');
       seg.push(`PRV*BI*PXC*${taxonomy}`);
       seg.push(`NM1*85*2*${billName}*****XX*${npi}`);

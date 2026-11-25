@@ -544,6 +544,79 @@ async function propagateCalAIMStatusToApplications(params: {
   return { updated, clientsTouched };
 }
 
+async function propagateCalAIMMcoToApplications(params: {
+  adminDb: any;
+  mcoByClientId2: Map<string, string>;
+}): Promise<{ updated: number; clientsTouched: number }> {
+  const { adminDb, mcoByClientId2 } = params;
+  if (!mcoByClientId2.size) return { updated: 0, clientsTouched: 0 };
+
+  const { buildFormerlyHealthNetPersistPatch, hasKaiserAuthOrPlan } = await import(
+    '@/lib/formerly-health-net'
+  );
+  const adminModule = await import('@/firebase-admin');
+  const admin = adminModule.default;
+  let updated = 0;
+  let clientsTouched = 0;
+
+  for (const [clientId2Raw, mcoRaw] of mcoByClientId2.entries()) {
+    const clientId2 = cleanComparable(clientId2Raw);
+    const calaimMco = cleanComparable(mcoRaw);
+    if (!clientId2 || !calaimMco) continue;
+
+    const refs = await findApplicationRefsByClientId2({ adminDb, clientId2 });
+    if (refs.length === 0) continue;
+    clientsTouched += 1;
+
+    const snaps = await adminDb.getAll(...refs);
+    for (let i = 0; i < snaps.length; i += FIRESTORE_BATCH_LIMIT) {
+      const chunk = snaps.slice(i, i + FIRESTORE_BATCH_LIMIT);
+      const batch = adminDb.batch();
+      let chunkUpdates = 0;
+
+      chunk.forEach((snap: any) => {
+        if (!snap?.exists) return;
+        const data = (snap.data() || {}) as Record<string, any>;
+        const existingMco = cleanComparable(
+          data.caspioCalAIM_MCO || data.CalAIM_MCO || data.calaimMco || ''
+        );
+        const formerlyPatch =
+          hasKaiserAuthOrPlan(data) || data.healthPlan
+            ? buildFormerlyHealthNetPersistPatch({
+                caspioMco: calaimMco,
+                calaimStatus: data.caspioCalAIMStatus || data.CalAIM_Status,
+              })
+            : null;
+        const needsMcoWrite = existingMco !== calaimMco;
+        const needsFormerly =
+          Boolean(formerlyPatch) && data.formerlyHealthNet !== true;
+        if (!needsMcoWrite && !needsFormerly) return;
+
+        batch.set(
+          snap.ref,
+          {
+            caspioCalAIM_MCO: calaimMco,
+            CalAIM_MCO: calaimMco,
+            ...(formerlyPatch || {}),
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+            calaimMcoSyncedFromCaspioAt: admin.firestore.FieldValue.serverTimestamp(),
+            calaimMcoSyncSource: 'caspio_members_cache_sync',
+          },
+          { merge: true }
+        );
+        chunkUpdates += 1;
+      });
+
+      if (chunkUpdates > 0) {
+        await batch.commit();
+        updated += chunkUpdates;
+      }
+    }
+  }
+
+  return { updated, clientsTouched };
+}
+
 function buildSwSearchKeys(member: Record<string, any>): string[] {
   const keys = new Set<string>();
 
@@ -917,6 +990,7 @@ export async function POST(req: NextRequest) {
     const seenClientIds = new Set<string>();
     const caspioKaiserStatusChanges = new Map<string, string>();
     const caspioCalAIMStatusChanges = new Map<string, string>();
+    const caspioCalAIMMcoByClientId2 = new Map<string, string>();
 
     const chunkSize = FIRESTORE_BATCH_LIMIT;
     for (let i = 0; i < rawMembers.length; i += chunkSize) {
@@ -993,6 +1067,10 @@ export async function POST(req: NextRequest) {
           ...baseDoc,
           sw_search_keys: buildSwSearchKeys(baseDoc),
         };
+
+        if (calaimMco) {
+          caspioCalAIMMcoByClientId2.set(clientId2, String(calaimMco).trim());
+        }
 
         prepared.push({ clientId2, docRef, newDoc });
         batch.set(docRef, newDoc, { merge: true });
@@ -1230,6 +1308,10 @@ export async function POST(req: NextRequest) {
       adminDb,
       statusByClientId2: caspioCalAIMStatusChanges,
     });
+    const appCalAIMMcoSync = await propagateCalAIMMcoToApplications({
+      adminDb,
+      mcoByClientId2: caspioCalAIMMcoByClientId2,
+    });
 
     // Full sync should be authoritative: remove cache docs that no longer exist in Caspio.
     // This prevents stale assignments/counts from lingering in admin dashboards.
@@ -1298,6 +1380,8 @@ export async function POST(req: NextRequest) {
             appKaiserStatusClientsTouched: appKaiserStatusSync.clientsTouched,
             appCalAIMStatusUpdated: appCalAIMStatusSync.updated,
             appCalAIMStatusClientsTouched: appCalAIMStatusSync.clientsTouched,
+            appCalAIMMcoUpdated: appCalAIMMcoSync.updated,
+            appCalAIMMcoClientsTouched: appCalAIMMcoSync.clientsTouched,
           },
         },
         { merge: true }
@@ -1346,6 +1430,8 @@ export async function POST(req: NextRequest) {
       appKaiserStatusClientsTouched: appKaiserStatusSync.clientsTouched,
       appCalAIMStatusUpdated: appCalAIMStatusSync.updated,
       appCalAIMStatusClientsTouched: appCalAIMStatusSync.clientsTouched,
+      appCalAIMMcoUpdated: appCalAIMMcoSync.updated,
+      appCalAIMMcoClientsTouched: appCalAIMMcoSync.clientsTouched,
     });
   } catch (error: any) {
     console.error('❌ Error syncing Caspio members cache:', error);

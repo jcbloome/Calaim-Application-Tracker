@@ -30,6 +30,7 @@ import { StatusIndicator } from './StaffApplicationTracker';
 import { type Application, type FormStatus } from '@/lib/definitions';
 import { type Dispatch, type SetStateAction, type JSX } from 'react';
 import { type KaiserRegion } from '@/lib/kaiser-region';
+import { getHealthNetTransitionBadgeText, isFormerlyHealthNet } from '@/lib/formerly-health-net';
 import {
   type CommunicationNoteLogEntry,
   type EligibilityScreenshotUpload,
@@ -154,9 +155,16 @@ export function EligibilityCheckQuickAction({
                 <span className="font-medium">MRN:</span>{' '}
                 {memberMrnDisplay}
               </div>
-              <div>
-                <span className="font-medium">Health Plan:</span>{' '}
-                {healthPlanDisplay}
+              <div className="flex flex-wrap items-center gap-2">
+                <span>
+                  <span className="font-medium">Health Plan:</span>{' '}
+                  {healthPlanDisplay}
+                </span>
+                {isFormerlyHealthNet(application as any) ? (
+                  <Badge variant="outline" className="bg-violet-50 border-violet-200 text-violet-900 text-[10px]">
+                    {getHealthNetTransitionBadgeText(application as any)}
+                  </Badge>
+                ) : null}
               </div>
               <div>
                 <span className="font-medium">Pathway:</span>{' '}

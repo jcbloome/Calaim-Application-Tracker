@@ -8,7 +8,13 @@ import {
 import { isKaiserInactiveStatus } from '@/lib/batch-eligibility';
 import { canonicalInactiveCalaimStatus } from '@/lib/inactive-calaim-status';
 import { identityTokenLookupKeys } from '@/lib/member-identity';
-import { isAuthorizedCalaimStatus, isKaiserPlan, parseDateOnly, formatUsDate } from '@/lib/t2038-claims';
+import {
+  isAuthorizedCalaimStatus,
+  isHealthNetPlan,
+  isKaiserPlan,
+  parseDateOnly,
+  formatUsDate,
+} from '@/lib/t2038-claims';
 
 /** Firestore collection for saved Kaiser portal MIF Excel uploads. */
 export const KAISER_PORTAL_MIF_UPLOADS_COLLECTION = 'kaiser_portal_mif_uploads';
@@ -169,6 +175,39 @@ function forceSheetColumnsAsText(sheet: XLSX.WorkSheet, columnHeaders: string[])
   }
 }
 
+/** Expand column widths from cell content so Excel does not open with collapsed columns. */
+function applyWorksheetAutoColumnWidths(sheet: XLSX.WorkSheet, matrix?: unknown[][]) {
+  const rows: unknown[][] =
+    matrix && matrix.length
+      ? matrix
+      : (() => {
+          const ref = sheet['!ref'];
+          if (!ref) return [];
+          return XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+            header: 1,
+            raw: false,
+            defval: '',
+          }) as unknown[][];
+        })();
+  if (!rows.length) return;
+  const colCount = rows.reduce(
+    (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
+    0
+  );
+  if (!colCount) return;
+  const widths: number[] = Array.from({ length: colCount }, () => 12);
+  rows.forEach((row) => {
+    if (!Array.isArray(row)) return;
+    row.forEach((cell, colIdx) => {
+      const len = Math.min(72, Math.max(String(cell ?? '').length, 1));
+      if (len > widths[colIdx]) widths[colIdx] = len;
+    });
+  });
+  sheet['!cols'] = widths.map((wch) => ({
+    wch: Math.max(14, Math.min(72, wch + 2)),
+  }));
+}
+
 export type KaiserMifCompareMember = {
   clientId2: string;
   memberFirstName: string;
@@ -179,6 +218,8 @@ export type KaiserMifCompareMember = {
   /** Extra MRN/CIN/MCP tokens so field swaps still match. */
   altIds: string[];
   dob: string;
+  /** Caspio CalAIM_MCO (Kaiser, Health Net, etc.). Empty for portal rows. */
+  calaimMco: string;
   calaimStatus: string;
   kaiserStatus: string;
   authorizationNumber: string;
@@ -193,7 +234,10 @@ export type KaiserMifMatchMethod = 'mrn' | 'cin' | 'clientId2' | 'name_dob' | 'n
 export type KaiserMifCompareHit = {
   portal: KaiserMifCompareMember | null;
   ours: KaiserMifCompareMember | null;
-  /** Reserved: previously annotated non-roster Caspio hits (roster is now all statuses). */
+  /**
+   * Portal-only annotation: same person already in Caspio under another MCO (often Health Net)
+   * or a non-Authorized Kaiser status — so staff can add the Kaiser MRN to Client_ID2.
+   */
   caspioOther: KaiserMifCompareMember | null;
   matchMethod: KaiserMifMatchMethod;
   bucket: 'matched' | 'portal_only' | 'ours_only';
@@ -210,6 +254,10 @@ export type KaiserMifCompareResult = {
     portalOnly: number;
     oursOnly: number;
     portalOnlyFoundInCaspioNotAuthorized: number;
+    /** Portal-only rows matched by CIN (or name+DOB) to a non-Kaiser Caspio MCO. */
+    portalOnlyFoundOtherMcoByCin: number;
+    /** Subset still on Health Net CalAIM_MCO (Kaiser authorized on portal). */
+    portalOnlyFoundHealthNetByCin: number;
   };
 };
 
@@ -490,11 +538,16 @@ export function isKaiserMifRosterMember(
   return true;
 }
 
-export function mapCaspioRawToKaiserCompareMember(
+function mapCaspioRawToCompareMember(
   raw: Record<string, unknown>,
-  index = 0
+  index = 0,
+  opts?: { requireKaiser?: boolean }
 ): KaiserMifCompareMember | null {
-  if (!isKaiserPlan(pickFirst(raw.CalAIM_MCO, raw.memberHealthPlan, raw.healthPlan))) return null;
+  const calaimMco = pickFirst(raw.CalAIM_MCO, raw.memberHealthPlan, raw.healthPlan);
+  if (opts?.requireKaiser !== false && !isKaiserPlan(calaimMco)) return null;
+  if (!calaimMco && opts?.requireKaiser === false) {
+    // Still allow blank MCO rows when scanning all CalAIM — identity fields required below.
+  }
   const memberFirstName = pickFirst(raw.Senior_First, raw.memberFirstName, raw.First_Name);
   const memberLastName = pickFirst(raw.Senior_Last, raw.memberLastName, raw.Last_Name);
   const clientId2 = pickFirst(raw.Client_ID2, raw.client_ID2, raw.clientId2);
@@ -506,21 +559,17 @@ export function mapCaspioRawToKaiserCompareMember(
   const mediCalField = formatKaiserMrnIdentifier(
     pickFirst(raw.MediCal_Number, raw.Medical_Number, raw.Medi_Cal_Number, raw.memberMediCalNum)
   );
+  // Health Net (and other MCO) Medi-Cal CIN lives in MCP_CIN — keep that as cin for portal crosswalk.
   const mcpCin = formatKaiserMrnIdentifier(pickFirst(raw.MCP_CIN, raw.CIN));
   const trackerMrn = formatKaiserMrnIdentifier(pickFirst(raw.memberMrn));
-  // Do NOT drop MCP_CIN/memberMrn when equal to MediCal — Caspio often stores the same
-  // value in both MRN and MediCal Number (e.g. 000014038714).
+  const cin = mcpCin || mediCalField || '';
+  // Prefer dedicated MRN fields; do not overwrite cin with MCP_CIN into mrn when that is the only ID.
   const mrnFinal =
     memberMrnField ||
-    mcpCin ||
     trackerMrn ||
-    mediCalField ||
-    idCandidates[0] ||
+    idCandidates.find((id) => id && normalizeId(id) !== normalizeId(cin)) ||
     '';
-  const cin =
-    mediCalField ||
-    (mcpCin && stripLeadingZeros(mcpCin) !== stripLeadingZeros(mrnFinal) ? mcpCin : '') ||
-    '';
+  if (!clientId2 && !mrnFinal && !cin && !memberFirstName && !memberLastName) return null;
   const altIds = Array.from(
     new Set(
       [memberMrnField, mediCalField, mcpCin, trackerMrn, mrnFinal, cin, ...idCandidates].filter(Boolean)
@@ -549,6 +598,7 @@ export function mapCaspioRawToKaiserCompareMember(
     cin,
     altIds,
     dob,
+    calaimMco,
     calaimStatus: pickFirst(raw.CalAIM_Status, raw.calaimStatus, raw.caspioCalAIMStatus, raw.memberStatus),
     kaiserStatus: pickFirst(raw.Kaiser_Status, raw.Kaiser_ID_Status, raw.kaiserStatus),
     authorizationNumber: pickFirst(raw.Authorization_Number_T2038, raw.Authorization_Number_T038),
@@ -562,22 +612,59 @@ export function mapCaspioRawToKaiserCompareMember(
   };
 }
 
+export function mapCaspioRawToKaiserCompareMember(
+  raw: Record<string, unknown>,
+  index = 0
+): KaiserMifCompareMember | null {
+  return mapCaspioRawToCompareMember(raw, index, { requireKaiser: true });
+}
+
+/** Any CalAIM MCO (Health Net, Molina, etc.) for CIN crosswalk on portal-only rows. */
+export function mapCaspioRawToAnyMcoCompareMember(
+  raw: Record<string, unknown>,
+  index = 0
+): KaiserMifCompareMember | null {
+  return mapCaspioRawToCompareMember(raw, index, { requireKaiser: false });
+}
+
 export function collectAuthorizedKaiserMembers(
   rawMembers: Array<Record<string, unknown>> | null | undefined
-): { authorized: KaiserMifCompareMember[]; allKaiser: KaiserMifCompareMember[] } {
+): {
+  authorized: KaiserMifCompareMember[];
+  allKaiser: KaiserMifCompareMember[];
+  otherMco: KaiserMifCompareMember[];
+} {
   const allKaiser: KaiserMifCompareMember[] = [];
-  const seenAll = new Set<string>();
+  const otherMco: KaiserMifCompareMember[] = [];
+  const seenKaiser = new Set<string>();
+  const seenOther = new Set<string>();
   (Array.isArray(rawMembers) ? rawMembers : []).forEach((raw, index) => {
-    const member = mapCaspioRawToKaiserCompareMember(raw || {}, index);
-    if (!member) return;
-    const key = normalizeId(member.clientId2) || `${normalizeName(member.memberName)}|${member.mrn}|${member.cin}`;
-    if (seenAll.has(key)) return;
-    seenAll.add(key);
-    allKaiser.push(member);
+    const row = raw || {};
+    const mco = pickFirst(row.CalAIM_MCO, row.memberHealthPlan, row.healthPlan);
+    if (isKaiserPlan(mco)) {
+      const member = mapCaspioRawToKaiserCompareMember(row, index);
+      if (!member) return;
+      const key =
+        normalizeId(member.clientId2) || `${normalizeName(member.memberName)}|${member.mrn}|${member.cin}`;
+      if (seenKaiser.has(key)) return;
+      seenKaiser.add(key);
+      allKaiser.push(member);
+      return;
+    }
+    const other = mapCaspioRawToAnyMcoCompareMember(row, index);
+    if (!other) return;
+    // Prefer rows that have a CIN — that is how portal-only Health Net reuse is detected.
+    if (!other.cin && !other.mrn && !other.dob) return;
+    const key =
+      normalizeId(other.clientId2) || `${normalizeName(other.memberName)}|${other.mrn}|${other.cin}`;
+    if (seenOther.has(key)) return;
+    seenOther.add(key);
+    otherMco.push(other);
   });
   allKaiser.sort((a, b) => a.memberName.localeCompare(b.memberName, undefined, { sensitivity: 'base' }));
+  otherMco.sort((a, b) => a.memberName.localeCompare(b.memberName, undefined, { sensitivity: 'base' }));
   // `authorized` kept for API/UI compatibility — full Kaiser roster, every CalAIM_Status.
-  return { authorized: allKaiser, allKaiser };
+  return { authorized: allKaiser, allKaiser, otherMco };
 }
 
 function scorePortalSheet(matrix: unknown[][], sheetName: string): number {
@@ -640,6 +727,7 @@ function mapIlsMifRowToPortalMember(row: IlsMifMasterRow, index: number): Kaiser
     cin,
     altIds: Array.from(new Set([mrn, cin].filter(Boolean))),
     dob: clean(row.memberDob),
+    calaimMco: '',
     calaimStatus: '',
     kaiserStatus: '',
     authorizationNumber: clean(row.authorizationNumberT2038),
@@ -764,6 +852,7 @@ export function parseKaiserPortalMifWorkbook(buffer: ArrayBuffer): {
       cin,
       altIds: Array.from(new Set([mrn, cin].filter(Boolean))),
       dob,
+      calaimMco: '',
       calaimStatus: cellValue(row, statusIdx),
       kaiserStatus: '',
       authorizationNumber: '',
@@ -911,14 +1000,75 @@ function findMatch(
   return null;
 }
 
+/**
+ * Cross-MCO reuse: portal Kaiser member already exists under Health Net (etc.).
+ * Prefer CIN / MCP_CIN (Medi-Cal stays stable across MCP switch); then name+DOB.
+ * Do not match on Kaiser MRN alone — that ID is new and should not collide with another plan.
+ */
+function findCrossMcoReuseMatch(
+  target: KaiserMifCompareMember,
+  indexes: ReturnType<typeof buildIndexes>
+): { member: KaiserMifCompareMember; method: KaiserMifMatchMethod } | null {
+  const cinCandidates = Array.from(
+    new Set([target.cin, ...(target.altIds || [])].map((v) => clean(v)).filter(Boolean))
+  );
+  for (const cin of cinCandidates) {
+    const viaCin =
+      lookupIdentifier(indexes.byCin, cin) ||
+      lookupIdentifier(indexes.byAnyId, cin) ||
+      lookupIdentifier(indexes.byMrn, cin);
+    if (viaCin) return { member: viaCin, method: 'cin' };
+  }
+  const nameKey = `${normalizeName(target.memberLastName)}|${normalizeName(target.memberFirstName)}`;
+  if (nameKey !== '|' && target.dob) {
+    const nd = `${nameKey}|${normalizeId(target.dob)}`;
+    if (indexes.byNameDob.has(nd)) {
+      return { member: indexes.byNameDob.get(nd)!, method: 'name_dob' };
+    }
+  }
+  // Unique name on the other-MCO roster (e.g. portal Kaiser Nelson vs Caspio Health Net Nelson
+  // when MCP_CIN / DOB have not been updated yet). Staff must verify before linking.
+  if (nameKey !== '|') {
+    const list = indexes.byName.get(nameKey) || [];
+    if (list.length === 1) return { member: list[0], method: 'name' };
+  }
+  return null;
+}
+
+/** Portal Kaiser row with Caspio still on Health Net (CIN/name reuse). */
+export function isCurrentlyHealthNetPortalHit(hit: KaiserMifCompareHit): boolean {
+  return Boolean(
+    hit.bucket === 'portal_only' &&
+      hit.caspioOther &&
+      isHealthNetPlan(hit.caspioOther.calaimMco)
+  );
+}
+
 export function compareKaiserPortalToAuthorized(opts: {
   portalMembers: KaiserMifCompareMember[];
   authorizedMembers: KaiserMifCompareMember[];
   allKaiserMembers?: KaiserMifCompareMember[];
+  /** Non-Kaiser Caspio members (Health Net, etc.) for CIN reuse on portal-only rows. */
+  otherMcoMembers?: KaiserMifCompareMember[];
 }): KaiserMifCompareResult {
   const authIndexes = buildIndexes(opts.authorizedMembers);
-  const otherKaiser = (opts.allKaiserMembers || []).filter((m) => !isKaiserMifRosterMember(m));
-  const otherIndexes = buildIndexes(otherKaiser);
+  const authClientKeys = new Set(
+    opts.authorizedMembers.flatMap((m) => [
+      normalizeId(m.clientId2),
+      ...identityTokenLookupKeys(m.clientId2),
+    ]).filter(Boolean)
+  );
+  // Kaiser rows not in the current compare roster (e.g. Authorized-only view vs full list).
+  const otherKaiser = (opts.allKaiserMembers || []).filter((m) => {
+    const key = normalizeId(m.clientId2);
+    if (key && authClientKeys.has(key)) return false;
+    for (const token of identityTokenLookupKeys(m.clientId2)) {
+      if (authClientKeys.has(token)) return false;
+    }
+    return true;
+  });
+  const otherKaiserIndexes = buildIndexes(otherKaiser);
+  const otherMcoIndexes = buildIndexes(opts.otherMcoMembers || []);
 
   const matched: KaiserMifCompareHit[] = [];
   const portalOnly: KaiserMifCompareHit[] = [];
@@ -942,12 +1092,15 @@ export function compareKaiserPortalToAuthorized(opts: {
       });
       continue;
     }
-    const other = findMatch(portal, otherIndexes);
+    // Prefer other-MCO CIN reuse (Health Net → add Kaiser MRN) over leftover Kaiser status hits.
+    const crossMco = findCrossMcoReuseMatch(portal, otherMcoIndexes);
+    const otherKaiserHit = findMatch(portal, otherKaiserIndexes);
+    const annotation = crossMco || otherKaiserHit;
     portalOnly.push({
       portal,
       ours: null,
-      caspioOther: other?.member || null,
-      matchMethod: other?.method || '',
+      caspioOther: annotation?.member || null,
+      matchMethod: annotation?.method || '',
       bucket: 'portal_only',
     });
   }
@@ -974,6 +1127,13 @@ export function compareKaiserPortalToAuthorized(opts: {
     });
   }
 
+  const portalOnlyOtherMco = portalOnly.filter(
+    (h) => h.caspioOther && !isKaiserPlan(h.caspioOther.calaimMco)
+  );
+  const portalOnlyHealthNet = portalOnlyOtherMco.filter((h) =>
+    isHealthNetPlan(h.caspioOther?.calaimMco)
+  );
+
   return {
     matched,
     portalOnly,
@@ -985,8 +1145,59 @@ export function compareKaiserPortalToAuthorized(opts: {
       portalOnly: portalOnly.length,
       oursOnly: oursOnly.length,
       portalOnlyFoundInCaspioNotAuthorized: portalOnly.filter((h) => Boolean(h.caspioOther)).length,
+      portalOnlyFoundOtherMcoByCin: portalOnlyOtherMco.length,
+      portalOnlyFoundHealthNetByCin: portalOnlyHealthNet.length,
     },
   };
+}
+
+/**
+ * Attach Caspio Health Net / other-MCO hits (from MCP_CIN resolve) onto portal-only rows
+ * that were still unmatched after the bulk roster compare.
+ */
+export function enrichKaiserMifCompareWithCinMatches(
+  result: KaiserMifCompareResult,
+  cinMatches: KaiserMifCompareMember[]
+): KaiserMifCompareResult {
+  if (!cinMatches.length) return result;
+  const indexes = buildIndexes(cinMatches);
+  const portalOnly = result.portalOnly.map((hit) => {
+    if (hit.caspioOther || !hit.portal) return hit;
+    const found = findCrossMcoReuseMatch(hit.portal, indexes);
+    if (!found) return hit;
+    return {
+      ...hit,
+      caspioOther: found.member,
+      matchMethod: found.method || 'cin',
+    };
+  });
+  const portalOnlyOtherMco = portalOnly.filter(
+    (h) => h.caspioOther && !isKaiserPlan(h.caspioOther.calaimMco)
+  );
+  const portalOnlyHealthNet = portalOnlyOtherMco.filter((h) =>
+    isHealthNetPlan(h.caspioOther?.calaimMco)
+  );
+  return {
+    ...result,
+    portalOnly,
+    summary: {
+      ...result.summary,
+      portalOnlyFoundInCaspioNotAuthorized: portalOnly.filter((h) => Boolean(h.caspioOther)).length,
+      portalOnlyFoundOtherMcoByCin: portalOnlyOtherMco.length,
+      portalOnlyFoundHealthNetByCin: portalOnlyHealthNet.length,
+    },
+  };
+}
+
+export function collectUnresolvedPortalCins(result: KaiserMifCompareResult | null | undefined): string[] {
+  if (!result) return [];
+  const cins = new Set<string>();
+  for (const hit of result.portalOnly) {
+    if (hit.caspioOther) continue;
+    const cin = clean(hit.portal?.cin);
+    if (cin) cins.add(cin);
+  }
+  return Array.from(cins);
 }
 
 export function kaiserMifCompareHitsToSheetRows(hits: KaiserMifCompareHit[]) {
@@ -1013,9 +1224,22 @@ export function kaiserMifCompareHitsToSheetRows(hits: KaiserMifCompareHit[]) {
       ? `${hit.ours.authorizationStart || '—'} → ${hit.ours.authorizationEnd || '—'}`
       : '',
     Caspio_Other_Name: hit.caspioOther?.memberName || '',
+    Caspio_Other_MCO: hit.caspioOther?.calaimMco || '',
     Caspio_Other_CalAIM_Status: hit.caspioOther?.calaimStatus || '',
     Caspio_Other_Kaiser_Status: hit.caspioOther?.kaiserStatus || '',
     Caspio_Other_Client_ID2: hit.caspioOther?.clientId2 || '',
+    Caspio_Other_MRN: hit.caspioOther?.mrn || '',
+    Caspio_Other_CIN: hit.caspioOther?.cin || '',
+    Reuse_Hint:
+      hit.bucket === 'portal_only' && hit.caspioOther && !isKaiserPlan(hit.caspioOther.calaimMco)
+        ? `${
+            isHealthNetPlan(hit.caspioOther.calaimMco)
+              ? 'Currently Health Net on Caspio'
+              : `Currently ${hit.caspioOther.calaimMco || 'other MCO'} on Caspio`
+          }; Kaiser authorized on portal. Add Kaiser MRN ${hit.portal?.mrn || ''} to Client_ID2 ${hit.caspioOther.clientId2}; update CalAIM_MCO when ready.`
+        : hit.bucket === 'portal_only' && hit.caspioOther
+          ? `Kaiser Caspio hit under CalAIM ${hit.caspioOther.calaimStatus || '—'}`
+          : '',
   }));
 }
 
@@ -1051,8 +1275,16 @@ export function buildKaiserMifCompareWorkbook(result: KaiserMifCompareResult): U
     ['Portal only (not in Caspio)', result.summary.portalOnly],
     ['Ours only (Authorized, missing from portal)', result.summary.oursOnly],
     [
-      'Portal only found in Caspio (legacy other-status note)',
+      'Portal only found in Caspio (other Kaiser status or other MCO)',
       result.summary.portalOnlyFoundInCaspioNotAuthorized,
+    ],
+    [
+      'Portal only found other MCO by CIN (add Kaiser MRN to same Client_ID2)',
+      result.summary.portalOnlyFoundOtherMcoByCin,
+    ],
+    [
+      'Currently Health Net on Caspio (Kaiser authorized on portal; MCP_CIN match)',
+      result.summary.portalOnlyFoundHealthNetByCin,
     ],
   ]);
   XLSX.utils.book_append_sheet(book, summary, 'Summary');
@@ -1135,8 +1367,9 @@ export function buildKaiserMifOursOnlyIlsWorkbook(
   );
   // SheetJS coerces digit strings to numbers — force text so Excel keeps leading zeros.
   forceSheetColumnsAsText(sheet, ['MRN']);
+  applyWorksheetAutoColumnWidths(sheet);
   XLSX.utils.book_append_sheet(book, sheet, 'Ours only for ILS');
-  const summary = XLSX.utils.aoa_to_sheet([
+  const summaryRows = [
     ['Authorized Caspio members missing from Kaiser portal MIF'],
     ['Purpose', 'Send to ILS to investigate why these members do not appear in the Kaiser portal tool'],
     ['Compared at', meta?.comparedAt || new Date().toISOString()],
@@ -1144,7 +1377,9 @@ export function buildKaiserMifOursOnlyIlsWorkbook(
     ['Portal MIF rows', result.summary.portalCount],
     ['Our Authorized in Caspio', result.summary.oursCount],
     ['Ours only (this list)', rows.length],
-  ]);
+  ];
+  const summary = XLSX.utils.aoa_to_sheet(summaryRows);
+  applyWorksheetAutoColumnWidths(summary, summaryRows);
   XLSX.utils.book_append_sheet(book, summary, 'Cover note');
   return xlsxBookToUint8Array(book);
 }
@@ -1184,6 +1419,7 @@ export function storedPortalMembersToCompareMembers(
       cin,
       altIds: Array.from(new Set([mrn, cin].filter(Boolean))),
       dob: clean(member.dob),
+      calaimMco: '',
       calaimStatus: '',
       kaiserStatus: '',
       authorizationNumber: '',

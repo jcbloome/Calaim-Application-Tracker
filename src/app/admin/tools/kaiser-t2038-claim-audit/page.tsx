@@ -1000,7 +1000,7 @@ export default function KaiserT2038ClaimAuditPage() {
       URL.revokeObjectURL(url);
       toast({
         title: 'SDS EDI ready',
-        description: `${body.included || pushedClaimTargets.length} claim(s) for manual Smart Data Solutions upload.`,
+        description: `${body.included || pushedClaimTargets.length} claim(s) for SDS 837P — upload the .edi manually in the SDS portal (Sender/Receiver IDs not required yet).`,
       });
     } catch (err: unknown) {
       toast({

@@ -22,6 +22,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import { type Application } from '@/lib/definitions';
 import { type Dispatch, type SetStateAction } from 'react';
+import {
+  getFormerlyHealthNetLabel,
+  getHealthNetTransitionBadgeText,
+  isFormerlyHealthNet,
+} from '@/lib/formerly-health-net';
 
 export interface ApplicationProgressSummaryCardProps {
   eligibilityCompleted: boolean;
@@ -567,7 +572,18 @@ export function ApplicationProgressSummaryCard({
         </div>
 
         <div className="flex items-center justify-end gap-3">
-          <div className="text-right">
+          <div className="text-right space-y-1">
+            {isFormerlyHealthNet(application as any) ? (
+              <div>
+                <Badge
+                  variant="outline"
+                  className="bg-violet-50 border-violet-200 text-violet-900"
+                  title={getFormerlyHealthNetLabel(application as any)}
+                >
+                  {getHealthNetTransitionBadgeText(application as any)}
+                </Badge>
+              </div>
+            ) : null}
             <div className="text-xs text-muted-foreground">
               {application.healthPlan?.toLowerCase().includes('kaiser')
                 ? `Progression: ${currentKaiserStatus || 'Not set'}`

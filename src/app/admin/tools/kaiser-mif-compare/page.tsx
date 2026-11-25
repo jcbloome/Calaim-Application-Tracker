@@ -13,9 +13,12 @@ import {
   buildKaiserMifCompareWorkbook,
   buildKaiserMifOursOnlyIlsWorkbook,
   buildKaiserPortalMifUploadDiffWorkbook,
+  collectUnresolvedPortalCins,
   compareKaiserPortalToAuthorized,
+  enrichKaiserMifCompareWithCinMatches,
   filterKaiserMifHitsByRoster,
   filterKaiserMifHitsByStatus,
+  isCurrentlyHealthNetPortalHit,
   kaiserMifHitIsDiedOrNonActive,
   parseKaiserPortalMifFile,
   storedPortalMembersToCompareMembers,
@@ -27,7 +30,7 @@ import {
   type KaiserPortalMifUploadDiff,
   type KaiserPortalMifUploadSummary,
 } from '@/lib/kaiser-mif-compare';
-import { isAuthorizedCalaimStatus } from '@/lib/t2038-claims';
+import { isAuthorizedCalaimStatus, isHealthNetPlan, isKaiserPlan } from '@/lib/t2038-claims';
 import { Download, FileSpreadsheet, Loader2, RefreshCw, Upload } from 'lucide-react';
 
 function downloadExcelBytes(bytes: Uint8Array, fileName: string) {
@@ -44,7 +47,13 @@ function downloadExcelBytes(bytes: Uint8Array, fileName: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-type BucketFilter = 'discrepancies' | 'portal_only' | 'ours_only' | 'matched' | 'all';
+type BucketFilter =
+  | 'discrepancies'
+  | 'portal_only'
+  | 'ours_only'
+  | 'matched'
+  | 'currently_health_net'
+  | 'all';
 
 export default function KaiserMifComparePage() {
   const auth = useAuth();
@@ -54,11 +63,14 @@ export default function KaiserMifComparePage() {
 
   const [authorized, setAuthorized] = useState<KaiserMifCompareMember[]>([]);
   const [allKaiser, setAllKaiser] = useState<KaiserMifCompareMember[]>([]);
+  const [otherMco, setOtherMco] = useState<KaiserMifCompareMember[]>([]);
   const [fetchedAt, setFetchedAt] = useState('');
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
+  const [isResolvingCins, setIsResolvingCins] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
+  const [portalMembers, setPortalMembers] = useState<KaiserMifCompareMember[]>([]);
   const [portalMeta, setPortalMeta] = useState<{
     sheetName: string;
     headerRow: number;
@@ -111,6 +123,7 @@ export default function KaiserMifComparePage() {
         }
         setAuthorized(Array.isArray(body.authorized) ? body.authorized : []);
         setAllKaiser(Array.isArray(body.allKaiser) ? body.allKaiser : []);
+        setOtherMco(Array.isArray(body.otherMco) ? body.otherMco : []);
         setFetchedAt(String(body.fetchedAt || ''));
       } catch (err: unknown) {
         setError(String((err as { message?: string })?.message || 'Could not load authorized Kaiser members.'));
@@ -157,21 +170,80 @@ export default function KaiserMifComparePage() {
     }
   }, [isAdmin, isAdminLoading, loadMembers, loadSavedUploads]);
 
+  const resolveMissingCins = useCallback(
+    async (compareResult: KaiserMifCompareResult): Promise<KaiserMifCompareResult> => {
+      const unresolved = collectUnresolvedPortalCins(compareResult);
+      if (!unresolved.length) return compareResult;
+      const user = auth.currentUser;
+      if (!user) return compareResult;
+      setIsResolvingCins(true);
+      try {
+        const idToken = await user.getIdToken();
+        const response = await fetch('/api/admin/kaiser-mif-compare/resolve-cin', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ cins: unresolved }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body?.success) {
+          console.warn('[kaiser-mif-compare] resolve-cin failed', body?.error);
+          return compareResult;
+        }
+        const matches = Array.isArray(body.matches) ? (body.matches as KaiserMifCompareMember[]) : [];
+        if (!matches.length) return compareResult;
+        return enrichKaiserMifCompareWithCinMatches(compareResult, matches);
+      } catch (error) {
+        console.warn('[kaiser-mif-compare] resolve-cin error', error);
+        return compareResult;
+      } finally {
+        setIsResolvingCins(false);
+      }
+    },
+    [auth]
+  );
+
   const runCompare = useCallback(
-    (portalMembers: KaiserMifCompareMember[]) => {
-      const next = compareKaiserPortalToAuthorized({
-        portalMembers,
+    async (members: KaiserMifCompareMember[], opts?: { silent?: boolean }) => {
+      setPortalMembers(members);
+      let next = compareKaiserPortalToAuthorized({
+        portalMembers: members,
         authorizedMembers: authorized,
         allKaiserMembers: allKaiser,
+        otherMcoMembers: otherMco,
       });
+      next = await resolveMissingCins(next);
       setResult(next);
+      if (opts?.silent) return;
+      const hnStill = next.summary.portalOnlyFoundHealthNetByCin || 0;
+      const otherMcoReuse = next.summary.portalOnlyFoundOtherMcoByCin || 0;
       toast({
         title: 'Compare complete',
-        description: `${next.summary.matched} matched · ${next.summary.portalOnly} portal only · ${next.summary.oursOnly} ours only`,
+        description: `${next.summary.matched} matched · ${next.summary.portalOnly} portal only${
+          hnStill
+            ? ` (${hnStill} currently Health Net by MCP_CIN — Kaiser authorized)`
+            : otherMcoReuse
+              ? ` (${otherMcoReuse} other MCO by MCP_CIN)`
+              : ''
+        } · ${next.summary.oursOnly} ours only`,
       });
     },
-    [authorized, allKaiser, toast]
+    [authorized, allKaiser, otherMco, resolveMissingCins, toast]
   );
+
+  const lastRosterFingerprintRef = useRef('');
+  // Re-run compare once when Caspio roster (including Health Net) finishes loading.
+  useEffect(() => {
+    if (!portalMembers.length) return;
+    if (!authorized.length && !allKaiser.length && !otherMco.length) return;
+    const fingerprint = `${authorized.length}|${allKaiser.length}|${otherMco.length}`;
+    if (fingerprint === lastRosterFingerprintRef.current) return;
+    lastRosterFingerprintRef.current = fingerprint;
+    void runCompare(portalMembers, { silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when roster identity counts change
+  }, [authorized.length, allKaiser.length, otherMco.length, portalMembers.length]);
 
   const savePortalUpload = useCallback(
     async (opts: {
@@ -264,7 +336,7 @@ export default function KaiserMifComparePage() {
           description: `${parsed.members.length} members from “${parsed.sheetName}” · ${parsed.rowsWithMrn} with MRN · ${parsed.rowsWithCin} with CIN`,
         });
       }
-      runCompare(parsed.members);
+      await runCompare(parsed.members);
       await savePortalUpload({
         fileName: file.name,
         sheetName: parsed.sheetName,
@@ -275,6 +347,7 @@ export default function KaiserMifComparePage() {
       });
     } catch (err: unknown) {
       setResult(null);
+      setPortalMembers([]);
       setPortalMeta(null);
       setError(String((err as { message?: string })?.message || 'Could not parse Excel file.'));
     } finally {
@@ -373,7 +446,7 @@ export default function KaiserMifComparePage() {
         rowsWithMrn: upload.rowsWithMrn,
         rowsWithCin: upload.rowsWithCin,
       });
-      runCompare(members);
+      await runCompare(members);
       toast({
         title: 'Saved portal list loaded',
         description: `Re-compared “${upload.fileName}” (${members.length} members) to Caspio.`,
@@ -393,23 +466,44 @@ export default function KaiserMifComparePage() {
     );
   };
 
+  const currentlyHealthNetHits = useMemo(() => {
+    if (!result) return [] as KaiserMifCompareHit[];
+    return result.portalOnly.filter((hit) => isCurrentlyHealthNetPortalHit(hit));
+  }, [result]);
+
+  const healthNetDiedOrNonActiveCount = useMemo(
+    () => currentlyHealthNetHits.filter((hit) => kaiserMifHitIsDiedOrNonActive(hit)).length,
+    [currentlyHealthNetHits]
+  );
+
+  const showHealthNetStatusList = () => {
+    setBucketFilter('currently_health_net');
+    // Health Net status list should show every HN hit, including Non-Active / Member Died.
+    setStatusFilter('all');
+  };
+
   const bucketHits = useMemo(() => {
     if (!result) return [] as KaiserMifCompareHit[];
     if (bucketFilter === 'discrepancies') return [...result.portalOnly, ...result.oursOnly];
     if (bucketFilter === 'portal_only') return result.portalOnly;
     if (bucketFilter === 'ours_only') return result.oursOnly;
     if (bucketFilter === 'matched') return result.matched;
+    if (bucketFilter === 'currently_health_net') return currentlyHealthNetHits;
     return [...result.portalOnly, ...result.oursOnly, ...result.matched];
-  }, [result, bucketFilter]);
+  }, [result, bucketFilter, currentlyHealthNetHits]);
 
   const rosterFilteredHits = useMemo(
     () => filterKaiserMifHitsByRoster(bucketHits, rosterFilter),
     [bucketHits, rosterFilter]
   );
 
+  // Health Net status view always includes Non-Active / Member Died (card count = list count).
+  const effectiveStatusFilter: KaiserMifStatusFilter =
+    bucketFilter === 'currently_health_net' ? 'all' : statusFilter;
+
   const statusFilteredHits = useMemo(
-    () => filterKaiserMifHitsByStatus(rosterFilteredHits, statusFilter),
-    [rosterFilteredHits, statusFilter]
+    () => filterKaiserMifHitsByStatus(rosterFilteredHits, effectiveStatusFilter),
+    [rosterFilteredHits, effectiveStatusFilter]
   );
 
   const diedOrNonActiveInBucket = useMemo(
@@ -432,6 +526,10 @@ export default function KaiserMifComparePage() {
         hit.ours?.calaimStatus,
         hit.ours?.kaiserStatus,
         hit.caspioOther?.memberName,
+        hit.caspioOther?.clientId2,
+        hit.caspioOther?.mrn,
+        hit.caspioOther?.cin,
+        hit.caspioOther?.calaimMco,
         hit.caspioOther?.calaimStatus,
         hit.caspioOther?.kaiserStatus,
       ]
@@ -493,13 +591,14 @@ export default function KaiserMifComparePage() {
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
             Upload the Excel list from the new Kaiser portal and compare it to{' '}
             <span className="font-medium">all</span> Kaiser members in Caspio (every CalAIM_Status) for matching.
-            Portal-only means on the Kaiser list but not in Caspio. Ours-only lists{' '}
-            <span className="font-medium">Authorized</span> members who are missing from the portal MIF.
+            Portal-only rows also check <span className="font-medium">CIN against other MCOs</span> (e.g. Health
+            Net) so you can add the Kaiser MRN to the existing Client_ID2. Ours-only lists{' '}
+            <span className="font-medium">Authorized</span> members missing from the portal MIF.
           </p>
           {fetchedAt ? (
             <p className="mt-1 text-xs text-muted-foreground">
-              Roster pulled: {new Date(fetchedAt).toLocaleString()} · {authorized.length} Kaiser in Caspio ·{' '}
-              {authorizedRosterCount} Authorized
+              Roster pulled: {new Date(fetchedAt).toLocaleString()} · {authorized.length} Kaiser ·{' '}
+              {authorizedRosterCount} Authorized · {otherMco.length} other-MCO (CIN crosswalk)
             </p>
           ) : null}
         </div>
@@ -787,7 +886,7 @@ export default function KaiserMifComparePage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>
@@ -816,7 +915,46 @@ export default function KaiserMifComparePage() {
             <CardTitle>{result?.summary.portalOnly ?? '—'}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            On Kaiser list, not found in Caspio
+            On Kaiser list, not in Kaiser Caspio
+            {result?.summary.portalOnlyFoundOtherMcoByCin
+              ? ` · ${result.summary.portalOnlyFoundOtherMcoByCin} found other MCO by CIN`
+              : ''}
+          </CardContent>
+        </Card>
+        <Card
+          className={
+            (result?.summary.portalOnlyFoundHealthNetByCin ||
+              result?.summary.portalOnlyFoundOtherMcoByCin)
+              ? 'border-violet-400 bg-violet-50/40'
+              : undefined
+          }
+        >
+          <CardHeader className="pb-2">
+            <CardDescription>2. Health Net status</CardDescription>
+            <CardTitle>
+              {currentlyHealthNetHits.length ||
+                result?.summary.portalOnlyFoundHealthNetByCin ||
+                '—'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs text-muted-foreground">
+            <div>
+              Currently Health Net on Caspio · Kaiser authorized on portal — reuse Client_ID2, add Kaiser MRN,
+              update CalAIM_MCO when ready
+              {healthNetDiedOrNonActiveCount > 0
+                ? ` · includes ${healthNetDiedOrNonActiveCount} Member Died / Non-Active`
+                : ''}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7"
+              onClick={showHealthNetStatusList}
+            >
+              Show Health Net status list
+              {currentlyHealthNetHits.length ? ` (${currentlyHealthNetHits.length})` : ''}
+            </Button>
           </CardContent>
         </Card>
         <Card className={result?.summary.oursOnly ? 'border-rose-300' : undefined}>
@@ -847,6 +985,10 @@ export default function KaiserMifComparePage() {
             <CardTitle>2. Discrepancies</CardTitle>
             <CardDescription>
               Matched {result.summary.matched}. Review portal-only and ours-only rows (default filter).
+              {(result.summary.portalOnlyFoundHealthNetByCin || 0) > 0
+                ? ` · ${result.summary.portalOnlyFoundHealthNetByCin} currently Health Net (Kaiser authorized).`
+                : ''}
+              {isResolvingCins ? ' Looking up MCP_CIN in Caspio…' : ''}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -856,9 +998,19 @@ export default function KaiserMifComparePage() {
                 <select
                   className="block h-10 rounded-md border bg-white px-3 text-sm"
                   value={bucketFilter}
-                  onChange={(event) => setBucketFilter(event.target.value as BucketFilter)}
+                  onChange={(event) => {
+                    const next = event.target.value as BucketFilter;
+                    if (next === 'currently_health_net') {
+                      showHealthNetStatusList();
+                      return;
+                    }
+                    setBucketFilter(next);
+                  }}
                 >
                   <option value="discrepancies">Discrepancies (portal + ours only)</option>
+                  <option value="currently_health_net">
+                    2. Health Net status (Kaiser auth, still HN)
+                  </option>
                   <option value="portal_only">Portal only</option>
                   <option value="ours_only">Ours only (Authorized, not on portal)</option>
                   <option value="matched">Matched</option>
@@ -899,13 +1051,15 @@ export default function KaiserMifComparePage() {
               </label>
               <div className="text-sm text-muted-foreground pb-2">
                 Showing {displayedHits.length}
-                {statusFilter === 'hide_died_nonactive' && diedOrNonActiveInBucket > 0
-                  ? ` · ${diedOrNonActiveInBucket} Member Died / Non-Active hidden`
-                  : statusFilter === 'only_died_nonactive'
-                    ? ` · Member Died / Non-Active`
-                    : diedOrNonActiveInBucket > 0
-                      ? ` · ${diedOrNonActiveInBucket} Member Died / Non-Active in view`
-                      : ''}
+                {bucketFilter === 'currently_health_net' && diedOrNonActiveInBucket > 0
+                  ? ` · includes ${diedOrNonActiveInBucket} Member Died / Non-Active`
+                  : effectiveStatusFilter === 'hide_died_nonactive' && diedOrNonActiveInBucket > 0
+                    ? ` · ${diedOrNonActiveInBucket} Member Died / Non-Active hidden`
+                    : effectiveStatusFilter === 'only_died_nonactive'
+                      ? ` · Member Died / Non-Active`
+                      : diedOrNonActiveInBucket > 0
+                        ? ` · ${diedOrNonActiveInBucket} Member Died / Non-Active in view`
+                        : ''}
               </div>
             </div>
 
@@ -923,19 +1077,24 @@ export default function KaiserMifComparePage() {
                   {displayedHits.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
-                        No rows for this filter.
+                        {bucketFilter === 'currently_health_net'
+                          ? 'No Health Net status rows yet. Refresh from Caspio, re-upload the portal MIF, then open this list again.'
+                          : 'No rows for this filter.'}
                       </td>
                     </tr>
                   ) : null}
                   {displayedHits.map((hit, index) => {
-                    const bucketLabel =
-                      hit.bucket === 'matched'
+                    const isHealthNetStatus = isCurrentlyHealthNetPortalHit(hit);
+                    const bucketLabel = isHealthNetStatus
+                      ? 'Health Net status'
+                      : hit.bucket === 'matched'
                         ? 'Matched'
                         : hit.bucket === 'portal_only'
                           ? 'Portal only'
                           : 'Ours only';
-                    const badgeClass =
-                      hit.bucket === 'matched'
+                    const badgeClass = isHealthNetStatus
+                      ? 'bg-orange-100 text-orange-950 border-orange-400'
+                      : hit.bucket === 'matched'
                         ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
                         : hit.bucket === 'portal_only'
                           ? 'bg-amber-50 text-amber-950 border-amber-300'
@@ -953,7 +1112,17 @@ export default function KaiserMifComparePage() {
                         <td className="px-2 py-2">
                           {hit.portal ? (
                             <>
-                              <div className="font-medium">{hit.portal.memberName}</div>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="font-medium">{hit.portal.memberName}</span>
+                                {isHealthNetStatus ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-orange-100 border-orange-400 text-orange-950 text-[10px]"
+                                  >
+                                    Currently Health Net
+                                  </Badge>
+                                ) : null}
+                              </div>
                               <div className="text-muted-foreground">
                                 MRN {hit.portal.mrn || '—'} · CIN {hit.portal.cin || '—'}
                                 {hit.portal.dob ? ` · DOB ${hit.portal.dob}` : ''}
@@ -980,14 +1149,63 @@ export default function KaiserMifComparePage() {
                                   : ''}
                               </div>
                             </>
+                          ) : hit.caspioOther ? (
+                            <>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="font-medium">{hit.caspioOther.memberName}</span>
+                                {!isKaiserPlan(hit.caspioOther.calaimMco) ? (
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      isHealthNetPlan(hit.caspioOther.calaimMco)
+                                        ? 'bg-orange-100 border-orange-400 text-orange-950 text-[10px]'
+                                        : 'bg-violet-50 border-violet-200 text-violet-900 text-[10px]'
+                                    }
+                                  >
+                                    {isHealthNetPlan(hit.caspioOther.calaimMco)
+                                      ? 'Currently Health Net'
+                                      : `Currently ${hit.caspioOther.calaimMco || 'other MCO'} · Kaiser portal`}
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              <div className="text-muted-foreground">
+                                Client_ID2 {hit.caspioOther.clientId2 || '—'} · MRN{' '}
+                                {hit.caspioOther.mrn || '—'} · MCP_CIN {hit.caspioOther.cin || '—'}
+                              </div>
+                              <div className="text-muted-foreground">
+                                Caspio MCO {hit.caspioOther.calaimMco || 'Other MCO'} · CalAIM{' '}
+                                {hit.caspioOther.calaimStatus || '—'}
+                                {hit.caspioOther.kaiserStatus
+                                  ? ` · Kaiser ${hit.caspioOther.kaiserStatus}`
+                                  : ''}
+                              </div>
+                            </>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
                         </td>
                         <td className="px-2 py-2 text-muted-foreground">
-                          {hit.caspioOther ? (
+                          {hit.caspioOther && !isKaiserPlan(hit.caspioOther.calaimMco) ? (
+                            <span className="text-orange-950">
+                              {isHealthNetPlan(hit.caspioOther.calaimMco)
+                                ? 'Currently Health Net on Caspio — Kaiser authorized on portal. '
+                                : `Currently ${hit.caspioOther.calaimMco || 'other MCO'} on Caspio. `}
+                              {hit.matchMethod === 'name' &&
+                              hit.portal?.cin &&
+                              hit.caspioOther.cin &&
+                              String(hit.portal.cin).toUpperCase() !== String(hit.caspioOther.cin).toUpperCase()
+                                ? `Portal CIN ${hit.portal.cin} ≠ Caspio MCP_CIN ${hit.caspioOther.cin} — verify before linking. `
+                                : hit.matchMethod === 'cin'
+                                  ? 'Matched by MCP_CIN. '
+                                  : ''}
+                              {hit.caspioOther.clientId2
+                                ? `Reuse Client_ID2 ${hit.caspioOther.clientId2}; add portal Kaiser MRN ${hit.portal?.mrn || '—'}; update CalAIM_MCO to Kaiser when ready.`
+                                : 'Update Caspio CalAIM_MCO to Kaiser when ready.'}
+                              {hit.matchMethod ? ` · via ${hit.matchMethod}` : ''}
+                            </span>
+                          ) : hit.caspioOther ? (
                             <span>
-                              In Caspio as{' '}
+                              In Kaiser Caspio as{' '}
                               <span className="font-medium text-foreground">
                                 CalAIM {hit.caspioOther.calaimStatus || '—'}
                                 {hit.caspioOther.kaiserStatus
@@ -995,10 +1213,9 @@ export default function KaiserMifComparePage() {
                                   : ''}
                               </span>
                               {hit.caspioOther.clientId2 ? ` · Client_ID2 ${hit.caspioOther.clientId2}` : ''}
-                              {hit.caspioOther.memberName ? ` · ${hit.caspioOther.memberName}` : ''}
                             </span>
                           ) : hit.bucket === 'portal_only' ? (
-                            'Not found in our Kaiser Caspio roster'
+                            'Not found in Caspio (Kaiser or other MCO by CIN)'
                           ) : hit.bucket === 'ours_only' ? (
                             'Missing from uploaded portal MIF'
                           ) : (
