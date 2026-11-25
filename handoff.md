@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** (pending) Fix App Hosting `next build` type errors blocking rollouts since Nov 20  
+**HEAD:** `264e9105` (Fix App Hosting next build type errors)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
