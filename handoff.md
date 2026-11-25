@@ -17,6 +17,12 @@
 
 ## Changes 2026-11-24
 
+- **Kaiser ISP cover sheet county = Caspio `ALW_Counties` (hard fix):** Pulls `ALW_Counties` only; auto-refreshes on open; repairs County/Dropdown17 options. Corrects Kaiser PDF typo **San Juaquin → San Joaquin** so the cover sheet matches Caspio spelling.
+  - Files: `kaiser-cover-sheet-tier-rates.ts`, `kaiser-isp-cover-sheet/page.tsx`, `printable/page.tsx`, `template/route.ts`, `kaiser-members/route.ts`, `handoff.md`.
+
+- **Kaiser ISP cover sheet reauth — county + tier mismatch gate:** Tier mismatch blocks generate unless Change in condition is **Yes… clinical reassessment**. (County city-inference from this pass was reverted — use `ALW_Counties`.)
+  - Files: `kaiser-isp-cover-sheet/template/route.ts`, `kaiser-isp-cover-sheet/printable/page.tsx`, `kaiser-isp-cover-sheet/page.tsx`, `handoff.md`.
+
 - **Kaiser ISP cover sheet reauth — county + At ALW** (`836e23f1`): Reauth was leaving “Which county…” / “living in an ALW facility?” on Select from drop down. Fixes: match PDF typo `San Juaquin`↔`San Joaquin`; derive county from RCFE city/ZIP when `ALW_Counties` blank; default At ALW to **No** on reauth when Caspio blank; re-assert after Yes/No option repair.
   - Files: `kaiser-isp-cover-sheet/template/route.ts`, `kaiser-isp-cover-sheet/page.tsx`, `handoff.md`.
 

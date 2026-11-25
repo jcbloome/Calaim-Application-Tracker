@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
+import { getKaiserRegionFromCounty } from '@/lib/kaiser-region';
 import {
   computeCoverSheetTotalCosts,
   formatCoverSheetMoney,
@@ -322,7 +323,6 @@ function KaiserIspCoverSheetPrintableContent() {
   const memberName = prefill.memberName;
   const memberMrn = prefill.memberMrn;
   const memberClientId = prefill.memberClientId;
-  const memberCounty = prefill.memberCounty;
   const memberPhone = prefill.memberPhone;
   const memberEmail = prefill.memberEmail;
   const coverPageType = prefill.coverPageType;
@@ -357,9 +357,15 @@ function KaiserIspCoverSheetPrintableContent() {
         ? 'Authorization Cover Page'
         : '';
 
-  const effectiveKaiserRegion = normalizeRegion(prefill.kaiserRegionRaw);
+  // Cover sheet county = Caspio ALW_Counties only (passed via URL / member refresh). Never city/ZIP.
+  const memberCounty = clean(prefill.memberCounty);
+  const regionFromCounty = getKaiserRegionFromCounty(memberCounty);
+  const effectiveKaiserRegion =
+    normalizeRegion(prefill.kaiserRegionRaw) ||
+    (regionFromCounty === 'Kaiser North' ? 'NCAL' : regionFromCounty === 'Kaiser South' ? 'SCAL' : '');
   const effectiveInAlwCounty = normalizeYesNo(inAlwCounty);
-  const effectiveAtAlwFacility = normalizeYesNo(alwFacility);
+  const effectiveAtAlwFacility =
+    normalizeYesNo(alwFacility) || (normalizedCoverPageType === 'reauthorization' ? 'No' : '');
   const effectiveDidSubmitAlwApplication = normalizeSubmittedOption(alwSubmitted);
   const effectiveOnAlwWaitlist = normalizeYesNo(alwWaitlist);
   // Always Yes for initial authorization and reauthorization cover sheets.
@@ -367,6 +373,13 @@ function KaiserIspCoverSheetPrintableContent() {
   const effectiveRequestedTier = normalizeTier(requestedTier);
   const effectiveCaspioTierLevel = normalizeTier(caspioTierLevel);
   const effectiveChangeOfCondition = clean(changeOfCondition);
+  const changeConditionIsYes = /^yes\b/i.test(effectiveChangeOfCondition);
+  const tierMismatch =
+    normalizedCoverPageType === 'reauthorization' &&
+    Boolean(effectiveCaspioTierLevel) &&
+    Boolean(effectiveRequestedTier) &&
+    effectiveCaspioTierLevel !== effectiveRequestedTier;
+  const tierMismatchBlocked = tierMismatch && !changeConditionIsYes;
   // Reassessment/reauthorization is always RCFE for current living situation.
   const effectiveLivingSituation =
     normalizedCoverPageType === 'reauthorization' ? 'RCFE' : clean(currentLivingSituation);
@@ -376,10 +389,10 @@ function KaiserIspCoverSheetPrintableContent() {
     if (clean(prefill.memberName)) params.set('memberName', clean(prefill.memberName));
     if (clean(prefill.memberMrn)) params.set('memberMrn', clean(prefill.memberMrn));
     if (clean(prefill.memberClientId)) params.set('memberClientId', clean(prefill.memberClientId));
-    if (clean(prefill.memberCounty)) {
-      params.set('memberCounty', clean(prefill.memberCounty));
-      params.set('ALW_County', clean(prefill.memberCounty));
-      params.set('ALW_Counties', clean(prefill.memberCounty));
+    if (clean(memberCounty)) {
+      params.set('memberCounty', clean(memberCounty));
+      params.set('ALW_County', clean(memberCounty));
+      params.set('ALW_Counties', clean(memberCounty));
     }
     if (clean(prefill.memberDob)) params.set('memberDob', clean(prefill.memberDob));
     if (clean(prefill.memberPhone)) params.set('memberPhone', clean(prefill.memberPhone));
@@ -410,9 +423,11 @@ function KaiserIspCoverSheetPrintableContent() {
     if (clean(effectiveOnAlwWaitlist)) params.set('On_ALW_Waitlist', clean(effectiveOnAlwWaitlist));
     if (clean(effectiveFacilityVetted)) params.set('Facility_Vetted_Contracted', clean(effectiveFacilityVetted));
     if (clean(effectiveRequestedTier)) params.set('Requested_Tier_Level', clean(effectiveRequestedTier));
+    if (clean(effectiveCaspioTierLevel)) params.set('Tiered_Level_of_Care', clean(effectiveCaspioTierLevel));
     return params;
   }, [
     prefill,
+    memberCounty,
     movedInDate,
     effectiveKaiserRegion,
     effectiveInAlwCounty,
@@ -421,6 +436,7 @@ function KaiserIspCoverSheetPrintableContent() {
     effectiveOnAlwWaitlist,
     effectiveFacilityVetted,
     effectiveRequestedTier,
+    effectiveCaspioTierLevel,
     effectiveChangeOfCondition,
     effectiveLivingSituation,
   ]);
@@ -437,11 +453,11 @@ function KaiserIspCoverSheetPrintableContent() {
     // Bust browser PDF iframe cache when room & board / totals / vetted flag change.
     params.set(
       '_preview',
-      `${expectedTotalCosts.totalLabel}-${expectedTotalCosts.roomBoard}-vettedYes`
+      `${expectedTotalCosts.totalLabel}-${expectedTotalCosts.roomBoard}-vettedYes-${clean(memberCounty)}`
     );
     const query = params.toString();
     return `/api/forms/kaiser-isp-cover-sheet/template${query ? `?${query}` : ''}`;
-  }, [mergedParams, expectedTotalCosts.totalLabel, expectedTotalCosts.roomBoard]);
+  }, [mergedParams, expectedTotalCosts.totalLabel, expectedTotalCosts.roomBoard, memberCounty]);
 
   const buildDownloadUrl = (downloadLogId: string) => {
     const params = new URLSearchParams(mergedParams);
@@ -549,7 +565,7 @@ function KaiserIspCoverSheetPrintableContent() {
     () => requiredFieldStatuses.filter((field) => !clean(field.value)),
     [requiredFieldStatuses]
   );
-  const canGenerateActualPdf = missingRequired.length === 0;
+  const canGenerateActualPdf = missingRequired.length === 0 && !tierMismatchBlocked;
 
   useEffect(() => {
     const shouldRedirect =
@@ -560,6 +576,51 @@ function KaiserIspCoverSheetPrintableContent() {
     const target = `/admin/tools/kaiser-isp-cover-sheet/kaiser-isp-cover-sheet${query ? `?${query}` : ''}`;
     router.replace(target);
   }, [pathname, router, searchParams]);
+
+  // Always re-pull Caspio ALW_Counties on open so county is not stuck blank from stale URL/cache.
+  useEffect(() => {
+    const targetClientId = clean(prefill.memberClientId);
+    if (!targetClientId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { members: pulledMembers } = await fetchKaiserMembers<KaiserMemberLike>({
+          source: 'caspio',
+          refresh: true,
+          clientId2: targetClientId,
+          retryAction: 'reload this cover sheet',
+        });
+        if (cancelled) return;
+        const matched = pulledMembers.find((candidate) => {
+          const candidateId = String(candidate?.Client_ID2 || candidate?.client_ID2 || '')
+            .trim()
+            .toLowerCase();
+          return candidateId === targetClientId.toLowerCase();
+        });
+        if (!matched) return;
+        const alwCounties = getMemberValue(matched, [
+          'ALW_Counties',
+          'ALW_County',
+          'Alw_County',
+          'ALW_counties',
+          'alw_county',
+        ]);
+        if (!alwCounties) return;
+        setPrefill((prev) =>
+          clean(prev.memberCounty) === clean(alwCounties)
+            ? prev
+            : { ...prev, memberCounty: alwCounties }
+        );
+      } catch {
+        // Keep URL/prefill county; staff can still use Refresh from Caspio.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Only on initial member open — not on every prefill edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill.memberClientId]);
 
   const resolveCurrentUser = async (waitMs = 2500) => {
     if (user) return user;
@@ -738,10 +799,8 @@ function KaiserIspCoverSheetPrintableContent() {
             'ALW_County',
             'Alw_County',
             'ALW_counties',
-            'Member_County',
-          ]) ||
-          clean((matched.memberCounty as string) || '') ||
-          prefill.memberCounty,
+            'alw_county',
+          ]) || prefill.memberCounty,
         memberDob: clean((matched.birthDate as string) || (matched.Birth_Date as string) || getMemberValue(matched, ['Birth_Date'])) || prefill.memberDob,
         memberPhone: clean((matched.memberPhone as string) || getMemberValue(matched, ['Best_Contact_Phone', 'Member_Phone'])) || prefill.memberPhone,
         memberEmail: clean((matched.memberEmail as string) || getMemberValue(matched, ['Member_Email'])) || prefill.memberEmail,
@@ -1021,9 +1080,10 @@ function KaiserIspCoverSheetPrintableContent() {
                       <select
                         className="w-full max-w-sm rounded border bg-white px-2 py-1"
                         value={effectiveRequestedTier}
-                        onChange={(event) =>
-                          setPrefill((prev) => ({ ...prev, requestedTier: clean(event.target.value) }))
-                        }
+                        onChange={(event) => {
+                          setPrefill((prev) => ({ ...prev, requestedTier: clean(event.target.value) }));
+                          setVerificationChecked(false);
+                        }}
                       >
                         <option value="">Select tier level</option>
                         {TIER_OPTIONS.map((tier) => (
@@ -1033,6 +1093,33 @@ function KaiserIspCoverSheetPrintableContent() {
                         ))}
                       </select>
                     </div>
+                    {tierMismatch ? (
+                      <div
+                        className={`mt-2 rounded border px-2 py-1.5 text-xs ${
+                          tierMismatchBlocked
+                            ? 'border-red-300 bg-red-50 text-red-900'
+                            : 'border-amber-300 bg-amber-50 text-amber-950'
+                        }`}
+                      >
+                        <div className="font-semibold">
+                          Tier mismatch: current {effectiveCaspioTierLevel} → requested{' '}
+                          {effectiveRequestedTier}
+                        </div>
+                        {tierMismatchBlocked ? (
+                          <div className="mt-0.5">
+                            Cannot continue until Change in condition is{' '}
+                            <span className="font-medium">{CHANGE_CONDITION_YES_OPTION}</span> (and
+                            verified). A clinical reassessment is required when the requested tier
+                            differs from the current Caspio tier.
+                          </div>
+                        ) : (
+                          <div className="mt-0.5">
+                            Change in condition is Yes — clinical reassessment required for this tier
+                            change. Verify the selection above to continue.
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                     {normalizedCoverPageType !== 'reauthorization' ? (
                       <div className="text-xs text-muted-foreground">
                         Current Caspio tier: {effectiveCaspioTierLevel || 'Not available'}
@@ -1242,15 +1329,22 @@ function KaiserIspCoverSheetPrintableContent() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
+          {tierMismatchBlocked ? (
+            <div className="rounded border border-red-300 bg-red-50 p-2 text-red-900">
+              Blocked: requested tier ({effectiveRequestedTier}) does not match current Caspio tier (
+              {effectiveCaspioTierLevel}). Select and verify{' '}
+              <span className="font-medium">{CHANGE_CONDITION_YES_OPTION}</span> before generating.
+            </div>
+          ) : null}
           {missingRequired.length > 0 ? (
             <div className="rounded border border-red-200 bg-red-50 p-2 text-red-800">
               Missing required fields: {missingRequired.map((item) => item.label).join(', ')}
             </div>
-          ) : (
+          ) : !tierMismatchBlocked ? (
             <div className="rounded border border-green-200 bg-green-50 p-2 text-green-800">
               All required fields are present. You can now generate the actual PDF.
             </div>
-          )}
+          ) : null}
           <div className="grid gap-1 sm:grid-cols-2">
             {requiredFieldStatuses.map((field) => {
               const hasValue = Boolean(clean(field.value));

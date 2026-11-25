@@ -61,6 +61,9 @@ const COVER_SHEET_FIELD_PICKS = {
   Did_Submit_ALW_Application: ['Did_Submit_ALW_Application'],
   At_ALW_Facility: ['At_ALW_Facility'],
   On_ALW_Waitlist: ['On_ALW_Waitlist'],
+  ALW_Counties: ['ALW_Counties', 'ALW_County', 'Alw_County', 'alw_county', 'ALW_counties'],
+  ALW_County: ['ALW_Counties', 'ALW_County', 'Alw_County', 'alw_county', 'ALW_counties'],
+  In_ALW_County: ['In_ALW_County', 'In_ALW_county'],
   Requested_Tier_Level: ['Requested_Tier_Level', 'Tiered_Level_of_Care'],
   Tiered_Level_of_Care: ['Tiered_Level_of_Care', 'Requested_Tier_Level'],
   Verified_Move_In_Date: ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility'],
@@ -507,6 +510,13 @@ export async function GET(request: NextRequest) {
         ILS_Connected: member.ILS_Connected || '',
         Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || '',
         Kaiser_ID_Status: member.Kaiser_ID_Status,
+        ALW_Counties: pickFirstPopulated(member, [
+          'ALW_Counties',
+          'ALW_County',
+          'Alw_County',
+          'alw_county',
+          'ALW_counties',
+        ]),
         ALW_County: pickFirstPopulated(member, [
           'ALW_Counties',
           'ALW_County',
@@ -1035,6 +1045,13 @@ export async function GET(request: NextRequest) {
       ILS_Connected: member.ILS_Connected || '',
       Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || '',
       Kaiser_ID_Status: member.Kaiser_ID_Status,
+      ALW_Counties: pickFirstPopulated(member, [
+        'ALW_Counties',
+        'ALW_County',
+        'Alw_County',
+        'alw_county',
+        'ALW_counties',
+      ]),
       ALW_County: pickFirstPopulated(member, [
         'ALW_Counties',
         'ALW_County',
@@ -1179,6 +1196,9 @@ export async function GET(request: NextRequest) {
           'Requested_Tier_Level',
           'At_ALW_Facility',
           'On_ALW_Waitlist',
+          'ALW_Counties',
+          'ALW_County',
+          'In_ALW_County',
         ] as const;
         for (const member of responseBody.members as any[]) {
           const clientId2 = String(member?.Client_ID2 || member?.client_ID2 || '').trim();

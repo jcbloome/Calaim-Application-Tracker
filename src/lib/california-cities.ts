@@ -1004,6 +1004,32 @@ export function findCountyByCityAndZip(cityRaw?: unknown, zipRaw?: unknown): str
   return zip ? ZIP3_TO_COUNTY[zip.slice(0, 3)] || null : null;
 }
 
+/**
+ * Infer county from a free-text facility / mailing address.
+ * Handles `City, ST ZIP` and `City, ST, ZIP` (comma before ZIP).
+ */
+export function findCountyFromAddressLine(addressRaw?: unknown): string | null {
+  const address = String(addressRaw || '').trim();
+  if (!address) return null;
+  const zip = extractZip5(address);
+  if (zip) {
+    const byZip = findCountyByZip(zip);
+    if (byZip) return byZip;
+  }
+  // City, ST ZIP  OR  City, ST, ZIP
+  const cityStateZip = address.match(/,\s*([^,]+),\s*([A-Z]{2})\s*,?\s*(\d{5})(?:-\d{4})?\s*$/i);
+  if (cityStateZip) {
+    const byCityZip = findCountyByCityAndZip(cityStateZip[1], cityStateZip[3]);
+    if (byCityZip) return byCityZip;
+  }
+  const cityOnly = address.match(/,\s*([^,]+),\s*[A-Z]{2}\b/i);
+  if (cityOnly) {
+    const byCity = findCountyByCity(cityOnly[1]);
+    if (byCity) return byCity;
+  }
+  return null;
+}
+
 // Function to get all cities in a specific county
 export function getCitiesInCounty(countyName: string): string[] {
   return Object.entries(cityToCounty)

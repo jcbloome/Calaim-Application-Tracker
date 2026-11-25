@@ -68,6 +68,33 @@ export const KAISER_COVER_KP_TIER_OPTIONS = [
 export const KAISER_COVER_YES_NO_OPTIONS = ['Select from drop down', 'Yes', 'No'] as const;
 
 /**
+ * Canonical ALW county dropdown choices (auth `County` + reauth `Dropdown17`).
+ * Uses correct Caspio spelling `San Joaquin` (Kaiser PDF template sometimes has typo `San Juaquin`).
+ */
+export const KAISER_COVER_COUNTY_OPTIONS = [
+  'Select from drop down',
+  'Alameda',
+  'Contra Costa',
+  'Fresno',
+  'Kern',
+  'Los Angeles',
+  'Orange',
+  'Riverside',
+  'Sacramento',
+  'San Bernardino',
+  'San Diego',
+  'San Francisco',
+  'San Joaquin',
+  'San Mateo',
+  'Santa Clara',
+  'Sonoma',
+  'Member does not live in an ALW county',
+] as const;
+
+/** Auth + reauth “Which county does the Member currently live in?” fields. */
+export const KAISER_COVER_COUNTY_DROPDOWN_NAMES = ['County', 'Dropdown17'] as const;
+
+/**
  * Auth/reauth Yes/No combo boxes that must never become Tier 1–5.
  * Includes Dropdown8 on the current template (In ALW County) — only legacy PDFs used it for KP tier.
  */
@@ -105,6 +132,26 @@ export function dropdownOptionsLookLikeYesNo(options: unknown): boolean {
       )
     : [];
   return list.some((o) => o === 'yes') && list.some((o) => o === 'no' || o.startsWith('no '));
+}
+
+/** True when options look like the ALW county list (not Yes/No or Tier 1–5). */
+export function dropdownOptionsLookLikeCounties(options: unknown): boolean {
+  if (dropdownOptionsLookLikeTiers(options) || dropdownOptionsLookLikeYesNo(options)) return false;
+  const list = Array.isArray(options)
+    ? options.map((o) =>
+        String(o || '')
+          .toLowerCase()
+          .replace(/juaquin/g, 'joaquin')
+          .replace(/[^a-z0-9]+/g, ' ')
+          .trim()
+      )
+    : [];
+  const hasOrange = list.some((o) => o === 'orange' || o.includes('orange'));
+  const hasAlameda = list.some((o) => o === 'alameda' || o.includes('alameda'));
+  const hasSanJoaquin = list.some(
+    (o) => o.includes('san joaquin') || o.includes('san juaquin')
+  );
+  return hasOrange && hasAlameda && hasSanJoaquin;
 }
 
 export const KAISER_COVER_REAUTH_ROOM_BOARD_FIELD_NAMES = [

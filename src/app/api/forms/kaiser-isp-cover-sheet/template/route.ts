@@ -22,12 +22,15 @@ import {
   buildKaiserTierDropdownChangeScript,
   buildKaiserTotalCostsCalculateScript,
   computeCoverSheetTotalCosts,
+  dropdownOptionsLookLikeCounties,
   dropdownOptionsLookLikeTiers,
   dropdownOptionsLookLikeYesNo,
   KAISER_COVER_AUTH_KP_TIER_FIELD,
   KAISER_COVER_AUTH_MAX_EXPENSE_FIELD,
   KAISER_COVER_AUTH_ROOM_BOARD_FIELD,
   KAISER_COVER_AUTH_TOTAL_FIELD,
+  KAISER_COVER_COUNTY_DROPDOWN_NAMES,
+  KAISER_COVER_COUNTY_OPTIONS,
   KAISER_COVER_KP_TIER_OPTIONS,
   KAISER_COVER_REAUTH_KP_TIER_FIELD,
   KAISER_COVER_REAUTH_MAX_EXPENSE_FIELD,
@@ -38,7 +41,6 @@ import {
   KAISER_COVER_YES_NO_OPTIONS,
 } from '@/lib/kaiser-cover-sheet-tier-rates';
 import { KAISER_COVER_TEMPLATE_SETTINGS_DOC } from '@/lib/kaiser-isp-cover-sheet-template';
-import { findCountyByCityAndZip } from '@/lib/california-cities';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -333,6 +335,27 @@ function ensureKaiserYesNoDropdownOptions(field: DropdownFieldLike | null | unde
     if (keep) field.select(keep);
   } catch {
     // Keep generating even if one Yes/No widget cannot be repaired.
+  }
+}
+
+/**
+ * Restore ALW county options for County/Dropdown17.
+ * Always rewrite to canonical Caspio spellings (fixes Kaiser PDF typo San Juaquin → San Joaquin).
+ */
+function ensureKaiserCountyDropdownOptions(field: DropdownFieldLike | null | undefined): void {
+  if (!field || typeof field.getOptions !== 'function' || typeof field.setOptions !== 'function') {
+    return;
+  }
+  try {
+    const options = field.getOptions();
+    const hasTypo = Array.isArray(options)
+      ? options.some((option) => /juaquin/i.test(String(option || '')))
+      : false;
+    if (!dropdownOptionsLookLikeCounties(options) || hasTypo) {
+      field.setOptions([...KAISER_COVER_COUNTY_OPTIONS]);
+    }
+  } catch {
+    // Keep generating even if county options cannot be repaired.
   }
 }
 
@@ -657,6 +680,9 @@ export async function GET(req: NextRequest) {
           return;
         }
         if (isDropdownFieldLike(field)) {
+          if ((KAISER_COVER_COUNTY_DROPDOWN_NAMES as readonly string[]).includes(name)) {
+            ensureKaiserCountyDropdownOptions(field);
+          }
           const options = field.getOptions();
           if (!Array.isArray(options) || options.length === 0) return;
           const countyHit = findCountyDropdownOption(options, trimmed);
@@ -902,8 +928,6 @@ export async function GET(req: NextRequest) {
     const facilityName = clean(params.get('Facility_Name'));
     const facilityAddress = clean(params.get('Facility_Address'));
     const facilityType = clean(params.get('Facility_Type')) || 'RCFE';
-    const facilityCity = clean(params.get('RCFE_City') || params.get('Facility_City'));
-    const facilityZip = clean(params.get('RCFE_Zip') || params.get('Facility_Zip'));
     const moveInDate = asDisplayDate(clean(params.get('Verified_Move_In_Date') || params.get('Move_In_Date')));
     // Initial authorization + reauthorization: always Yes (RCFE vetted / SCA contracted with ILS).
     const facilityVettedContracted = 'Yes';
@@ -918,23 +942,21 @@ export async function GET(req: NextRequest) {
 
     const isAuthorization = coverPageType === 'authorization';
     const isReauthorization = coverPageType === 'reauthorization';
-    // County: Caspio ALW_Counties first; else RCFE / facility city+ZIP (reauth often lacks ALW_Counties).
-    const countyFromFacility =
-      normalizeCountyForDropdown(
-        clean(params.get('RCFE_County')) ||
-          findCountyByCityAndZip(facilityCity, facilityZip) ||
-          (() => {
-            const cityMatch = facilityAddress.match(/,\s*([^,]+),\s*[A-Z]{2}\s+(\d{5})/i);
-            if (!cityMatch) return '';
-            return findCountyByCityAndZip(cityMatch[1], cityMatch[2]) || '';
-          })()
-      ) || '';
+    // County dropdown = Caspio ALW_Counties only (initial + reauth). Never derive from RCFE city/ZIP.
     const memberCounty = normalizeCountyForDropdown(
       clean(params.get('ALW_Counties')) ||
         clean(params.get('ALW_County')) ||
-        clean(params.get('memberCounty')) ||
-        countyFromFacility
+        clean(params.get('memberCounty'))
     );
+    if (memberCounty) {
+      console.log('[kaiser-isp-cover-sheet/template] ALW county for PDF', {
+        memberCounty,
+        coverPageType,
+        mappedOption: findCountyDropdownOption([...KAISER_COVER_COUNTY_OPTIONS], memberCounty),
+      });
+    } else {
+      console.warn('[kaiser-isp-cover-sheet/template] ALW_Counties missing from request params');
+    }
     // Reauth members are already in RCFE; blank At_ALW_Facility → No (ALW ≠ RCFE).
     if (isReauthorization && !atAlw) atAlw = 'No';
     // Reassessment/reauthorization members are already in RCFE.
@@ -948,6 +970,22 @@ export async function GET(req: NextRequest) {
     if (isReauthorization && !changeOfConditionChoice) {
       return new NextResponse(
         'Change in condition selection is required for reauthorization cover sheets.',
+        { status: 400 }
+      );
+    }
+    const currentTierLabel = toTierLabel(
+      clean(params.get('Tiered_Level_of_Care')) || clean(params.get('Current_Tier_Level'))
+    );
+    const currentTierNumber = (currentTierLabel.match(/(\d+)/) || [])[1] || '';
+    if (
+      isReauthorization &&
+      currentTierNumber &&
+      requestedTierNumber &&
+      currentTierNumber !== requestedTierNumber &&
+      changeOfConditionChoice !== 'yes'
+    ) {
+      return new NextResponse(
+        `Requested tier (${requestedTierTier}) does not match current Caspio tier (${currentTierLabel}). Select "Yes, ILS must provide clinical reassessment noting changes in condition" before generating.`,
         { status: 400 }
       );
     }
@@ -1359,6 +1397,10 @@ export async function GET(req: NextRequest) {
         setFieldValue(vettedName, 'Yes');
       }
       // Re-assert county + At ALW after Yes/No option repair (repair can reset to placeholder).
+      for (const countyName of KAISER_COVER_COUNTY_DROPDOWN_NAMES) {
+        const countyField = getFieldMaybe(countyName);
+        if (countyField && isDropdownFieldLike(countyField)) ensureKaiserCountyDropdownOptions(countyField);
+      }
       if (isAuthorization) {
         if (memberCounty) setFieldValue('County', memberCounty);
         if (atAlw) setFieldValue('Dropdown4', atAlw);
@@ -1374,6 +1416,23 @@ export async function GET(req: NextRequest) {
         if (kpField && isDropdownFieldLike(kpField)) resetKaiserOnlyDropdown(kpField);
       }
       form.updateFieldAppearances(font);
+      // Bake county AFTER updateFieldAppearances so Chrome does not keep a stale placeholder stream.
+      if (memberCounty) {
+        const countyFieldName = isReauthorization ? 'Dropdown17' : isAuthorization ? 'County' : '';
+        if (countyFieldName) {
+          const countyField = getFieldMaybe(countyFieldName) as {
+            getSelected?: () => string[];
+          } | null;
+          const selectedCounty = clean(countyField?.getSelected?.()?.[0] || '');
+          const displayCounty =
+            findCountyDropdownOption([...KAISER_COVER_COUNTY_OPTIONS], memberCounty) ||
+            selectedCounty ||
+            memberCounty;
+          if (displayCounty && !isPlaceholderDropdownOption(displayCounty)) {
+            applyTwoLineFieldAppearance(countyFieldName, displayCounty, { arrowPad: 12 });
+          }
+        }
+      }
     } catch (finalTotalsError) {
       console.warn('[kaiser-isp-cover-sheet/template] final Total Costs appearance pass failed', finalTotalsError);
     }

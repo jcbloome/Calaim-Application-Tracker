@@ -18,8 +18,16 @@ import {
   invalidateKaiserMembersCache,
   KAISER_MEMBERS_SESSION_MAX_AGE_MS,
 } from '@/lib/fetch-kaiser-members';
-import { findCountyByCityAndZip } from '@/lib/california-cities';
 import { TemplateUploaderCard } from './template-uploader-card';
+
+/** Cover sheet “Which county…” must come from Caspio ALW_Counties — never city/ZIP inference. */
+const ALW_COUNTIES_KEYS = [
+  'ALW_Counties',
+  'ALW_County',
+  'Alw_County',
+  'ALW_counties',
+  'alw_county',
+] as const;
 
 type KaiserMember = {
   id?: string;
@@ -171,6 +179,8 @@ const getValue = (member: KaiserMember, keys: string[]) => {
   return '';
 };
 
+const getAlwCounties = (member: KaiserMember) => getValue(member, [...ALW_COUNTIES_KEYS]);
+
 const composeAddress = (...parts: Array<unknown>) =>
   parts
     .map((part) => clean(part))
@@ -263,16 +273,7 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
     label: 'Kaiser Region',
     value:
       getValue(member, ['Kaiser_North_or_South']) ||
-      resolveKaiserRegion(
-        getValue(member, [
-          'ALW_Counties',
-          'ALW_County',
-          'Alw_County',
-          'ALW_counties',
-          'Member_County',
-          'memberCounty',
-        ]) || clean(member.memberCounty)
-      ),
+      resolveKaiserRegion(getAlwCounties(member)),
   },
   { label: 'Member Name', value: toName(member) },
   { label: 'MRN / CIN', value: clean(member.memberMrn) },
@@ -280,13 +281,7 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
   { label: 'Cell Phone Number', value: clean(member.memberPhone) },
   {
     label: 'County (currently live in / ALW_Counties)',
-    value:
-      getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) ||
-      clean(member.memberCounty) ||
-      getValue(member, ['Member_County', 'memberCounty', 'RCFE_County']) ||
-      clean(
-        findCountyByCityAndZip(getValue(member, ['RCFE_City']), getValue(member, ['RCFE_Zip'])) || ''
-      ),
+    value: getAlwCounties(member),
   },
   { label: 'ISP Assessment Date', value: getValue(member, [
     'ISP_Assessment_Date',
@@ -335,19 +330,13 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   const query = new URLSearchParams();
   const today = format(new Date(), 'yyyy-MM-dd');
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
-  // County: Caspio ALW_Counties first; else RCFE city/ZIP (reauth members often lack ALW_Counties).
+  // Cover sheet county = Caspio ALW_Counties only (not Member_County / RCFE city).
+  const alwCounties = getAlwCounties(member);
   const rcfeCity = getValue(member, ['RCFE_City']);
   const rcfeZip = getValue(member, ['RCFE_Zip']);
-  const countyFromFacility =
-    getValue(member, ['RCFE_County']) ||
-    clean(findCountyByCityAndZip(rcfeCity, rcfeZip) || '');
-  const memberCounty =
-    getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) ||
-    clean(member.memberCounty) ||
-    getValue(member, ['Member_County', 'memberCounty']) ||
-    countyFromFacility;
+  const facilityAddress = getRcfeFullAddress(member);
   const kaiserRegion =
-    getValue(member, ['Kaiser_North_or_South']) || resolveKaiserRegion(memberCounty) || 'Kaiser South';
+    getValue(member, ['Kaiser_North_or_South']) || resolveKaiserRegion(alwCounties) || 'Kaiser South';
 
   query.set('returnTo', '/admin/tools/kaiser-isp-cover-sheet');
   query.set('memberClientId', clientId2);
@@ -367,23 +356,18 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
     ]) || clean(member.memberPhone);
   query.set('memberPhone', memberPhone);
   query.set('memberEmail', clean(member.memberEmail));
-  query.set('memberCounty', memberCounty);
-  query.set(
-    'ALW_County',
-    getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) || memberCounty
-  );
-  query.set(
-    'ALW_Counties',
-    getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) || memberCounty
-  );
+  if (alwCounties) {
+    query.set('memberCounty', alwCounties);
+    query.set('ALW_County', alwCounties);
+    query.set('ALW_Counties', alwCounties);
+  }
   query.set('Kaiser_North_or_South', kaiserRegion);
   query.set('Date_Prepared', today);
   query.set('Facility_Name', getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']));
-  query.set('Facility_Address', getRcfeFullAddress(member));
+  query.set('Facility_Address', facilityAddress);
   query.set('Facility_Type', 'RCFE');
   if (rcfeCity) query.set('RCFE_City', rcfeCity);
   if (rcfeZip) query.set('RCFE_Zip', rcfeZip);
-  if (countyFromFacility) query.set('RCFE_County', countyFromFacility);
   query.set(
     'Move_In_Date',
     asDisplayDate(
@@ -722,6 +706,7 @@ export default function KaiserIspCoverSheetToolPage() {
         clean(member.Client_ID2 || member.client_ID2),
         clean(member.memberMrn),
         clean(member.memberCounty),
+        getAlwCounties(member),
         clean(member.Kaiser_Status),
         clean(member.CalAIM_Status),
       ]
@@ -1106,7 +1091,10 @@ export default function KaiserIspCoverSheetToolPage() {
                       <div><span className="font-medium">Member:</span> {toName(selectedMember)}</div>
                       <div><span className="font-medium">Client_ID2:</span> {clean(selectedMember.Client_ID2 || selectedMember.client_ID2) || 'N/A'}</div>
                       <div><span className="font-medium">MRN/CIN:</span> {clean(selectedMember.memberMrn) || 'N/A'}</div>
-                      <div><span className="font-medium">County:</span> {clean(selectedMember.memberCounty) || 'N/A'}</div>
+                      <div>
+                        <span className="font-medium">ALW_Counties:</span>{' '}
+                        {getAlwCounties(selectedMember) || 'N/A'}
+                      </div>
                     </div>
                     <div className="rounded-md border bg-slate-50 p-3 text-sm">
                       <div className="font-medium">Required Caspio fields for this form</div>
