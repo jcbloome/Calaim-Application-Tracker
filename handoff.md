@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `25215941` (T2038 audit — 3-month window, note claimable rules, activity log)  
+**HEAD:** `836e23f1` (Kaiser ISP cover sheet — fix reauth county + At ALW autofill)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
@@ -17,7 +17,7 @@
 
 ## Changes 2026-11-24
 
-- **Kaiser ISP cover sheet reauth — county + At ALW:** Reauth was leaving “Which county…” / “living in an ALW facility?” on Select from drop down. Fixes: match PDF typo `San Juaquin`↔`San Joaquin`; derive county from RCFE city/ZIP when `ALW_Counties` blank; default At ALW to **No** on reauth when Caspio blank; re-assert after Yes/No option repair.
+- **Kaiser ISP cover sheet reauth — county + At ALW** (`836e23f1`): Reauth was leaving “Which county…” / “living in an ALW facility?” on Select from drop down. Fixes: match PDF typo `San Juaquin`↔`San Joaquin`; derive county from RCFE city/ZIP when `ALW_Counties` blank; default At ALW to **No** on reauth when Caspio blank; re-assert after Yes/No option repair.
   - Files: `kaiser-isp-cover-sheet/template/route.ts`, `kaiser-isp-cover-sheet/page.tsx`, `handoff.md`.
 
 ## Changes 2026-11-23
