@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-20  
 **Branch:** `main`  
-**HEAD:** `836e23f1` (Kaiser ISP cover sheet — fix reauth county + At ALW autofill)  
+**HEAD:** `334f55b6` (Kaiser ISP cover sheet — ALW_Counties fill, San Joaquin spelling, tier mismatch gate)  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
